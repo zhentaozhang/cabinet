@@ -118,9 +118,14 @@ docker compose up -d
 ```bash
 cp .env.example .env.local
 pnpm install
-pnpm db:setup   # 建表 + 写入演示数据
+openssl rand -base64 32   # 写入 .env.local 的 BETTER_AUTH_SECRET
+pnpm db:setup             # 本地已有库：push + seed
+# 或全新库：pnpm db:migrate && pnpm db:seed
 pnpm dev
 ```
+
+演示登录：`demo@cabinet.local` / `cabinet-demo`。
+本地默认 `AUTH_REQUIRED=false`，不阻塞演示；公网部署时设为 `true`。
 
 打开 http://localhost:3000
 
@@ -234,9 +239,16 @@ pnpm build
 - CI：`.github/workflows/ci.yml`（Postgres service + typecheck + lint + test + build）
 - 迁移基线：`drizzle/0000_baseline.sql`；新库用 `pnpm db:migrate`，本地已有库用 `pnpm db:push`
 
+## 鉴权（A1 已完成，A2 进行中）
+
+- better-auth + Drizzle + Postgres，登录页 `/login`，演示账号已 seed。
+- `AUTH_REQUIRED=false`：本地演示不拦截。
+- `AUTH_REQUIRED=true`：页面 redirect `/login`，API 返回 401。
+- **注意**：租户作用域（A2）尚未完成；当前仍是单用户 demo，开启 `AUTH_REQUIRED` 只保护入口，不做跨用户数据隔离。
+
 ## 已知边界（下一步）
 
-- **鉴权**：当前是单用户 demo；公网部署前需要 session、租户作用域、CSRF 与 reset 保护。
+- **租户作用域**：`DEMO_USER_ID` 仍在 service 内；A2 会改为 `ctx.userId` 并加跨用户测试。
 - **Onboarding**：仍依赖 `db:seed`；`/setup` 创建真实 workspace 是 P1。
 - **自动内阁**：会议目前是预置/手动的；规则触发 + LLM 立场生成是 P1。
 - **技能评测**：学徒转正是状态机；留出集、灰度、回滚的评测管线是 P1。

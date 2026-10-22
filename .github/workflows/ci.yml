@@ -25,6 +25,9 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/cabinet_test
       DATABASE_URL_TEST: postgres://postgres:postgres@localhost:5432/cabinet_test
+      BETTER_AUTH_SECRET: ci-only-secret-not-for-production
+      BETTER_AUTH_URL: http://localhost:3000
+      AUTH_REQUIRED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -35,7 +38,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:db:setup
+      - run: pnpm db:migrate
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test

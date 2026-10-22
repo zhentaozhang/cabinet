@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
+  accounts,
   agentGrants,
   agentTemplates,
   agents,
@@ -28,6 +29,7 @@ import { weekLabel } from "../format";
 import { SEED_POLICY_CONFIG } from "../domain/policy";
 import { startOfLocalWeek } from "../domain/time";
 import { AGENT_TEMPLATES } from "../templates";
+import { hashPassword } from "better-auth/crypto";
 
 const USER_ID = "usr_zhen";
 
@@ -50,18 +52,32 @@ export async function seedDemo(): Promise<void> {
       council_positions, councils, skills, checkins, audit_events, approvals,
       reviews, insights, memories, artifacts, steps, runs, tasks, goals,
       agent_grants, agent_templates, agents, profiles, policy_config,
-      idempotency_keys, user_actions, users
+      idempotency_keys, user_actions, sessions, accounts, verifications, users
     CASCADE
   `);
 
   const now = new Date();
   const weekStart = startOfLocalWeek(now, "Asia/Shanghai");
 
+  const demoPasswordHash = await hashPassword("cabinet-demo");
+
   await db.insert(users).values({
     id: USER_ID,
-    email: "zhen@cabinet.local",
+    email: "demo@cabinet.local",
     name: "Zhen",
+    emailVerified: true,
     timezone: "Asia/Shanghai",
+    updatedAt: new Date(),
+  });
+
+  await db.insert(accounts).values({
+    id: "acc_demo",
+    accountId: USER_ID,
+    providerId: "credential",
+    userId: USER_ID,
+    password: demoPasswordHash,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
 
   await db.insert(profiles).values({

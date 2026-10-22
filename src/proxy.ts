@@ -1,0 +1,39 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
+
+export function proxy(request: NextRequest) {
+  if (process.env.AUTH_REQUIRED !== "true") {
+    return NextResponse.next();
+  }
+
+  const { pathname } = request.nextUrl;
+  if (
+    pathname === "/login" ||
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/_next") ||
+    pathname === "/favicon.ico"
+  ) {
+    return NextResponse.next();
+  }
+
+  const session = getSessionCookie(request);
+  if (session) {
+    return NextResponse.next();
+  }
+
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      { ok: false, error: "Unauthorized", code: "unauthorized" },
+      { status: 401 },
+    );
+  }
+
+  const url = request.nextUrl.clone();
+  url.pathname = "/login";
+  url.searchParams.set("next", pathname);
+  return NextResponse.redirect(url);
+}
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+};
