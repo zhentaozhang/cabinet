@@ -24,7 +24,6 @@ import {
   insights,
   memories,
   profiles,
-  reviews,
   runs,
   skills,
   steps,
@@ -52,7 +51,6 @@ import { short } from "./shared/text";
 import { currentWeek } from "./shared/time";
 import type { Tx } from "./shared/tx";
 import { getWorkspace } from "./queries/workspace";
-import { getTodayData } from "./queries/today";
 
 export * from "./queries/workspace";
 export * from "./queries/metrics";
@@ -63,6 +61,10 @@ export * from "./queries/task";
 export * from "./queries/review";
 export * from "./queries/memory";
 export * from "./queries/council";
+export * from "./commands/agents";
+export * from "./commands/goals";
+export * from "./commands/checkins";
+export * from "./commands/brief";
 import { generateArtifact } from "@/lib/llm";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
@@ -73,7 +75,7 @@ import {
   type CouncilPositionDraft,
   type CouncilStance,
 } from "@/lib/domain/council";
-import { decideAudit, decideRun, decideUpgrade } from "@/lib/domain/policy";
+import { decideAudit, decideRun } from "@/lib/domain/policy";
 import { assertTransition } from "@/lib/domain/state";
 import {
   ConflictError,
@@ -82,7 +84,6 @@ import {
   ValidationError,
 } from "@/lib/domain/errors";
 import {
-  localDateKey,
   startOfLocalWeek,
 } from "@/lib/domain/time";
 
@@ -1087,76 +1088,6 @@ export async function decideCouncil(
   return updated!;
 }
 
-export async function setAutonomy(agentId: string, level: number, userId: string) {
-  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-  if (!agent || agent.userId !== userId) {
-    throw new NotFoundError("Agent not found");
-  }
-  if (level < 0 || level > 4) throw new ConflictError("Invalid autonomy level");
-
-  const config = await getPolicyConfig();
-  const auditRows = await db
-    .select({ action: auditEvents.action })
-    .from(auditEvents)
-    .innerJoin(tasks, eq(tasks.id, auditEvents.target))
-    .where(
-      and(
-        eq(tasks.assigneeId, agentId),
-        inArray(auditEvents.action, ["audit.accept", "audit.reject"]),
-      ),
-    )
-    .orderBy(desc(auditEvents.seq))
-    .limit(config.audit.passRateWindow);
-
-  const accepts = auditRows.filter(
-    (row) => row.action === "audit.accept",
-  ).length;
-  const auditPassRate =
-    auditRows.length > 0 ? accepts / auditRows.length : 0;
-
-  const decision = decideUpgrade({
-    actor: {
-      id: agent.id,
-      role: agent.role,
-      status: agent.status,
-      lifecycleStage: agent.lifecycleStage,
-      autonomyLevel: agent.autonomyLevel,
-      trustScore: agent.trustScore,
-      successCount: agent.successCount,
-    },
-    targetLevel: level,
-    auditPassRate,
-    config,
-  });
-
-  if (decision.effect === "deny") {
-    throw new PolicyDenied(decision.reason);
-  }
-
-  const [updated] = await db
-    .update(agents)
-    .set({ autonomyLevel: level })
-    .where(
-      and(
-        eq(agents.id, agentId),
-        eq(agents.autonomyLevel, agent.autonomyLevel),
-      ),
-    )
-    .returning();
-  if (!updated) throw new ConflictError("Agent autonomy changed; retry.");
-
-  await logAudit({
-    userId: agent.userId,
-    actor: "user",
-    action: "autonomy.change",
-    target: agentId,
-    before: { level: agent.autonomyLevel },
-    after: { level, auditPassRate, reason: decision.reason },
-  });
-
-  return { level, auditPassRate };
-}
-
 function factSlug(value: string): string {
   return (
     value
@@ -1413,142 +1344,6 @@ async function reverseChange(
       })
       .where(eq(profiles.userId, userId));
   }
-}
-
-export async function updateAgent(
-  agentId: string,
-  input: {
-    status?: "active" | "paused" | "retired";
-    charter?: string;
-    budgetCents?: number;
-  },
-  userId: string,
-) {
-  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-  if (!agent || agent.userId !== userId) {
-    throw new NotFoundError("Agent not found");
-  }
-
-  const nextStatus = input.status ?? agent.status;
-  if (input.status && input.status !== agent.status) {
-    assertTransition("agent", agent.status, input.status);
-    if (input.status === "retired") {
-      const [openRow] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(tasks)
-        .where(
-          and(
-            eq(tasks.assigneeId, agentId),
-            inArray(tasks.status, [
-              "planned",
-              "assigned",
-              "awaiting_approval",
-              "approved",
-              "running",
-              "submitted",
-              "auditing",
-              "rejected",
-              "suggested",
-            ]),
-          ),
-        );
-      if (Number(openRow?.count ?? 0) > 0) {
-        throw new ConflictError(
-          "Reassign open tasks before retiring this agent.",
-        );
-      }
-    }
-  }
-
-  if (input.charter !== undefined && input.charter.trim().length < 20) {
-    throw new ValidationError("Charter must be at least 20 characters.");
-  }
-
-  if (
-    input.budgetCents !== undefined &&
-    (!Number.isInteger(input.budgetCents) || input.budgetCents < 0)
-  ) {
-    throw new ValidationError("Budget must be a non-negative integer.");
-  }
-
-  const [updated] = await db
-    .update(agents)
-    .set({
-      ...(input.status ? { status: nextStatus } : {}),
-      ...(input.charter !== undefined ? { charter: input.charter.trim() } : {}),
-      ...(input.budgetCents !== undefined
-        ? { budgetCents: input.budgetCents }
-        : {}),
-    })
-    .where(and(eq(agents.id, agentId), eq(agents.status, agent.status)))
-    .returning();
-  if (!updated) throw new ConflictError("Agent state changed; retry.");
-
-  await logAudit({
-    userId: agent.userId,
-    actor: "user",
-    action: "agent.update",
-    target: agentId,
-    before: {
-      status: agent.status,
-      charter: agent.charter,
-      budgetCents: agent.budgetCents,
-    },
-    after: {
-      status: updated.status,
-      charter: updated.charter,
-      budgetCents: updated.budgetCents,
-    },
-  });
-
-  return updated;
-}
-
-export async function createGoal(
-  input: {
-    title: string;
-    why: string;
-    target: string;
-    horizon: string;
-    domain: string;
-  },
-  userId: string,
-) {
-  const title = input.title.trim();
-  const why = input.why.trim();
-  const target = input.target.trim();
-  const horizon = input.horizon.trim();
-  const domain = input.domain.trim();
-  if (!title || !why || !target || !horizon || !domain) {
-    throw new ValidationError("All goal fields are required.");
-  }
-
-  const id = newId("goal");
-  const [created] = await db
-    .insert(goals)
-    .values({
-      id,
-      userId: userId,
-      domain,
-      title,
-      why,
-      target,
-      horizon,
-      status: "active",
-      progress: 0,
-    })
-    .returning();
-
-  await logAudit({
-    userId: userId,
-    actor: "user",
-    action: "goal.create",
-    target: id,
-    before: null,
-    after: { title, domain, horizon },
-  });
-
-  return created;
 }
 
 export async function createTask(
@@ -2233,71 +2028,6 @@ export async function applyInsight(
   });
 }
 
-export async function saveCheckin(
-  input: {
-    energy: number;
-    mood: number;
-    completed: Array<{ taskId: string; done: boolean }>;
-    note: string;
-  },
-  userId: string,
-) {
-  const { user } = await getWorkspace(userId);
-  const today = localDateKey(new Date(), user.timezone);
-  const checkinId = newId("chk");
-  await db.insert(checkins).values({
-    id: checkinId,
-    userId: userId,
-    date: today,
-    energy: input.energy,
-    mood: input.mood,
-    completed: input.completed,
-    note: input.note,
-  });
-
-  for (const item of input.completed) {
-    if (item.done) {
-      const [task] = await db
-        .select()
-        .from(tasks)
-        .where(eq(tasks.id, item.taskId));
-      if (task && !["accepted", "done"].includes(task.status)) {
-        await db
-          .update(tasks)
-          .set({ status: "done", updatedAt: new Date() })
-          .where(eq(tasks.id, item.taskId));
-      }
-    }
-  }
-
-  if (input.note.trim()) {
-    await db.insert(memories).values({
-      id: newId("mem"),
-      userId: userId,
-      agentId: "ag_coach",
-      type: "episodic",
-      domain: "checkin",
-      content: input.note.trim(),
-      confidence: 0.9,
-      salience: 0.55,
-      evidence: [
-        { label: "今日 check-in", ref: `checkin:${checkinId}` },
-      ],
-      sourceEventId: checkinId,
-      lastConfirmedAt: new Date(),
-    });
-  }
-
-  await logAudit({
-    userId: userId,
-    actor: "user",
-    action: "checkin.save",
-    target: today,
-    before: null,
-    after: { energy: input.energy, mood: input.mood },
-  });
-}
-
 export async function runApprenticeExam(userId: string) {
   const [apprentice] = await db
     .select()
@@ -2490,35 +2220,6 @@ export async function runApprenticeExam(userId: string) {
   });
 
   return { runId, passed, required };
-}
-
-export async function regenerateBrief(userId: string) {
-  const data = await getTodayData(userId);
-  const lines = [
-    `# ${new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric" })} 早报`,
-    "",
-    `目标：${data.goals.map((g) => `${g.title}（${Math.round(g.progress)}%）`).join(" · ")}`,
-    "",
-    "## 今天的关键判断",
-    data.tasks.length > 0
-      ? `- 今天有 ${data.tasks.length} 个待推进任务，优先处理已提交待验收的。`
-      : "- 今天没有待推进任务，适合复盘或补弱项。",
-    `- 需要你决定：${data.approvals.length} 个审批${data.council ? " + 1 个内阁会议" : ""}。`,
-    "",
-    "## 建议顺序",
-    ...data.tasks.slice(0, 3).map((t, i) => `${i + 1}. ${t.title}（${t.estimateMin} 分钟）`),
-  ];
-  const content = lines.join("\n");
-  await db.insert(reviews).values({
-    id: newId("rev"),
-    userId: userId,
-    period: localDateKey(new Date(), data.user.timezone),
-    type: "daily",
-    narrative: content,
-    metrics: { tasks: data.tasks.length, decisions: data.approvals.length },
-    decisions: [],
-  });
-  return content;
 }
 
 function localHourIn(date: Date, timeZone: string): number {
