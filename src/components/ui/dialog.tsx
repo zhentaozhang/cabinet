@@ -38,6 +38,12 @@ export function ConfirmDialog({
     if (!open) return;
     previousFocus.current = document.activeElement;
 
+    // aria-modal hides the background from screen readers, but the page behind
+    // still scrolls on wheel/touch, which makes the dialog feel broken.
+    const body = document.body;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+
     const focusableSelector =
       'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
     const frame = requestAnimationFrame(() => {
@@ -77,6 +83,7 @@ export function ConfirmDialog({
     return () => {
       cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown);
+      body.style.overflow = previousOverflow;
       if (previousFocus.current instanceof HTMLElement) {
         previousFocus.current.focus();
       }

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import type { z } from "zod";
 
 import {
@@ -131,9 +132,14 @@ export async function fetchWorkspaceReady(): Promise<boolean> {
   return result.data.hasWorkspace;
 }
 
-export async function fetchShellContext(): Promise<ShellContextDto> {
+/**
+ * Memoised per request: the root layout already needs the shell context, so a
+ * page that needs it again (e.g. /setup) reuses the same response instead of
+ * paying a second round-trip for identical data.
+ */
+export const fetchShellContext = cache(async (): Promise<ShellContextDto> => {
   const api = await serverApi();
   const result = await api.query("/api/shell", shellContextSchema);
   if (!result.ok) throw new Error(result.error);
   return result.data;
-}
+});
