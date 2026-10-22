@@ -8,6 +8,7 @@ import {
   checkinDtoSchema,
   councilDtoSchema,
   councilPositionDtoSchema,
+  dissentDtoSchema,
   goalDtoSchema,
   insightDtoSchema,
   memoryDtoSchema,
@@ -83,6 +84,7 @@ export const reviewPageSchema = z.object({
   agents: z.array(agentDtoSchema),
   tasks: z.array(taskDtoSchema),
   audit: z.array(auditEventDtoSchema),
+  dissents: z.array(dissentDtoSchema),
   auditStats: z.record(
     z.string(),
     z.object({

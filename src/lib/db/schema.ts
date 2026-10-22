@@ -496,6 +496,29 @@ export const councilPositions = pgTable("council_positions", {
     .defaultNow(),
 });
 
+export const dissents = pgTable(
+  "dissents",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    councilId: text("council_id").notNull(),
+    taskId: text("task_id"),
+    agentId: text("agent_id").notNull(),
+    warning: text("warning").notNull(),
+    condition: jsonb("condition").$type<FalsificationCondition>().notNull(),
+    status: text("status").notNull().default("pending"),
+    evidence: jsonb("evidence").$type<Evidence[]>().notNull(),
+    evaluatedAt: timestamp("evaluated_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("dissents_user_idx").on(t.userId),
+    index("dissents_status_idx").on(t.status),
+  ],
+);
+
 export const checkins = pgTable("checkins", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),

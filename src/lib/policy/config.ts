@@ -11,6 +11,7 @@ const REQUIRED_KEYS = [
   "cost",
   "council",
   "reflection",
+  "dissent",
 ] as const;
 
 type ConfigKey = (typeof REQUIRED_KEYS)[number];
@@ -23,6 +24,7 @@ const DESCRIPTIONS: Record<ConfigKey, string> = {
   cost: "Estimated model cost per task minute",
   council: "Council role weights, score formula and quorum",
   reflection: "Reflection window, sample sizes and signal thresholds",
+  dissent: "Dissent vindication trust bonus and chief deviation penalty",
 };
 
 /**
@@ -46,6 +48,7 @@ export async function getPolicyConfig(): Promise<PolicyConfig> {
     cost: map.get("cost") as PolicyConfig["cost"],
     council: map.get("council") as PolicyConfig["council"],
     reflection: map.get("reflection") as PolicyConfig["reflection"],
+    dissent: map.get("dissent") as PolicyConfig["dissent"],
   };
 }
 

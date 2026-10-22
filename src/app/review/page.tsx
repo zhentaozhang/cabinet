@@ -67,6 +67,15 @@ function recommendation(
   return { label: "保持", tone: "neutral" as const };
 }
 
+const DISSENT_STATUS: Record<
+  string,
+  { label: string; tone: "accent" | "teal" | "neutral" }
+> = {
+  pending: { label: "观察中", tone: "accent" },
+  vindicated: { label: "已平反", tone: "teal" },
+  invalidated: { label: "已证伪", tone: "neutral" },
+};
+
 const OPEN_TASK_STATUS = new Set([
   "planned",
   "assigned",
@@ -82,6 +91,7 @@ const OPEN_TASK_STATUS = new Set([
 export default async function ReviewPage() {
   const data = await fetchReviewPage();
   const metrics = data.weeklyMetrics;
+  const agentById = new Map(data.agents.map((agent) => [agent.id, agent]));
   const applied = data.insights.filter((i) => i.status === "applied");
   const proposed = data.insights.filter((i) => i.status === "proposed");
   const focus = data.tasks
@@ -155,6 +165,58 @@ export default async function ReviewPage() {
               ))}
             </div>
           </div>
+
+          <Card>
+            <CardHeader
+              eyebrow="Dissent"
+              title="异议与判例"
+              right={
+                <span className="text-[10px] text-faint">
+                  {data.dissents.filter((d) => d.status === "pending").length} 观察中
+                </span>
+              }
+            />
+            {data.dissents.length === 0 ? (
+              <div className="px-5 py-4 text-[11px] text-muted">
+                还没有正式异议。批准一场存在反对立场的会议后，异议会进入观察期。
+              </div>
+            ) : (
+              <div className="divide-y divide-line">
+                {data.dissents.map((dissent) => {
+                  const status =
+                    DISSENT_STATUS[dissent.status] ?? DISSENT_STATUS.pending;
+                  const agent = agentById.get(dissent.agentId);
+                  return (
+                    <div key={dissent.id} className="px-5 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone={status.tone}>{status.label}</Badge>
+                        <span className="text-[11px] font-medium text-ink">
+                          {agent?.name ?? dissent.agentId}
+                        </span>
+                        <span className="text-[9px] text-faint">
+                          {dissent.condition.metric} {dissent.condition.operator}{" "}
+                          {dissent.condition.threshold} ·{" "}
+                          {dissent.condition.windowDays} 天
+                        </span>
+                      </div>
+                      <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+                        {dissent.warning}
+                      </p>
+                      <div className="mt-1 text-[9px] text-faint">
+                        提出 {dateTime(dissent.createdAt)}
+                        {dissent.evaluatedAt
+                          ? ` · 评估 ${dateTime(dissent.evaluatedAt)}`
+                          : ""}
+                        {dissent.evidence.length > 0
+                          ? ` · ${dissent.evidence.length} 条证据`
+                          : ""}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
 
           <Card>
             <CardHeader eyebrow="Diff" title="本周改了什么" right={<GitCompareArrows className="size-3.5 text-faint" />} />

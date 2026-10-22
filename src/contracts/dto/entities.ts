@@ -304,6 +304,21 @@ export type FalsificationConditionDto = z.infer<
   typeof falsificationConditionSchema
 >;
 
+export const dissentDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  councilId: z.string(),
+  taskId: z.string().nullable(),
+  agentId: z.string(),
+  warning: z.string(),
+  condition: falsificationConditionSchema,
+  status: z.string(),
+  evidence: z.array(evidenceSchema),
+  evaluatedAt: isoDateTime.nullable(),
+  createdAt: isoDateTime,
+});
+export type DissentDto = z.infer<typeof dissentDtoSchema>;
+
 export const councilResolutionSchema = z.object({
   decision: z.enum(["approve", "reject", "conditions"]),
   note: z.string(),

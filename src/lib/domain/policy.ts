@@ -59,6 +59,12 @@ export type CouncilConfig = {
   dissentBudgetRatio: number;
 };
 
+export type DissentConfig = {
+  trustBonus: number;
+  chiefPenalty: number;
+  precedentSalience: number;
+};
+
 export type ReflectionConfig = {
   windowDays: number;
   minRejectEvents: number;
@@ -93,6 +99,7 @@ export type PolicyConfig = {
   };
   council: CouncilConfig;
   reflection: ReflectionConfig;
+  dissent: DissentConfig;
 };
 
 /**
@@ -158,6 +165,11 @@ export const SEED_POLICY_CONFIG: PolicyConfig = {
     lowEnergyThreshold: 2,
     budgetPressureRatio: 0.8,
     confidence: 0.72,
+  },
+  dissent: {
+    trustBonus: 15,
+    chiefPenalty: 5,
+    precedentSalience: 0.9,
   },
 };
 

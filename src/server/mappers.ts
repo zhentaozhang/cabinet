@@ -6,6 +6,7 @@ import type {
   checkins,
   councilPositions,
   councils,
+  dissents,
   goals,
   insights,
   memories,
@@ -26,6 +27,7 @@ import type {
   CheckinDto,
   CouncilDto,
   CouncilPositionDto,
+  DissentDto,
   GoalDto,
   InsightDto,
   MemoryDto,
@@ -194,6 +196,14 @@ export function toCouncilPositionDto(
 ): CouncilPositionDto {
   return {
     ...row,
+    createdAt: toIso(row.createdAt),
+  };
+}
+
+export function toDissentDto(row: typeof dissents.$inferSelect): DissentDto {
+  return {
+    ...row,
+    evaluatedAt: toIsoOrNull(row.evaluatedAt),
     createdAt: toIso(row.createdAt),
   };
 }

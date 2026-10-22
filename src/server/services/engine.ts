@@ -21,6 +21,7 @@ import {
   checkins,
   councilPositions,
   councils,
+  dissents,
   goals,
   insights,
   memories,
@@ -294,6 +295,11 @@ export async function getReviewData(userId: string) {
     .where(eq(auditEvents.userId, userId))
     .orderBy(desc(auditEvents.createdAt))
     .limit(12);
+  const allDissents = await db
+    .select()
+    .from(dissents)
+    .where(eq(dissents.userId, userId))
+    .orderBy(desc(dissents.createdAt));
 
   const config = await getPolicyConfig();
   const auditRows = await db
@@ -337,6 +343,7 @@ export async function getReviewData(userId: string) {
     agents: allAgents,
     tasks: allTasks,
     audit: recentAudit,
+    dissents: allDissents,
     auditStats,
     config,
     weeklyMetrics: await getWeeklyMetrics(userId),
@@ -1481,6 +1488,7 @@ export async function decideCouncil(
     .where(eq(agents.userId, userId));
   const chief = allAgents.find((agent) => agent.role === "chief");
   const auditor = allAgents.find((agent) => agent.role === "auditor");
+  const config = await getPolicyConfig();
 
   const label =
     decision === "approve"
@@ -1490,7 +1498,7 @@ export async function decideCouncil(
         : "有条件批准";
   const trimmedNote = note.trim();
 
-  const dissents = positions
+  const dissentRecords = positions
     .filter((position) => position.isDissent || position.stance === "oppose")
     .map((position) => ({
       agentId: position.agentId,
@@ -1501,6 +1509,7 @@ export async function decideCouncil(
 
   let taskId: string | null = null;
   let memoryId: string | null = null;
+  const dissentIds: string[] = [];
   let updated: typeof council;
 
   await db.transaction(async (tx) => {
@@ -1561,12 +1570,44 @@ export async function decideCouncil(
       status: "active",
     });
 
+    if (decision !== "reject") {
+      for (const dissent of dissentRecords) {
+        const position = positions.find(
+          (candidate) => candidate.agentId === dissent.agentId,
+        );
+        const role =
+          allAgents.find((candidate) => candidate.id === dissent.agentId)
+            ?.role ?? "";
+        const condition =
+          position?.falsificationCondition ??
+          councilConditionForRole(role, config) ?? {
+            metric: "audit_reject_count" as const,
+            operator: ">=" as const,
+            threshold: Math.max(1, config.audit.rejectStreakLimit),
+            windowDays: config.council.dissentWindowDays,
+          };
+        const dissentId = newId("dis");
+        await tx.insert(dissents).values({
+          id: dissentId,
+          userId,
+          councilId,
+          taskId,
+          agentId: dissent.agentId,
+          warning: dissent.risk || dissent.claim,
+          condition,
+          status: "pending",
+          evidence: position?.evidence ?? [],
+        });
+        dissentIds.push(dissentId);
+      }
+    }
+
     const resolution: CouncilResolution = {
       decision,
       note: trimmedNote,
       taskId,
       memoryId,
-      dissents,
+      dissents: dissentRecords,
       decidedAt: new Date().toISOString(),
     };
 
@@ -1597,7 +1638,8 @@ export async function decideCouncil(
       note: trimmedNote,
       taskId,
       memoryId,
-      dissents,
+      dissents: dissentRecords,
+      dissentIds,
     },
   });
 
@@ -1710,6 +1752,7 @@ async function writeMemoryFact(
   input: {
     userId: string;
     agentId: string;
+    type: "semantic" | "procedural";
     domain: string;
     content: string;
     confidence: number;
@@ -1757,7 +1800,7 @@ async function writeMemoryFact(
         id: nextId,
         userId: input.userId,
         agentId: input.agentId,
-        type: "semantic",
+        type: input.type,
         domain: input.domain,
         content: input.content,
         factKey: input.factKey,
@@ -1779,7 +1822,7 @@ async function writeMemoryFact(
     id,
     userId: input.userId,
     agentId: input.agentId,
-    type: "semantic",
+    type: input.type,
     domain: input.domain,
     content: input.content,
     factKey: input.factKey,
@@ -2731,6 +2774,7 @@ export async function applyInsight(
     await writeMemoryFact(tx, {
       userId: insight.userId,
       agentId: "ag_chief",
+      type: "semantic",
       domain,
       content: insight.claim,
       confidence: insight.confidence,
@@ -3024,6 +3068,255 @@ function peakStart(profile: typeof profiles.$inferSelect | undefined): string | 
   return start && /^\d{2}:\d{2}$/.test(start) ? start : null;
 }
 
+function dissentConditionMet(
+  value: number,
+  condition: FalsificationCondition,
+): boolean {
+  if (condition.operator === ">=") return value >= condition.threshold;
+  if (condition.operator === ">") return value > condition.threshold;
+  return value === condition.threshold;
+}
+
+async function measureDissent(
+  userId: string,
+  dissent: typeof dissents.$inferSelect,
+): Promise<number> {
+  const start = dissent.createdAt;
+  const end = new Date(
+    start.getTime() + dissent.condition.windowDays * 24 * 60 * 60 * 1000,
+  );
+  const metric = dissent.condition.metric;
+
+  if (metric === "audit_reject_count") {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.userId, userId),
+          eq(auditEvents.action, "audit.reject"),
+          gte(auditEvents.createdAt, start),
+          lte(auditEvents.createdAt, end),
+        ),
+      );
+    return Number(row?.count ?? 0);
+  }
+
+  if (metric === "budget_spend_cents") {
+    const [row] = await db
+      .select({ total: sql<number>`coalesce(sum(${runs.costCents}), 0)` })
+      .from(runs)
+      .innerJoin(tasks, eq(tasks.id, runs.taskId))
+      .where(
+        and(
+          eq(tasks.userId, userId),
+          gte(runs.createdAt, start),
+          lte(runs.createdAt, end),
+        ),
+      );
+    return Number(row?.total ?? 0);
+  }
+
+  if (metric === "task_failure_count") {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.userId, userId),
+          eq(tasks.status, "failed"),
+          gte(tasks.createdAt, start),
+          lte(tasks.createdAt, end),
+        ),
+      );
+    return Number(row?.count ?? 0);
+  }
+
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(agents)
+    .where(and(eq(agents.userId, userId), eq(agents.status, "paused")));
+  return Number(row?.count ?? 0);
+}
+
+/**
+ * Evaluate pending formal dissents after their observation window closes.
+ * Only the Auditor-like system path mutates trust; the Chief cannot judge their
+ * own dissent, and a dissent is evaluated at most once.
+ */
+export async function evaluateDissents(userId: string): Promise<{
+  vindicated: number;
+  invalidated: number;
+}> {
+  const config = await getPolicyConfig();
+  const pending = await db
+    .select()
+    .from(dissents)
+    .where(and(eq(dissents.userId, userId), eq(dissents.status, "pending")));
+
+  let vindicated = 0;
+  let invalidated = 0;
+
+  for (const dissent of pending) {
+    const deadline = new Date(
+      dissent.createdAt.getTime() +
+        dissent.condition.windowDays * 24 * 60 * 60 * 1000,
+    );
+    if (deadline > new Date()) continue;
+
+    const value = await measureDissent(userId, dissent);
+    const met = dissentConditionMet(value, dissent.condition);
+    const evidence: Evidence[] = [
+      ...dissent.evidence,
+      {
+        label: "复盘测量",
+        ref: `dissent:${dissent.id}`,
+        quote: `${dissent.condition.metric} = ${value}`,
+      },
+    ];
+
+    if (!met) {
+      const [updated] = await db
+        .update(dissents)
+        .set({
+          status: "invalidated",
+          evidence,
+          evaluatedAt: new Date(),
+        })
+        .where(
+          and(eq(dissents.id, dissent.id), eq(dissents.status, "pending")),
+        )
+        .returning();
+      if (!updated) continue;
+      invalidated += 1;
+      await logAudit({
+        userId,
+        actor: "system:auditor",
+        action: "dissent.invalidated",
+        target: dissent.id,
+        before: { status: "pending" },
+        after: {
+          status: "invalidated",
+          metric: dissent.condition.metric,
+          value,
+          threshold: dissent.condition.threshold,
+        },
+      });
+      continue;
+    }
+
+    let chief: typeof agents.$inferSelect | undefined;
+    let chiefBefore: number | null = null;
+    let chiefAfter: number | null = null;
+    let updatedDissent: typeof dissents.$inferSelect | undefined;
+
+    await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(dissents)
+        .set({
+          status: "vindicated",
+          evidence,
+          evaluatedAt: new Date(),
+        })
+        .where(
+          and(eq(dissents.id, dissent.id), eq(dissents.status, "pending")),
+        )
+        .returning();
+      if (!updated) return;
+      updatedDissent = updated;
+
+      const [agent] = await tx
+        .select()
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, dissent.agentId),
+            eq(agents.userId, userId),
+          ),
+        )
+        .limit(1);
+      if (agent) {
+        await tx
+          .update(agents)
+          .set({
+            trustScore: clamp(agent.trustScore + config.dissent.trustBonus),
+          })
+          .where(eq(agents.id, agent.id));
+      }
+
+      [chief] = await tx
+        .select()
+        .from(agents)
+        .where(and(eq(agents.userId, userId), eq(agents.role, "chief")))
+        .limit(1);
+      if (chief) {
+        chiefBefore = chief.trustScore;
+        chiefAfter = clamp(chief.trustScore - config.dissent.chiefPenalty);
+        await tx
+          .update(agents)
+          .set({ trustScore: chiefAfter })
+          .where(eq(agents.id, chief.id));
+      }
+
+      const [council] = await tx
+        .select()
+        .from(councils)
+        .where(eq(councils.id, dissent.councilId))
+        .limit(1);
+      const topic = council?.topic ?? dissent.councilId;
+      await writeMemoryFact(tx, {
+        userId,
+        agentId: dissent.agentId,
+        type: "procedural",
+        domain: "council",
+        content: `判例（${topic}）：${dissent.warning} 已被现实印证。测量值 ${value}，阈值 ${dissent.condition.operator} ${dissent.condition.threshold}。`,
+        confidence: 0.9,
+        salience: config.dissent.precedentSalience,
+        evidence,
+        sourceEventId: dissent.id,
+        factKey: `precedent:${factSlug(topic)}`,
+        value: `vindicated:${value}`,
+      });
+    });
+
+    if (!updatedDissent) continue;
+    vindicated += 1;
+
+    await logAudit({
+      userId,
+      actor: "system:auditor",
+      action: "dissent.vindicated",
+      target: dissent.id,
+      before: { status: "pending" },
+      after: {
+        status: "vindicated",
+        metric: dissent.condition.metric,
+        value,
+        threshold: dissent.condition.threshold,
+        trustBonus: config.dissent.trustBonus,
+        chiefPenalty: config.dissent.chiefPenalty,
+      },
+    });
+
+    if (chief && chiefBefore !== null) {
+      await logAudit({
+        userId,
+        actor: "system:auditor",
+        action: "chief.deviation",
+        target: chief.id,
+        before: { trustScore: chiefBefore },
+        after: {
+          trustScore: chiefAfter,
+          dissentId: dissent.id,
+          councilId: dissent.councilId,
+        },
+      });
+    }
+  }
+
+  return { vindicated, invalidated };
+}
+
 type ReflectionCandidate = {
   claim: string;
   rationale: string;
@@ -3037,6 +3330,7 @@ export async function runReflection(
 ): Promise<typeof insights.$inferSelect | null> {
   const { user, profile } = await getWorkspace(userId);
   const config = await getPolicyConfig();
+  await evaluateDissents(userId);
   const now = new Date();
   const since = new Date(
     now.getTime() - config.reflection.windowDays * 24 * 60 * 60 * 1000,

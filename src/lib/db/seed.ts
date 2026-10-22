@@ -11,6 +11,7 @@ import {
   checkins,
   councilPositions,
   councils,
+  dissents,
   goals,
   insights,
   memories,
@@ -49,7 +50,7 @@ function day(offset: number): string {
 export async function seedDemo(): Promise<void> {
   await db.execute(sql`
     TRUNCATE TABLE
-      council_positions, councils, skills, checkins, audit_events, approvals,
+      dissents, council_positions, councils, skills, checkins, audit_events, approvals,
       reviews, insights, memories, artifacts, steps, runs, tasks, goals,
       agent_grants, agent_templates, agents, profiles, policy_config,
       idempotency_keys, rate_limits, user_actions, sessions, accounts,
@@ -103,7 +104,7 @@ export async function seedDemo(): Promise<void> {
   });
 
   await db.insert(policyConfig).values(
-    (["autonomy", "audit", "budget", "management", "cost", "council", "reflection"] as const).map(
+    (["autonomy", "audit", "budget", "management", "cost", "council", "reflection", "dissent"] as const).map(
       (key) => ({
         key,
         valueJson: SEED_POLICY_CONFIG[key],
@@ -1012,6 +1013,30 @@ export async function seedDemo(): Promise<void> {
       lastConfirmedAt: at(-12, 22, 0),
       status: "conflicted",
     },
+    {
+      id: "mem_precedent_membership",
+      userId: USER_ID,
+      agentId: "ag_treasurer",
+      type: "procedural",
+      domain: "council",
+      content:
+        "判例（年包会员）：预算压力下的年包购买应被否决；先按月验证完课率。",
+      factKey: "precedent:年包会员",
+      value: "vindicated:52000",
+      validFrom: at(-2, 9),
+      confidence: 0.9,
+      salience: 0.9,
+      evidence: [
+        {
+          label: "判例",
+          ref: "dissent:dis_seed_membership",
+          quote: "预算执行超过阈值",
+        },
+      ],
+      sourceEventId: "dis_seed_membership",
+      lastConfirmedAt: at(-2, 9),
+      status: "active",
+    },
   ]);
 
   await db.insert(insights).values([
@@ -1311,6 +1336,52 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       },
       createdAt: at(0, 9, 10),
     },
+    {
+      id: "ccl_membership",
+      userId: USER_ID,
+      topic: "要不要买 ¥899 年包会员？",
+      trigger: "单笔支出 > ¥500",
+      status: "decided",
+      memo: `## 决定
+否决年包，先按月购买。
+
+## 理由
+- 年包会占用三个月学习预算。
+- 过去 3 次买课完课率为 0。
+- 先验证一个月完课率，再决定是否升级。`,
+      matrix: {
+        dimensions: {
+          feasibility: 45,
+          costEfficiency: 20,
+          evidenceQuality: 60,
+          robustness: 35,
+        },
+        overall: 39,
+        support: 1,
+        oppose: 2,
+        neutral: 2,
+        consensus: "oppose",
+        dissentAgentIds: ["ag_treasurer", "ag_critic"],
+      },
+      resolution: {
+        decision: "reject",
+        note: "年包会挤压预算，先验证完课率。",
+        taskId: null,
+        memoryId: "mem_precedent_membership",
+        dissents: [
+          {
+            agentId: "ag_treasurer",
+            claim: "年包会占用三个月学习预算。",
+            risk: "超支会挤压后续实验。",
+            recommendation: "先按月购买。",
+          },
+        ],
+        decidedAt: at(-8, 10).toISOString(),
+      },
+      resolutionAppliedAt: at(-8, 10),
+      createdAt: at(-9, 9),
+      decidedAt: at(-8, 10),
+    },
   ]);
 
   await db.insert(councilPositions).values([
@@ -1422,6 +1493,38 @@ Critic 认为免费资料已足够，建议先完成现有材料。
         robustness: 50,
       },
       isDissent: false,
+    },
+  ]);
+
+  await db.insert(dissents).values([
+    {
+      id: "dis_seed_membership",
+      userId: USER_ID,
+      councilId: "ccl_membership",
+      taskId: null,
+      agentId: "ag_treasurer",
+      warning: "年包会占用三个月学习预算，且过去完课率低。",
+      condition: {
+        metric: "budget_spend_cents",
+        operator: ">=",
+        threshold: 48000,
+        windowDays: 7,
+      },
+      status: "vindicated",
+      evidence: [
+        {
+          label: "预算执行",
+          ref: "agent:ag_treasurer",
+          quote: "年包 ¥899 > 可用预算",
+        },
+        {
+          label: "复盘测量",
+          ref: "dissent:dis_seed_membership",
+          quote: "budget_spend_cents = 52000",
+        },
+      ],
+      evaluatedAt: at(-2, 9),
+      createdAt: at(-9, 10),
     },
   ]);
 

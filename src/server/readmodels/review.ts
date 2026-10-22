@@ -3,6 +3,7 @@ import { asDto } from "@/server/dto-guard";
 import {
   toAgentDto,
   toAuditEventDto,
+  toDissentDto,
   toInsightDto,
   toProfileDto,
   toReviewDto,
@@ -24,6 +25,7 @@ export async function loadReview(userId: string): Promise<ReviewPageDto> {
       agents: data.agents.map(toAgentDto),
       tasks: data.tasks.map(toTaskDto),
       audit: data.audit.map(toAuditEventDto),
+      dissents: data.dissents.map(toDissentDto),
       auditStats: data.auditStats,
       config: data.config,
       weeklyMetrics: data.weeklyMetrics,

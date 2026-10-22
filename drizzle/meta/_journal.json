@@ -50,6 +50,13 @@
       "when": 1792648961771,
       "tag": "0006_warm_captain_cross",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792649252670,
+      "tag": "0007_broken_princess_powerful",
+      "breakpoints": true
     }
   ]
 }
