@@ -68,4 +68,11 @@ describe("agent / insight / approval state machines", () => {
     expect(canTransition("approval", "approved", "rejected")).toBe(false);
     expect(canTransition("approval", "pending", "approved")).toBe(true);
   });
+
+  it("allows pending dissents to resolve exactly once", () => {
+    expect(canTransition("dissent", "pending", "vindicated")).toBe(true);
+    expect(canTransition("dissent", "pending", "invalidated")).toBe(true);
+    expect(canTransition("dissent", "vindicated", "invalidated")).toBe(false);
+    expect(canTransition("dissent", "invalidated", "vindicated")).toBe(false);
+  });
 });

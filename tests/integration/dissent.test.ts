@@ -67,6 +67,18 @@ describe("formal dissent ledger", () => {
       .update(agents)
       .set({ status: "paused" })
       .where(eq(agents.id, "ag_critic"));
+    await db.insert(auditEvents).values({
+      id: "aud_pause_vindicate",
+      userId: DEMO_USER_ID,
+      actor: "user",
+      action: "agent.update",
+      target: "ag_critic",
+      before: { status: "active" },
+      after: { status: "paused" },
+      hash: "test",
+      prevHash: null,
+      createdAt: daysAgo(3),
+    });
 
     await db.insert(dissents).values({
       id: "dis_vindicate",
@@ -191,6 +203,18 @@ describe("formal dissent ledger", () => {
       .update(agents)
       .set({ status: "paused" })
       .where(eq(agents.id, "ag_critic"));
+    await db.insert(auditEvents).values({
+      id: "aud_pause_reflection",
+      userId: DEMO_USER_ID,
+      actor: "user",
+      action: "agent.update",
+      target: "ag_critic",
+      before: { status: "active" },
+      after: { status: "paused" },
+      hash: "test",
+      prevHash: null,
+      createdAt: daysAgo(3),
+    });
     await db.insert(dissents).values({
       id: "dis_reflection",
       userId: DEMO_USER_ID,
@@ -215,5 +239,89 @@ describe("formal dissent ledger", () => {
       .from(dissents)
       .where(eq(dissents.id, "dis_reflection"));
     expect(row.status).toBe("vindicated");
+  });
+
+  it("does not attribute an unrelated rejection to a task-scoped dissent", async () => {
+    await db.insert(dissents).values({
+      id: "dis_scoped_reject",
+      userId: DEMO_USER_ID,
+      councilId: "ccl_course",
+      taskId: "tsk_read",
+      agentId: "ag_critic",
+      warning: "这个阅读任务会被驳回。",
+      condition: {
+        metric: "audit_reject_count",
+        operator: ">=",
+        threshold: 1,
+        windowDays: 7,
+      },
+      status: "pending",
+      evidence: [],
+      createdAt: daysAgo(8),
+    });
+
+    const result = await evaluateDissents(DEMO_USER_ID);
+    expect(result).toEqual({ vindicated: 0, invalidated: 1 });
+
+    const [row] = await db
+      .select()
+      .from(dissents)
+      .where(eq(dissents.id, "dis_scoped_reject"));
+    expect(row.status).toBe("invalidated");
+  });
+
+  it("does attribute an in-window rejection of the exact task", async () => {
+    await db.insert(dissents).values({
+      id: "dis_scoped_hit",
+      userId: DEMO_USER_ID,
+      councilId: "ccl_course",
+      taskId: "tsk_arch_2",
+      agentId: "ag_critic",
+      warning: "这个任务会因引用缺失被驳回。",
+      condition: {
+        metric: "audit_reject_count",
+        operator: ">=",
+        threshold: 1,
+        windowDays: 7,
+      },
+      status: "pending",
+      evidence: [],
+      createdAt: daysAgo(8),
+    });
+
+    const result = await evaluateDissents(DEMO_USER_ID);
+    expect(result).toEqual({ vindicated: 1, invalidated: 0 });
+
+    const [row] = await db
+      .select()
+      .from(dissents)
+      .where(eq(dissents.id, "dis_scoped_hit"));
+    expect(row.status).toBe("vindicated");
+  });
+
+  it("does not treat a historical pause as a new vindication", async () => {
+    await db
+      .update(agents)
+      .set({ status: "paused" })
+      .where(eq(agents.id, "ag_critic"));
+    await db.insert(dissents).values({
+      id: "dis_old_pause",
+      userId: DEMO_USER_ID,
+      councilId: "ccl_course",
+      agentId: "ag_critic",
+      warning: "会有一个 Agent 被暂停。",
+      condition: {
+        metric: "agent_paused",
+        operator: ">=",
+        threshold: 1,
+        windowDays: 7,
+      },
+      status: "pending",
+      evidence: [],
+      createdAt: daysAgo(8),
+    });
+
+    const result = await evaluateDissents(DEMO_USER_ID);
+    expect(result).toEqual({ vindicated: 0, invalidated: 1 });
   });
 });

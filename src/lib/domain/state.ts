@@ -6,6 +6,7 @@ export type Entity =
   | "insight"
   | "approval"
   | "council"
+  | "dissent"
   | "apprentice"
   | "run";
 
@@ -53,6 +54,11 @@ export const TRANSITIONS: Record<
   council: {
     open: ["decided"],
     decided: [],
+  },
+  dissent: {
+    pending: ["vindicated", "invalidated"],
+    vindicated: [],
+    invalidated: [],
   },
   apprentice: {
     shadowing: ["drafting", "retired"],

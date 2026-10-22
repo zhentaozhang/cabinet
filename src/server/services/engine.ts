@@ -3164,6 +3164,9 @@ async function measureDissent(
         and(
           eq(auditEvents.userId, userId),
           eq(auditEvents.action, "audit.reject"),
+          dissent.taskId
+            ? eq(auditEvents.target, dissent.taskId)
+            : undefined,
           gte(auditEvents.createdAt, start),
           lte(auditEvents.createdAt, end),
         ),
@@ -3179,6 +3182,7 @@ async function measureDissent(
       .where(
         and(
           eq(tasks.userId, userId),
+          dissent.taskId ? eq(runs.taskId, dissent.taskId) : undefined,
           gte(runs.createdAt, start),
           lte(runs.createdAt, end),
         ),
@@ -3194,6 +3198,7 @@ async function measureDissent(
         and(
           eq(tasks.userId, userId),
           eq(tasks.status, "failed"),
+          dissent.taskId ? eq(tasks.id, dissent.taskId) : undefined,
           gte(tasks.createdAt, start),
           lte(tasks.createdAt, end),
         ),
@@ -3201,10 +3206,21 @@ async function measureDissent(
     return Number(row?.count ?? 0);
   }
 
+  // `agent_paused` must be measured from events inside the observation window.
+  // Reading agents.status alone would make any historical pause permanently
+  // vindicate every future dissent.
   const [row] = await db
     .select({ count: sql<number>`count(*)` })
-    .from(agents)
-    .where(and(eq(agents.userId, userId), eq(agents.status, "paused")));
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.userId, userId),
+        inArray(auditEvents.action, ["agent.paused", "agent.update"]),
+        sql`${auditEvents.after}->>'status' = 'paused'`,
+        gte(auditEvents.createdAt, start),
+        lte(auditEvents.createdAt, end),
+      ),
+    );
   return Number(row?.count ?? 0);
 }
 
@@ -3245,6 +3261,7 @@ export async function evaluateDissents(userId: string): Promise<{
     ];
 
     if (!met) {
+      assertTransition("dissent", dissent.status, "invalidated");
       const [updated] = await db
         .update(dissents)
         .set({
@@ -3274,6 +3291,7 @@ export async function evaluateDissents(userId: string): Promise<{
       continue;
     }
 
+    assertTransition("dissent", dissent.status, "vindicated");
     let chief: typeof agents.$inferSelect | undefined;
     let chiefBefore: number | null = null;
     let chiefAfter: number | null = null;
