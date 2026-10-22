@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 
+import { REQUEST_ID_HEADER } from "@/lib/obs/request-id";
 import { createApiClient, type ApiClient } from "./client";
 
 /**
@@ -22,15 +23,41 @@ async function resolveBaseUrl(): Promise<string> {
   return `${proto}://${host}`;
 }
 
+/**
+ * Headers that must survive the RSC → `/api/*` hop.
+ *
+ * That hop is a genuine second HTTP request, so without forwarding it would
+ * mint a new identity and one page view would show up as two unrelated
+ * requests in the logs — exactly the failure mode that makes an incident
+ * impossible to reconstruct.
+ */
+function correlationHeaders(incoming: Headers): Record<string, string> {
+  const forwarded: Record<string, string> = {};
+
+  const requestId = incoming.get(REQUEST_ID_HEADER);
+  if (requestId) forwarded[REQUEST_ID_HEADER] = requestId;
+
+  const traceparent = incoming.get("traceparent");
+  if (traceparent) forwarded.traceparent = traceparent;
+
+  const tracestate = incoming.get("tracestate");
+  if (tracestate) forwarded.tracestate = tracestate;
+
+  return forwarded;
+}
+
 export async function serverApi(): Promise<ApiClient> {
   const baseUrl = await resolveBaseUrl();
   const incoming = await headers();
   const cookie = incoming.get("cookie");
+  const correlation = correlationHeaders(incoming);
 
   return createApiClient({
     baseUrl,
     credentials: "omit",
-    headers: async (): Promise<Record<string, string>> =>
-      cookie ? { cookie } : {},
+    headers: async (): Promise<Record<string, string>> => ({
+      ...correlation,
+      ...(cookie ? { cookie } : {}),
+    }),
   });
 }

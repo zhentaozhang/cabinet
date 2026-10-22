@@ -38,6 +38,11 @@ const SERVER_ONLY = [
   /^@\/lib\/engine$/,
   /^@\/lib\/auth(\/|$)/,
   /^@\/lib\/setup$/,
+  // Request context and domain errors are Node-only: `AsyncLocalStorage` has no
+  // edge or browser equivalent, and importing either into a client component
+  // would quietly pull `node:async_hooks` into the browser bundle.
+  /^@\/lib\/obs\/(context|http)$/,
+  /^@\/lib\/domain\/errors$/,
   /^drizzle-orm(\/|$)/,
   /^pg$/,
 ];

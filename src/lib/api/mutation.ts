@@ -1,5 +1,7 @@
 import { getApiUserId } from "@/lib/auth/context";
 import { ForbiddenError, toErrorResponse } from "@/lib/domain/errors";
+import { bindUser, logEvent } from "@/lib/obs/context";
+import { runHttpRequest } from "@/lib/obs/http";
 import { withIdempotency } from "./idempotency";
 import { checkRateLimit } from "./rate-limit";
 
@@ -28,6 +30,9 @@ function assertSameOrigin(request: Request): void {
 
 /**
  * Shared mutation pipeline: CSRF → auth → rate limit → idempotency → handler.
+ *
+ * `endpoint` doubles as the observability label (`task.run`, `memory.delete`):
+ * a bounded enum, unlike the request path, so it is safe to aggregate on.
  */
 export async function handleMutation(input: {
   request: Request;
@@ -35,26 +40,37 @@ export async function handleMutation(input: {
   body?: unknown;
   handler: (userId: string) => Promise<MutationResult>;
 }): Promise<Response> {
-  try {
-    assertSameOrigin(input.request);
-    const userId = await getApiUserId();
+  return runHttpRequest("mutation", async () => {
+    try {
+      assertSameOrigin(input.request);
+      const userId = await getApiUserId();
+      bindUser(userId);
 
-    await checkRateLimit({
-      userId,
-      action: input.endpoint.split(":")[0],
-      limit: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 60),
-      windowSeconds: 60,
-    });
+      await checkRateLimit({
+        userId,
+        action: input.endpoint.split(":")[0],
+        limit: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 60),
+        windowSeconds: 60,
+      });
 
-    return await withIdempotency({
-      request: input.request,
-      userId,
-      endpoint: input.endpoint,
-      body: input.body,
-      handler: () => input.handler(userId),
-    });
-  } catch (error) {
-    const { status, body } = toErrorResponse(error);
-    return Response.json(body, { status });
-  }
+      const response = await withIdempotency({
+        request: input.request,
+        userId,
+        endpoint: input.endpoint,
+        body: input.body,
+        handler: () => input.handler(userId),
+      });
+
+      logEvent("info", "mutation.committed", {
+        endpoint: input.endpoint,
+        status: response.status,
+        replayed: response.headers.get("idempotency-replayed") === "true",
+      });
+
+      return response;
+    } catch (error) {
+      const { status, body } = toErrorResponse(error);
+      return Response.json(body, { status });
+    }
+  });
 }
