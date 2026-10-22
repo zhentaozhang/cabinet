@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
@@ -9,10 +9,10 @@ import {
   tasks,
 } from "@/lib/db/schema";
 import { getPolicyConfig } from "@/lib/policy/config";
+import { loadAutonomyDecisions } from "./autonomy";
+import { loadAuditWindows } from "./audit-samples";
 import { getWeeklyMetrics } from "./metrics";
 import { getWorkspace } from "./workspace";
-/** Hard ceiling for the audit fold; window semantics are preserved. */
-const MAX_AUDIT_ROWS = 2000;
 
 export type ReviewPageOptions = {
   insightOffset?: number;
@@ -36,10 +36,10 @@ export async function getReviewData(
     allAgents,
     allTasks,
     recentAudit,
+    auditCountRows,
     dissentCountRows,
     allDissents,
     config,
-    auditRows,
     weeklyMetrics,
   ] = await Promise.all([
     getWorkspace(userId),
@@ -82,6 +82,10 @@ export async function getReviewData(
       .orderBy(desc(auditEvents.createdAt))
       .limit(12),
     db
+      .select({ total: sql<number>`count(*)` })
+      .from(auditEvents)
+      .where(eq(auditEvents.userId, userId)),
+    db
       .select({
         total: sql<number>`count(*)`,
         pending: sql<number>`count(*) filter (where ${dissents.status} = 'pending')`,
@@ -96,48 +100,36 @@ export async function getReviewData(
       .limit(limit)
       .offset(dissentOffset),
     getPolicyConfig(),
-    // The fold below only keeps `passRateWindow` events per agent, so reading
-    // the whole ledger was unbounded growth for no gain. Newest-first is the
-    // same window semantics; the cap is far above any legal window.
-    db
-      .select({
-        assigneeId: tasks.assigneeId,
-        action: auditEvents.action,
-      })
-      .from(auditEvents)
-      .innerJoin(tasks, eq(tasks.id, auditEvents.target))
-      .where(
-        and(
-          eq(auditEvents.userId, userId),
-          inArray(auditEvents.action, ["audit.accept", "audit.reject"]),
-        ),
-      )
-      .orderBy(desc(auditEvents.seq))
-      .limit(MAX_AUDIT_ROWS),
     getWeeklyMetrics(userId),
+  ]);
+  // The audit window is read through the same eligibility filter the promotion
+  // command uses, so the badge on this page cannot disagree with the write.
+  const [auditWindows, autonomyDecisions] = await Promise.all([
+    loadAuditWindows(userId, config.audit.passRateWindow),
+    loadAutonomyDecisions(userId),
   ]);
 
   const { user, profile } = workspace;
   const weekly = weeklyRows[0];
   const [insightCounts] = insightCountRows;
   const [dissentCounts] = dissentCountRows;
+  const [auditCounts] = auditCountRows;
 
+  // Only eligible samples feed performance statistics: demo, rule-generated,
+  // user-submitted and pre-ledger output are audited but never counted.
   const auditStats: Record<
     string,
     { accepts: number; total: number; passRate: number }
   > = {};
-  for (const row of auditRows) {
-    if (!row.assigneeId) continue;
-    const current = auditStats[row.assigneeId] ?? {
-      accepts: 0,
-      total: 0,
-      passRate: 0,
+  for (const [agentId, window] of auditWindows) {
+    const accepts = window.eligibleSamples.filter(
+      (sample) => sample.action === "audit.accept",
+    ).length;
+    auditStats[agentId] = {
+      accepts,
+      total: window.eligibleSamples.length,
+      passRate: window.passRate,
     };
-    if (current.total >= config.audit.passRateWindow) continue;
-    current.total += 1;
-    if (row.action === "audit.accept") current.accepts += 1;
-    current.passRate = current.accepts / current.total;
-    auditStats[row.assigneeId] = current;
   }
 
   return {
@@ -148,6 +140,7 @@ export async function getReviewData(
     agents: allAgents,
     tasks: allTasks,
     audit: recentAudit,
+    auditTotal: Number(auditCounts?.total ?? 0),
     dissents: allDissents,
     insightTotal: Number(insightCounts?.total ?? 0),
     insightProposedTotal: Number(insightCounts?.proposed ?? 0),
@@ -157,6 +150,7 @@ export async function getReviewData(
     dissentOffset,
     limit,
     auditStats,
+    autonomyDecisions,
     config,
     weeklyMetrics,
   };

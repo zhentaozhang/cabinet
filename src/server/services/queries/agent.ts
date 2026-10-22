@@ -1,7 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, memories, runs, skills, tasks, users } from "@/lib/db/schema";
-import { loadWeeklyUsage } from "../commands/tasks/execution";
+import { loadWeeklyUsage } from "./budget";
 export async function getAgentData(agentId: string, userId: string) {
   // Ownership is part of the WHERE clause, not a post-fetch check.
   const [agent] = await db

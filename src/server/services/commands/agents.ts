@@ -1,9 +1,7 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { agents, auditEvents, tasks } from "@/lib/db/schema";
+import { agents, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
-import { getPolicyConfig } from "@/lib/policy/config";
-import { decideUpgrade } from "@/lib/domain/policy";
 import { assertTransition } from "@/lib/domain/state";
 import {
   ConflictError,
@@ -11,54 +9,36 @@ import {
   PolicyDenied,
   ValidationError,
 } from "@/lib/domain/errors";
+import {
+  evaluateAutonomyUpgrade,
+  loadAutonomyDecisions,
+  type AutonomyUpgradeResult,
+} from "../queries/autonomy";
+
+export { evaluateAutonomyUpgrade, loadAutonomyDecisions };
+export type { AutonomyUpgradeResult };
 
 export async function setAutonomy(agentId: string, level: number, userId: string) {
-  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-  if (!agent || agent.userId !== userId) {
-    throw new NotFoundError("Agent not found");
-  }
   if (level < 0 || level > 3) throw new ConflictError("Invalid autonomy level");
 
-  const config = await getPolicyConfig();
-  const auditRows = await db
-    .select({ action: auditEvents.action })
-    .from(auditEvents)
-    .innerJoin(tasks, eq(tasks.id, auditEvents.target))
-    .where(
-      and(
-        eq(tasks.assigneeId, agentId),
-        inArray(auditEvents.action, ["audit.accept", "audit.reject"]),
-      ),
-    )
-    .orderBy(desc(auditEvents.seq))
-    .limit(config.audit.passRateWindow);
-
-  const accepts = auditRows.filter(
-    (row) => row.action === "audit.accept",
-  ).length;
-  const auditPassRate =
-    auditRows.length > 0 ? accepts / auditRows.length : 0;
-
-  const decision = decideUpgrade({
-    actor: {
-      id: agent.id,
-      role: agent.role,
-      status: agent.status,
-      lifecycleStage: agent.lifecycleStage,
-      autonomyLevel: agent.autonomyLevel,
-      trustScore: agent.trustScore,
-      successCount: agent.successCount,
-    },
-    targetLevel: level,
-    auditPassRate,
-    config,
-  });
-
-  if (decision.effect === "deny") {
-    throw new PolicyDenied(decision.reason);
-  }
-
   return db.transaction(async (tx) => {
+    // Lock the Agent row first. The same ordering as `auditTask` (agent row,
+    // then audit event) keeps concurrent audits and promotions from deadlocking,
+    // and makes the decision and the write read the same row version.
+    const [agent] = await tx
+      .select()
+      .from(agents)
+      .where(and(eq(agents.id, agentId), eq(agents.userId, userId)))
+      .for("update");
+    if (!agent) throw new NotFoundError("Agent not found");
+
+    const result = await evaluateAutonomyUpgrade(agentId, level, userId, tx);
+    if (!result.allowed) {
+      throw new PolicyDenied(result.reason);
+    }
+
+    // Guard every column the decision depended on: an intervening pause,
+    // retirement, trust change or level change must invalidate this write.
     const [updated] = await tx
       .update(agents)
       .set({ autonomyLevel: level })
@@ -66,21 +46,37 @@ export async function setAutonomy(agentId: string, level: number, userId: string
         and(
           eq(agents.id, agentId),
           eq(agents.autonomyLevel, agent.autonomyLevel),
+          eq(agents.status, agent.status),
+          eq(agents.lifecycleStage, agent.lifecycleStage),
+          eq(agents.trustScore, agent.trustScore),
+          eq(agents.successCount, agent.successCount),
         ),
       )
       .returning();
-    if (!updated) throw new ConflictError("Agent autonomy changed; retry.");
+    if (!updated) throw new ConflictError("Agent state changed; retry.");
 
     await logAuditTx(tx, {
-      userId: agent.userId,
+      userId,
       actor: "user",
       action: "autonomy.change",
       target: agentId,
-      before: { level: agent.autonomyLevel },
-      after: { level, auditPassRate, reason: decision.reason },
+      before: { level: agent.autonomyLevel, status: agent.status },
+      after: {
+        level,
+        status: updated.status,
+        passRate: result.passRate,
+        samples: result.samples,
+        code: result.code,
+        reason: result.reason,
+      },
     });
 
-    return { level, auditPassRate };
+    return {
+      level,
+      passRate: result.passRate,
+      samples: result.samples,
+      code: result.code,
+    };
   });
 }
 

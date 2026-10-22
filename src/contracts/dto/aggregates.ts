@@ -78,6 +78,22 @@ export const todayPageSchema = z.object({
 });
 export type TodayPageDto = z.infer<typeof todayPageSchema>;
 
+/**
+ * What the org has actually learned. Counts only — the artefacts themselves
+ * live on /memory and /review, so a cabinet card never has to load them.
+ */
+export const knowledgeSchema = z.object({
+  skills: z.object({ total: z.number(), certified: z.number() }),
+  memories: z.object({ active: z.number(), conflicted: z.number() }),
+  insights: z.object({ applied: z.number(), proposed: z.number() }),
+  dissents: z.object({
+    total: z.number(),
+    vindicated: z.number(),
+    pending: z.number(),
+  }),
+});
+export type KnowledgeDto = z.infer<typeof knowledgeSchema>;
+
 export const cabinetPageSchema = z.object({
   user: userDtoSchema,
   profile: profileDtoSchema.nullable(),
@@ -85,8 +101,32 @@ export const cabinetPageSchema = z.object({
   tasks: z.array(taskDtoSchema),
   /** Keyed by agent id: the current week's ledger view for each card. */
   budgets: z.record(z.string(), budgetViewDtoSchema),
+  knowledge: knowledgeSchema,
 });
 export type CabinetPageDto = z.infer<typeof cabinetPageSchema>;
+
+/** One bucket of the audit-log filter chips. */
+export const auditKindSchema = z.object({
+  kind: z.string(),
+  count: z.number(),
+});
+
+/**
+ * The full hash-chained log. `kinds` always describes the whole log, not the
+ * filtered slice, so the chips keep stable counts while paging.
+ */
+export const auditPageSchema = z.object({
+  timezone: z.string(),
+  events: z.array(auditEventDtoSchema),
+  kinds: z.array(auditKindSchema),
+  kind: z.string().nullable(),
+  total: z.number(),
+  filteredTotal: z.number(),
+  offset: z.number(),
+  limit: z.number(),
+  hasMore: z.boolean(),
+});
+export type AuditPageDto = z.infer<typeof auditPageSchema>;
 
 export const reviewPageSchema = z.object({
   user: userDtoSchema,
@@ -96,6 +136,7 @@ export const reviewPageSchema = z.object({
   agents: z.array(agentDtoSchema),
   tasks: z.array(taskDtoSchema),
   audit: z.array(auditEventDtoSchema),
+  auditTotal: z.number(),
   dissents: z.array(dissentDtoSchema),
   insightTotal: z.number(),
   insightProposedTotal: z.number(),
@@ -109,6 +150,21 @@ export const reviewPageSchema = z.object({
     z.object({
       accepts: z.number(),
       total: z.number(),
+      passRate: z.number(),
+    }),
+  ),
+  /**
+   * Per-Agent autonomy verdict computed by the command layer. The page renders
+   * this object instead of recomputing thresholds from counters.
+   */
+  autonomyDecisions: z.record(
+    z.string(),
+    z.object({
+      allowed: z.boolean(),
+      level: z.number(),
+      code: z.string().nullable(),
+      reason: z.string(),
+      samples: z.number(),
       passRate: z.number(),
     }),
   ),

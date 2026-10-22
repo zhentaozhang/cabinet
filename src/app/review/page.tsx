@@ -24,7 +24,6 @@ import {
   VerifyAuditButton,
   WeeklyReviewButton,
 } from "@/components/actions";
-import type { PolicyConfigDto } from "@/contracts";
 import { Markdown } from "@/components/markdown";
 
 export const metadata: Metadata = {
@@ -33,39 +32,62 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-type AuditStat = { accepts: number; total: number; passRate: number };
+type AutonomyDecision = {
+  allowed: boolean;
+  level: number;
+  code: string | null;
+  reason: string;
+  samples: number;
+  passRate: number;
+};
 
+const DENIAL_LABELS: Record<string, string> = {
+  insufficient_samples: "样本不足",
+  low_pass_rate: "通过率不足",
+  low_trust: "信用不足",
+  too_few_successes: "成功次数不足",
+  not_eligible_role: "不在岗",
+  retired: "已退休",
+  paused: "已暂停",
+};
+
+/**
+ * Renders the verdict the command layer already made. This function must never
+ * compare thresholds itself: the badge and the promotion write have to agree,
+ * and only the backend knows which audits count as evidence.
+ */
 function recommendation(
-  agent: {
-    role: string;
-    lifecycleStage: string;
-    trustScore: number;
-    successCount: number;
-    failCount: number;
-  },
-  stats: AuditStat,
-  config: PolicyConfigDto,
+  agent: { role: string; lifecycleStage: string; failCount: number; successCount: number },
+  decision: AutonomyDecision | undefined,
 ) {
   if (agent.role === "apprentice" && agent.lifecycleStage !== "active") {
-    return { label: "待转正", tone: "accent" as const };
-  }
-  if (stats.total === 0) {
-    return { label: "暂无审计", tone: "neutral" as const };
+    return { label: "待转正", tone: "accent" as const, title: "学徒需先通过转正考核。" };
   }
   if (agent.failCount > agent.successCount) {
-    return { label: "考虑退休", tone: "danger" as const };
+    return {
+      label: "考虑退休",
+      tone: "danger" as const,
+      title: "驳回次数多于通过次数。",
+    };
   }
-  if (
-    agent.trustScore >= config.autonomy.minTrust &&
-    agent.successCount >= config.autonomy.minSuccesses &&
-    stats.passRate >= config.autonomy.minAuditPassRate
-  ) {
-    return { label: "可升级", tone: "teal" as const };
+  if (!decision) {
+    return { label: "暂无结论", tone: "neutral" as const, title: "尚未计算授权结论。" };
   }
-  if (agent.trustScore < 60) {
-    return { label: "观察", tone: "accent" as const };
+  if (decision.allowed) {
+    return {
+      label: "可升级",
+      tone: "teal" as const,
+      title: `${decision.samples} 个有效样本，通过率 ${(decision.passRate * 100).toFixed(0)}%。`,
+    };
   }
-  return { label: "保持", tone: "neutral" as const };
+  const label = decision.code ? DENIAL_LABELS[decision.code] : undefined;
+  return {
+    label: label ?? "保持",
+    tone: (decision.code === "paused" || decision.code === "retired"
+      ? "danger"
+      : "neutral") as "danger" | "neutral",
+    title: decision.reason,
+  };
 }
 
 const DISSENT_STATUS: Record<
@@ -353,12 +375,7 @@ export default async function ReviewPage({
                 const rate = passRate(agent.successCount, agent.failCount);
                 const rec = recommendation(
                   agent,
-                  data.auditStats[agent.id] ?? {
-                    accepts: 0,
-                    total: 0,
-                    passRate: 0,
-                  },
-                  data.config,
+                  data.autonomyDecisions[agent.id],
                 );
                 const meta = roleMeta(agent.role);
                 return (
@@ -372,10 +389,12 @@ export default async function ReviewPage({
                       <div className="truncate text-label text-ink">{agent.name}</div>
                       <div className="text-label text-faint">
                         {rate}% pass · L{agent.autonomyLevel} ·{" "}
-                        {(data.auditStats[agent.id]?.total ?? 0)} 个审计样本
+                        {data.auditStats[agent.id]?.total ?? 0} 个有效审计样本
                       </div>
                     </div>
-                    <Badge tone={rec.tone}>{rec.label}</Badge>
+                    <span title={rec.title}>
+                      <Badge tone={rec.tone}>{rec.label}</Badge>
+                    </span>
                   </Link>
                 );
               })}
@@ -406,8 +425,14 @@ export default async function ReviewPage({
                 </div>
               ))}
             </div>
-            <div className="border-t border-line px-5 py-2.5 text-label text-faint">
-              哈希链：每条记录包含前一条的 hash，改动可被发现。
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-2.5 text-label text-faint">
+              <span>哈希链：每条记录包含前一条的 hash，改动可被发现。</span>
+              <Link
+                href="/review/audit"
+                className="inline-flex items-center gap-1 text-muted hover:text-ink"
+              >
+                查看全部 <ArrowRight className="size-3" />
+              </Link>
             </div>
           </Card>
 

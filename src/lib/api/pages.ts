@@ -4,6 +4,7 @@ import type { z } from "zod";
 
 import {
   agentPageSchema,
+  auditPageSchema,
   cabinetPageSchema,
   councilPageSchema,
   memoryPageSchema,
@@ -95,6 +96,16 @@ export async function fetchMemoryPage(
   const result = await loadPage(`/api/memory${query}`, memoryPageSchema);
   if ("missing" in result) redirect("/setup");
   return result.data;
+}
+
+export async function fetchAuditPage(
+  options: { kind?: string | null; offset?: number } = {},
+) {
+  const params = new URLSearchParams();
+  if (options.kind) params.set("kind", options.kind);
+  if (options.offset) params.set("offset", String(options.offset));
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return loadPage(`/api/audit${suffix}`, auditPageSchema);
 }
 
 export async function fetchCouncilPage(): Promise<CouncilPageDto | null> {

@@ -7,3 +7,4 @@ export { loadAgent } from "./agent";
 export { loadAgentCard } from "./agent-card";
 export { loadTask } from "./task";
 export { loadShell } from "./shell";
+export { loadAudit } from "./audit";
