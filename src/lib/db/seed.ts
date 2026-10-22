@@ -66,6 +66,7 @@ export async function seedDemo(): Promise<void> {
   await db.execute(sql`
     TRUNCATE TABLE
       agent_budget_reservations, agent_budget_periods,
+      apprentice_exam_snapshots, apprentice_observations,
       dissents, council_positions, councils, skills, checkins, audit_events, approvals,
       reviews, insights, memories, artifacts, steps, runs, tasks, goals,
       agent_grants, agent_templates, agents, profiles, policy_config,

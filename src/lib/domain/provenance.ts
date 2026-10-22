@@ -64,3 +64,23 @@ export function isEligibleAuditSample(input: AuditSampleInput): boolean {
     input.hasProviderAttempt
   );
 }
+
+/**
+ * Training evidence is stricter than audit evidence: the observed run must have
+ * succeeded on a task the user actually accepted, so "the mentor ran something"
+ * cannot be recorded as practice.
+ */
+export type TrainingObservationInput = AuditSampleInput & {
+  runStatus: string;
+  taskStatus: string;
+};
+
+export function isEligibleTrainingObservation(
+  input: TrainingObservationInput,
+): boolean {
+  return (
+    isEligibleAuditSample(input) &&
+    input.runStatus === "succeeded" &&
+    (input.taskStatus === "accepted" || input.taskStatus === "done")
+  );
+}

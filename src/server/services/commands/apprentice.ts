@@ -1,6 +1,15 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { agents, artifacts, runs, skills, steps, tasks } from "@/lib/db/schema";
+import {
+  agents,
+  apprenticeExamSnapshots,
+  apprenticeObservations,
+  artifacts,
+  runs,
+  skills,
+  steps,
+  tasks,
+} from "@/lib/db/schema";
 import { APPRENTICE_SKILL } from "@/contracts/templates";
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
@@ -11,144 +20,261 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/lib/domain/errors";
-import { clamp } from "../shared/numbers";
+import {
+  eligibleMentorRuns,
+  loadApprentice,
+  loadObservations,
+  readLatestSkill,
+  resolveMentor,
+  type ApprenticeshipEvidence,
+  type ObservationCandidate,
+} from "../queries/apprenticeship";
 import { draftFor } from "../shared/draft";
 import { auditTask } from "./tasks/audit";
 
 const EXAM_ATTEMPT_LIMIT = 2;
 const EXAM_LIFECYCLE_STAGES = ["shadowing", "drafting", "examining"] as const;
 
-export async function runApprenticeExam(userId: string) {
-  const [apprentice] = await db
-    .select()
-    .from(agents)
-    .where(and(eq(agents.userId, userId), eq(agents.role, "apprentice")))
-    .limit(1);
-  if (!apprentice) {
-    throw new NotFoundError("Apprentice not found");
-  }
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-  if (apprentice.status === "retired") {
-    throw new ValidationError("Apprentice is retired and cannot take the exam.");
-  }
+export type { ApprenticeshipEvidence, ObservationCandidate };
 
-  if (!EXAM_LIFECYCLE_STAGES.includes(apprentice.lifecycleStage as (typeof EXAM_LIFECYCLE_STAGES)[number])) {
-    throw new ConflictError(
-      `Apprentice is already ${apprentice.lifecycleStage}.`,
+export type RecordObservationResult = {
+  id: string;
+  runId: string;
+  duplicate: boolean;
+  observed: number;
+};
+
+/** The command-side skill row: created on demand so the exam always has a target. */
+async function ensureApprenticeSkill(tx: Tx, apprenticeId: string) {
+  const existing = await readLatestSkill(tx, apprenticeId);
+  if (existing) return existing;
+
+  await tx.insert(skills).values({
+    id: newId("sk"),
+    agentId: apprenticeId,
+    name: APPRENTICE_SKILL.name,
+    version: 1,
+    steps: [...APPRENTICE_SKILL.steps],
+    tools: [...APPRENTICE_SKILL.tools],
+    status: "draft",
+    label: "draft",
+    evalSet: APPRENTICE_SKILL.evalSet.map((item) => ({ ...item })),
+    successCount: 0,
+    failCount: 0,
+    eval: {
+      status: "not_started",
+      required: APPRENTICE_SKILL.evalSet.length,
+      passed: 0,
+    },
+  });
+  const created = await readLatestSkill(tx, apprenticeId);
+  if (!created) {
+    throw new ConflictError("Apprentice skill could not be created.");
+  }
+  return created;
+}
+
+export async function recordApprenticeObservation(
+  userId: string,
+  runId: string,
+): Promise<RecordObservationResult> {
+  return db.transaction(async (tx) => {
+    const apprentice = await loadApprentice(userId, tx);
+    if (
+      apprentice.status === "retired" ||
+      apprentice.lifecycleStage === "retired"
+    ) {
+      throw new ValidationError("已退休的学徒不能再记录观摩。");
+    }
+    const mentor = await resolveMentor(userId, apprentice.mentorId, tx);
+    const skill = await ensureApprenticeSkill(tx, apprentice.id);
+    const [candidate] = await eligibleMentorRuns(userId, mentor.id, tx, runId);
+    if (!candidate) {
+      throw new ValidationError(
+        "这条运行不能作为观摩证据：需要 mentor 的真实模型运行，且任务已经验收通过。",
+      );
+    }
+
+    const [inserted] = await tx
+      .insert(apprenticeObservations)
+      .values({
+        id: newId("obs"),
+        userId,
+        apprenticeId: apprentice.id,
+        mentorId: mentor.id,
+        skillId: skill.id,
+        skillVersion: skill.version,
+        taskId: candidate.taskId,
+        runId,
+        artifactId: candidate.artifactId,
+        attestedByUserId: userId,
+        qualification: "qualified",
+      })
+      .onConflictDoNothing({
+        target: [
+          apprenticeObservations.apprenticeId,
+          apprenticeObservations.skillId,
+          apprenticeObservations.skillVersion,
+          apprenticeObservations.runId,
+        ],
+      })
+      .returning();
+
+    const observations = await loadObservations(
+      apprentice.id,
+      skill.id,
+      skill.version,
+      tx,
     );
-  }
 
-  const [auditor] = await db
-    .select()
-    .from(agents)
-    .where(and(eq(agents.userId, userId), eq(agents.role, "auditor")))
-    .limit(1);
-  if (!auditor) {
-    throw new ValidationError("Auditor not found for this workspace.");
-  }
+    if (!inserted) {
+      const existing = observations.find((row) => row.runId === runId);
+      if (!existing) {
+        throw new ConflictError("观摩记录写入冲突，请重试。");
+      }
+      return {
+        id: existing.id,
+        runId,
+        duplicate: true,
+        observed: observations.length,
+      };
+    }
 
-  const [coach] = await db
-    .select()
-    .from(agents)
-    .where(and(eq(agents.userId, userId), eq(agents.role, "coach")))
-    .limit(1);
-
-  const mentorId = apprentice.mentorId ?? coach?.id ?? null;
-  const observerIds = mentorId ? [apprentice.id, mentorId] : [apprentice.id];
-  const [shadowRow] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(runs)
-    .where(
-      and(
-        inArray(runs.agentId, observerIds),
-        eq(runs.status, "succeeded"),
-      ),
-    );
-  const shadowRuns = Number(shadowRow?.count ?? 0);
-  if (shadowRuns < APPRENTICE_SKILL.minShadowRuns) {
-    throw new ValidationError(
-      `Apprentice needs ${APPRENTICE_SKILL.minShadowRuns} successful mentor/apprentice runs before the exam; found ${shadowRuns}.`,
-    );
-  }
-
-  let [skill] = await db
-    .select()
-    .from(skills)
-    .where(eq(skills.agentId, apprentice.id))
-    .orderBy(desc(skills.createdAt))
-    .limit(1);
-
-  if (!skill) {
-    await db.insert(skills).values({
-      id: newId("sk"),
-      agentId: apprentice.id,
-      name: APPRENTICE_SKILL.name,
-      version: 1,
-      steps: [...APPRENTICE_SKILL.steps],
-      tools: [...APPRENTICE_SKILL.tools],
-      status: "draft",
-      label: "draft",
-      evalSet: APPRENTICE_SKILL.evalSet.map((item) => ({ ...item })),
-      successCount: 0,
-      failCount: 0,
-      eval: {
-        status: "not_started",
-        required: APPRENTICE_SKILL.evalSet.length,
-        passed: 0,
+    await logAuditTx(tx, {
+      userId,
+      actor: `user:${userId}`,
+      action: "apprentice.observation_recorded",
+      target: apprentice.id,
+      before: null,
+      after: {
+        runId,
+        mentorId: mentor.id,
+        skillId: skill.id,
+        skillVersion: skill.version,
+        observed: observations.length,
+        required: APPRENTICE_SKILL.minShadowRuns,
       },
     });
-    [skill] = await db
+
+    return {
+      id: inserted.id,
+      runId,
+      duplicate: false,
+      observed: observations.length,
+    };
+  });
+}
+
+export async function runApprenticeExam(userId: string) {
+  const attempt = await db.transaction(async (tx) => {
+    // One lock serialises both attempts and the stage checks that follow.
+    const [apprentice] = await tx
       .select()
-      .from(skills)
-      .where(eq(skills.agentId, apprentice.id))
-      .orderBy(desc(skills.createdAt))
+      .from(agents)
+      .where(and(eq(agents.userId, userId), eq(agents.role, "apprentice")))
+      .limit(1)
+      .for("update");
+    if (!apprentice) {
+      throw new NotFoundError("Apprentice not found");
+    }
+    if (apprentice.status === "retired") {
+      throw new ValidationError("Apprentice is retired and cannot take the exam.");
+    }
+    if (
+      !EXAM_LIFECYCLE_STAGES.includes(
+        apprentice.lifecycleStage as (typeof EXAM_LIFECYCLE_STAGES)[number],
+      )
+    ) {
+      throw new ConflictError(
+        `Apprentice is already ${apprentice.lifecycleStage}.`,
+      );
+    }
+
+    const [auditor] = await tx
+      .select()
+      .from(agents)
+      .where(and(eq(agents.userId, userId), eq(agents.role, "auditor")))
       .limit(1);
-  }
+    if (!auditor) {
+      throw new ValidationError("Auditor not found for this workspace.");
+    }
 
-  const examChecklist =
-    skill?.evalSet && skill.evalSet.length > 0
-      ? skill.evalSet
-      : APPRENTICE_SKILL.evalSet.map((item) => ({ ...item }));
-  if (examChecklist.length === 0) {
-    throw new ValidationError("Skill has no eval set; cannot run the exam.");
-  }
+    const mentor = await resolveMentor(userId, apprentice.mentorId, tx);
+    const skill = await ensureApprenticeSkill(tx, apprentice.id);
+    const observations = await loadObservations(
+      apprentice.id,
+      skill.id,
+      skill.version,
+      tx,
+    );
+    const requiredObservations = APPRENTICE_SKILL.minShadowRuns;
+    if (observations.length < requiredObservations) {
+      throw new ValidationError(
+        `学徒需要先记录 ${requiredObservations} 条观摩证据才能参加考试；当前 ${observations.length} 条。`,
+      );
+    }
 
-  // The exam artifact is a deterministic simulation, not a model-produced
-  // piece of work. It is submitted and audited through the normal task path so
-  // the acceptance report and audit chain are real even though the draft is
-  // simulated.
-  const attempt = (skill?.failCount ?? 0) + 1;
-  const examDraft = draftFor(
-    "apprentice",
-    skill?.name ?? APPRENTICE_SKILL.name,
-    0,
-  );
-  const examResults = evaluateAcceptance(examDraft.content, examChecklist);
-  const required = examChecklist.length;
-  const passed = examResults.filter((result) => result.passed).length;
+    const examChecklist =
+      skill.evalSet && skill.evalSet.length > 0
+        ? skill.evalSet
+        : APPRENTICE_SKILL.evalSet.map((item) => ({ ...item }));
+    if (examChecklist.length === 0) {
+      throw new ValidationError("Skill has no eval set; cannot run the exam.");
+    }
 
-  let nextStage = apprentice.lifecycleStage;
-  if (nextStage === "shadowing") {
-    assertTransition("apprentice", "shadowing", "drafting");
-    nextStage = "drafting";
-  }
-  if (nextStage !== "examining") {
-    assertTransition("apprentice", nextStage, "examining");
-    nextStage = "examining";
-  }
+    const attemptNo =
+      (
+        await tx
+          .select({ count: sql<number>`count(*)` })
+          .from(apprenticeExamSnapshots)
+          .where(
+            and(
+              eq(apprenticeExamSnapshots.apprenticeId, apprentice.id),
+              eq(apprenticeExamSnapshots.skillId, skill.id),
+              eq(apprenticeExamSnapshots.skillVersion, skill.version),
+            ),
+          )
+      )[0]?.count ?? 0;
+    const attemptCount = Number(attemptNo) + 1;
 
-  const examTaskId =
-    attempt === 1 ? `exam_${apprentice.id}` : `exam_${apprentice.id}_${attempt}`;
-  const runId = newId("run");
-  const artifactId = newId("art");
+    // The exam artifact is a deterministic simulation, not a model-produced
+    // piece of work. It is submitted and audited through the normal task path so
+    // the acceptance report and audit chain are real even though the draft is
+    // simulated.
+    const examDraft = draftFor("apprentice", skill.name, 0);
+    const examResults = evaluateAcceptance(examDraft.content, examChecklist);
+    const required = examChecklist.length;
+    const passed = examResults.filter((result) => result.passed).length;
 
-  await db.transaction(async (tx) => {
+    let nextStage = apprentice.lifecycleStage;
+    if (nextStage === "shadowing") {
+      assertTransition("apprentice", "shadowing", "drafting");
+      nextStage = "drafting";
+    }
+    if (nextStage !== "examining") {
+      assertTransition("apprentice", nextStage, "examining");
+      nextStage = "examining";
+    }
+
+    const examTaskId =
+      attemptCount === 1
+        ? `exam_${apprentice.id}`
+        : `exam_${apprentice.id}_${attemptCount}`;
+    const runId = newId("run");
+    const artifactId = newId("art");
+    const snapshotId = newId("exs");
+
     await tx.insert(tasks).values({
       id: examTaskId,
       userId: apprentice.userId,
-      title: attempt === 1 ? "学徒结业考试" : `学徒结业考试（第 ${attempt} 次）`,
+      title:
+        attemptCount === 1
+          ? "学徒结业考试"
+          : `学徒结业考试（第 ${attemptCount} 次）`,
       description:
-        "模拟留出考试：由确定性模板生成技能草案，覆盖技能 eval set；Auditor 通过常规审计流程验收。",
+        "模拟留出考试：由确定性模板生成技能草案，覆盖技能 eval set；Auditor 通过常规审计流程验收。通过只代表练习完成，不代表转正。",
       assigneeId: apprentice.id,
       auditorId: auditor.id,
       status: "submitted",
@@ -175,7 +301,7 @@ export async function runApprenticeExam(userId: string) {
       costCents: 0,
       tokensIn: null,
       tokensOut: null,
-      replayKey: `apprentice_exam_v1#${attempt}`,
+      replayKey: `apprentice_exam_v1#${attemptCount}`,
     });
     await tx.insert(artifacts).values({
       id: artifactId,
@@ -194,11 +320,11 @@ export async function runApprenticeExam(userId: string) {
         type: "tool",
         tool: "read_runs",
         input: {
-          mentor: mentorId,
-          runs: shadowRuns,
-          minShadowRuns: APPRENTICE_SKILL.minShadowRuns,
+          mentor: mentor.id,
+          observations: observations.length,
+          required: requiredObservations,
         },
-        output: { loaded: Math.min(shadowRuns, APPRENTICE_SKILL.minShadowRuns) },
+        output: { loaded: observations.length },
         tokensIn: 200,
         tokensOut: 0,
         latencyMs: 120,
@@ -208,7 +334,7 @@ export async function runApprenticeExam(userId: string) {
         runId,
         idx: 2,
         type: "draft",
-        input: { skill: skill?.name ?? APPRENTICE_SKILL.name, simulated: true },
+        input: { skill: skill.name, simulated: true },
         output: { rubric: true, artifactId },
         tokensIn: 120,
         tokensOut: 160,
@@ -219,7 +345,7 @@ export async function runApprenticeExam(userId: string) {
         runId,
         idx: 3,
         type: "audit",
-        input: { heldOutTasks: required, attempt },
+        input: { heldOutTasks: required, attempt: attemptCount },
         output: { passed, required, results: examResults },
         tokensIn: 80,
         tokensOut: 60,
@@ -227,9 +353,23 @@ export async function runApprenticeExam(userId: string) {
       },
     ]);
 
+    // The snapshot is written with the attempt so concurrent callers cannot both
+    // claim the same evidence, and a retry reuses the same observations.
+    await tx.insert(apprenticeExamSnapshots).values({
+      id: snapshotId,
+      userId,
+      apprenticeId: apprentice.id,
+      skillId: skill.id,
+      skillVersion: skill.version,
+      attemptNo: attemptCount,
+      runId,
+      observationIds: observations.map((row) => row.id),
+      passed: false,
+    });
+
     await tx
       .update(agents)
-      .set({ lifecycleStage: "examining" })
+      .set({ lifecycleStage: nextStage })
       .where(
         and(
           eq(agents.id, apprentice.id),
@@ -238,7 +378,7 @@ export async function runApprenticeExam(userId: string) {
       );
 
     await logAuditTx(tx, {
-      userId: apprentice.userId,
+      userId,
       actor: `agent:${apprentice.id}`,
       action: "task.submit",
       target: examTaskId,
@@ -247,119 +387,147 @@ export async function runApprenticeExam(userId: string) {
         status: "submitted",
         runId,
         artifactId,
-        attempt,
+        attempt: attemptCount,
         simulated: true,
+        observations: observations.length,
       },
     });
+
+    return {
+      apprenticeId: apprentice.id,
+      currentStage: apprentice.lifecycleStage,
+      skillId: skill.id,
+      skillVersion: skill.version,
+      skillName: skill.name,
+      snapshotId,
+      observationIds: observations.map((row) => row.id),
+      observed: observations.length,
+      requiredObservations,
+      attempt: attemptCount,
+      examTaskId,
+      runId,
+      passed,
+      required,
+      examResults,
+      failCount: skill.failCount,
+    };
   });
 
-  const audit = await auditTask(examTaskId, userId);
-  const promoted = audit.decision === "accepted";
+  const audit = await auditTask(attempt.examTaskId, userId);
+  const practicePassed = audit.decision === "accepted";
 
   const result = await db.transaction(async (tx) => {
     const [current] = await tx
       .select()
       .from(agents)
-      .where(eq(agents.id, apprentice.id))
+      .where(eq(agents.id, attempt.apprenticeId))
       .limit(1);
     if (!current) {
       throw new NotFoundError("Apprentice not found");
     }
 
-    if (promoted) {
-      const [promotedAgent] = await tx
+    if (practicePassed) {
+      assertTransition("apprentice", current.lifecycleStage, "practice_passed");
+      const [passedAgent] = await tx
         .update(agents)
         .set({
-          lifecycleStage: "active",
-          status: "active",
-          trustScore: clamp(current.trustScore + 10),
-          autonomyLevel: 2,
+          lifecycleStage: "practice_passed",
           rejectStreak: 0,
         })
         .where(
           and(
-            eq(agents.id, apprentice.id),
-            inArray(agents.lifecycleStage, [...EXAM_LIFECYCLE_STAGES]),
+            eq(agents.id, attempt.apprenticeId),
+            eq(agents.lifecycleStage, "examining"),
           ),
         )
         .returning();
-      if (!promotedAgent) {
-        throw new ConflictError("Apprentice was already promoted.");
+      if (!passedAgent) {
+        throw new ConflictError("Apprentice state changed; retry.");
       }
 
-      if (skill) {
-        await tx
-          .update(skills)
-          .set({
-            status: "active",
-            label: "production",
-            successCount: 1,
-            eval: {
-              status: "passed",
-              required,
-              passed,
-              results: examResults,
-              attempt,
-              taskId: examTaskId,
-            },
-          })
-          .where(
-            and(
-              eq(skills.id, skill.id),
-              inArray(skills.status, ["draft", "exam"]),
-            ),
-          );
-      }
-
-      await logAuditTx(tx, {
-        userId: apprentice.userId,
-        actor: `agent:${auditor.id}`,
-        action: "apprentice.promote",
-        target: apprentice.id,
-        before: { stage: current.lifecycleStage },
-        after: {
-          stage: "active",
-          exam: `${passed}/${required}`,
-          skill: "active",
-          taskId: examTaskId,
-        },
-      });
-      return { promoted: true, retired: false, failedAttempts: skill?.failCount ?? 0 };
-    }
-
-    const failedAttempts = (skill?.failCount ?? 0) + 1;
-    const retired = failedAttempts >= EXAM_ATTEMPT_LIMIT;
-    if (skill) {
+      // The exam is practice only: the skill stays a draft and the Agent keeps
+      // its trust level and autonomy until a real evaluation exists.
       await tx
         .update(skills)
         .set({
-          failCount: failedAttempts,
+          label: "practice",
           eval: {
-            status: "failed",
-            required,
-            passed,
-            results: examResults,
-            attempt,
-            failedAttempts,
-            taskId: examTaskId,
+            status: "practice_passed",
+            required: attempt.required,
+            passed: attempt.passed,
+            results: attempt.examResults,
+            attempt: attempt.attempt,
+            taskId: attempt.examTaskId,
+            observations: attempt.observationIds.length,
           },
         })
-        .where(eq(skills.id, skill.id));
+        .where(
+          and(
+            eq(skills.id, attempt.skillId),
+            inArray(skills.status, ["draft", "exam"]),
+          ),
+        );
+
+      await tx
+        .update(apprenticeExamSnapshots)
+        .set({ passed: true })
+        .where(eq(apprenticeExamSnapshots.id, attempt.snapshotId));
+
+      await logAuditTx(tx, {
+        userId,
+        actor: `agent:${attempt.apprenticeId}`,
+        action: "apprentice.practice_passed",
+        target: attempt.apprenticeId,
+        before: { stage: current.lifecycleStage },
+        after: {
+          stage: "practice_passed",
+          exam: `${attempt.passed}/${attempt.required}`,
+          skill: "practice",
+          observations: attempt.observationIds.length,
+          taskId: attempt.examTaskId,
+        },
+      });
+
+      return {
+        promoted: false,
+        practicePassed: true,
+        retired: false,
+        failedAttempts: attempt.failCount,
+      };
     }
 
+    const failedAttempts = attempt.failCount + 1;
+    const retired = failedAttempts >= EXAM_ATTEMPT_LIMIT;
+    await tx
+      .update(skills)
+      .set({
+        failCount: failedAttempts,
+        eval: {
+          status: "failed",
+          required: attempt.required,
+          passed: attempt.passed,
+          results: attempt.examResults,
+          attempt: attempt.attempt,
+          failedAttempts,
+          taskId: attempt.examTaskId,
+          observations: attempt.observationIds.length,
+        },
+      })
+      .where(eq(skills.id, attempt.skillId));
+
     await logAuditTx(tx, {
-      userId: apprentice.userId,
-      actor: `agent:${auditor.id}`,
+      userId,
+      actor: `agent:${attempt.apprenticeId}`,
       action: "apprentice.exam_failed",
-      target: apprentice.id,
+      target: attempt.apprenticeId,
       before: { stage: current.lifecycleStage },
       after: {
         stage: retired ? "retired" : "drafting",
-        passed,
-        required,
-        attempt,
+        passed: attempt.passed,
+        required: attempt.required,
+        attempt: attempt.attempt,
         failedAttempts,
-        taskId: examTaskId,
+        taskId: attempt.examTaskId,
       },
     });
 
@@ -375,7 +543,7 @@ export async function runApprenticeExam(userId: string) {
         })
         .where(
           and(
-            eq(agents.id, apprentice.id),
+            eq(agents.id, attempt.apprenticeId),
             inArray(agents.lifecycleStage, [...EXAM_LIFECYCLE_STAGES]),
           ),
         )
@@ -384,10 +552,10 @@ export async function runApprenticeExam(userId: string) {
         throw new ConflictError("Apprentice state changed; retry.");
       }
       await logAuditTx(tx, {
-        userId: apprentice.userId,
+        userId,
         actor: "system",
         action: "apprentice.retired",
-        target: apprentice.id,
+        target: attempt.apprenticeId,
         before: { stage: current.lifecycleStage, status: current.status },
         after: {
           stage: "retired",
@@ -397,7 +565,12 @@ export async function runApprenticeExam(userId: string) {
           failedAttempts,
         },
       });
-      return { promoted: false, retired: true, failedAttempts };
+      return {
+        promoted: false,
+        practicePassed: false,
+        retired: true,
+        failedAttempts,
+      };
     }
 
     assertTransition("apprentice", current.lifecycleStage, "drafting");
@@ -406,7 +579,7 @@ export async function runApprenticeExam(userId: string) {
       .set({ lifecycleStage: "drafting" })
       .where(
         and(
-          eq(agents.id, apprentice.id),
+          eq(agents.id, attempt.apprenticeId),
           eq(agents.lifecycleStage, "examining"),
         ),
       )
@@ -415,8 +588,20 @@ export async function runApprenticeExam(userId: string) {
       throw new ConflictError("Apprentice state changed; retry.");
     }
 
-    return { promoted: false, retired: false, failedAttempts };
+    return {
+      promoted: false,
+      practicePassed: false,
+      retired: false,
+      failedAttempts,
+    };
   });
 
-  return { runId, passed, required, ...result };
+  return {
+    runId: attempt.runId,
+    passed: attempt.passed,
+    required: attempt.required,
+    observed: attempt.observed,
+    requiredObservations: attempt.requiredObservations,
+    ...result,
+  };
 }

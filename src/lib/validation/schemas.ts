@@ -5,6 +5,10 @@ export const insightActionSchema = z.object({
   action: z.enum(["accept", "reject", "rollback"]),
 });
 
+export const apprenticeObservationSchema = z.object({
+  runId: z.string().min(1),
+});
+
 export const autonomySchema = z.object({
   level: z.number().int().min(0).max(3),
 });

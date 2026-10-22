@@ -110,6 +110,7 @@ export const STATUS_LABELS: Record<string, string> = {
   shadowing: "影子学习",
   drafting: "技能草案",
   examining: "考试中",
+  practice_passed: "练习通过",
   // task
   planned: "待执行",
   assigned: "已指派",
@@ -159,7 +160,11 @@ export function statusTone(status: string): BadgeTone {
   if (["rejected", "failed", "retired", "rolled_back"].includes(status))
     return "danger";
   if (["running", "assigned", "approved"].includes(status)) return "blue";
-  if (["paused", "shadowing", "drafting", "examining"].includes(status))
+  if (
+    ["paused", "shadowing", "drafting", "examining", "practice_passed"].includes(
+      status,
+    )
+  )
     return "violet";
   return "neutral";
 }

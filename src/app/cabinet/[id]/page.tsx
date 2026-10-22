@@ -22,7 +22,12 @@ import {
   Progress,
   Stat,
 } from "@/components/ui";
-import { AgentAdmin, AutonomyControl, ExamButton } from "@/components/actions";
+import {
+  AgentAdmin,
+  AutonomyControl,
+  ExamButton,
+  ObservationRecorder,
+} from "@/components/actions";
 
 export const metadata: Metadata = {
   title: "Agent · Cabinet",
@@ -39,7 +44,7 @@ export default async function AgentPage({
   const data = await fetchAgentPage(id);
   if (!data) notFound();
   const tz = data.timezone;
-  const { agent, budget, runs, memories, skills, tasks } = data;
+  const { agent, budget, apprenticeship, runs, memories, skills, tasks } = data;
   const meta = roleMeta(agent.role);
   const rate = passRate(agent.successCount, agent.failCount);
   // Week usage comes from the ledger, never from the frozen agents.spent_cents
@@ -261,11 +266,52 @@ export default async function AgentPage({
                   <div className="rounded-md border border-teal/25 bg-teal/[0.04] px-3 py-2 text-label text-teal">
                     已转正：技能 v1 已激活，可接单。
                   </div>
-                ) : (
-                  <ExamButton />
-                )}
+                ) : null}
+                {agent.lifecycleStage === "practice_passed" ? (
+                  <div className="rounded-md border border-violet/25 bg-violet/[0.05] px-3 py-2 text-label text-violet">
+                    练习通过：确定性考试只证明练习完成，转正需要单独设计的真实评估。
+                  </div>
+                ) : null}
+                {apprenticeship ? (
+                  <>
+                    <div className="mb-2 flex items-center justify-between text-label text-muted">
+                      <span>观摩证据</span>
+                      <span className="mono">
+                        {apprenticeship.observed}/{apprenticeship.required}
+                      </span>
+                    </div>
+                    <Progress
+                      value={Math.min(
+                        1,
+                        apprenticeship.observed / apprenticeship.required,
+                      )}
+                      tone={
+                        apprenticeship.observed >= apprenticeship.required
+                          ? "teal"
+                          : "accent"
+                      }
+                    />
+                    <p className="mt-2 text-label leading-relaxed text-faint">
+                      只有 mentor 的真实模型运行、且任务已验收通过，才能被记录为一次观摩；
+                      记录满 {apprenticeship.required} 条才能参加考试。
+                    </p>
+                    {agent.lifecycleStage !== "active" &&
+                    agent.lifecycleStage !== "practice_passed" ? (
+                      <div className="mt-3">
+                        <ObservationRecorder
+                          candidates={apprenticeship.candidates}
+                          observed={apprenticeship.observed}
+                          required={apprenticeship.required}
+                        />
+                        <div className="mt-3">
+                          <ExamButton />
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
                 <p className="mt-3 text-label leading-relaxed text-faint">
-                  考试由 Auditor 监考；≥4/5 通过。通过后获得技能 v1，信任分 +10。
+                  考试由 Auditor 监考；≥4/5 通过。通过只标记练习完成，不改变信任分与授权等级。
                 </p>
               </div>
             </Card>

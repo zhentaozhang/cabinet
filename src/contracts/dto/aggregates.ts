@@ -198,10 +198,33 @@ export const councilPageSchema = z.object({
 });
 export type CouncilPageDto = z.infer<typeof councilPageSchema>;
 
+/** One mentor run the user may record as observed training evidence. */
+export const observationCandidateSchema = z.object({
+  runId: z.string(),
+  taskId: z.string(),
+  taskTitle: z.string(),
+  artifactId: z.string().nullable(),
+  endedAt: z.string().nullable(),
+});
+
+/** Observation evidence for the apprentice detail surface. */
+export const apprenticeshipEvidenceSchema = z.object({
+  mentorId: z.string(),
+  skillId: z.string(),
+  skillVersion: z.number(),
+  required: z.number(),
+  observed: z.number(),
+  candidates: z.array(observationCandidateSchema),
+});
+export type ApprenticeshipEvidenceDto = z.infer<
+  typeof apprenticeshipEvidenceSchema
+>;
+
 export const agentPageSchema = z.object({
   timezone: z.string(),
   agent: agentDtoSchema,
   budget: budgetViewDtoSchema,
+  apprenticeship: apprenticeshipEvidenceSchema.nullable(),
   runs: z.array(runDtoSchema),
   memories: z.array(memoryDtoSchema),
   skills: z.array(skillDtoSchema),

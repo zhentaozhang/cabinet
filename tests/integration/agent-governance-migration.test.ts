@@ -152,4 +152,76 @@ describe("agent governance migrations", () => {
       await client.end();
     }
   });
+
+  it("applies 0020 without inventing training evidence", async () => {
+    const client = await scratch();
+    try {
+      await applyMigrationsUpTo(client, "0019_autonomy_min_samples");
+      await client.unsafe(`
+        insert into users (id, email, name, timezone)
+        values ('usr_app', 'app@example.com', 'App', 'Asia/Shanghai')
+      `);
+      await client.unsafe(`
+        insert into agents (
+          id, user_id, role, name, title, avatar, charter, objective,
+          tools, memory_scope, lifecycle_stage, mentor_id
+        ) values
+          ('ag_app', 'usr_app', 'apprentice', '学徒', 'Apprentice', 'AP',
+            'charter', 'objective', '[]'::jsonb, '[]'::jsonb, 'shadowing', 'ag_mnt'),
+          ('ag_mnt', 'usr_app', 'coach', '导师', 'Coach', 'MT',
+            'charter', 'objective', '[]'::jsonb, '[]'::jsonb, 'active', null)
+      `);
+      await client.unsafe(`
+        insert into skills (id, agent_id, name, version, steps, tools, eval_set)
+        values ('sk_app', 'ag_app', '检索评估练习设计', 1, '[]'::jsonb,
+          '[]'::jsonb, '[]'::jsonb)
+      `);
+      await client.unsafe(`
+        insert into tasks (id, user_id, title, description, acceptance_criteria)
+        values ('tsk_app', 'usr_app', '标题', '描述', '验收')
+      `);
+      await client.unsafe(`
+        insert into runs (
+          id, task_id, agent_id, status, mode, source_type, provider_attempt_id
+        ) values ('run_app', 'tsk_app', 'ag_mnt', 'succeeded', 'live',
+          'system_event', 'att_app')
+      `);
+      await client.unsafe(`
+        insert into artifacts (id, run_id, task_id, type, title, content,
+          submitted_by, source_type)
+        values ('art_app', 'run_app', 'tsk_app', 'markdown', '标题', '正文',
+          'agent', 'model_generated')
+      `);
+
+      await applyMigrationsFrom(
+        client,
+        "0019_autonomy_min_samples",
+        "0020_apprentice_observations",
+      );
+
+      // Historical mentor work is preserved but never counted as training.
+      const [runs] = await client.unsafe(
+        `select count(*)::int as count from runs where agent_id = 'ag_mnt'`,
+      );
+      expect(runs.count).toBe(1);
+      const [skills] = await client.unsafe(
+        `select count(*)::int as count from skills where agent_id = 'ag_app'`,
+      );
+      expect(skills.count).toBe(1);
+      const [observations] = await client.unsafe(
+        `select count(*)::int as count from apprentice_observations`,
+      );
+      expect(observations.count).toBe(0);
+      const [snapshots] = await client.unsafe(
+        `select count(*)::int as count from apprentice_exam_snapshots`,
+      );
+      expect(snapshots.count).toBe(0);
+      const [agent] = await client.unsafe(
+        `select lifecycle_stage from agents where id = 'ag_app'`,
+      );
+      expect(agent.lifecycle_stage).toBe("shadowing");
+    } finally {
+      await client.end();
+    }
+  });
 });

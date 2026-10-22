@@ -69,7 +69,10 @@ export const TRANSITIONS: Record<
   apprentice: {
     shadowing: ["drafting", "retired"],
     drafting: ["examining", "retired"],
-    examining: ["active", "drafting", "retired"],
+    examining: ["active", "drafting", "practice_passed", "retired"],
+    // A practice pass is the end of the simulated track: only retirement is a
+    // legal next step, real promotion needs a separately designed evaluation.
+    practice_passed: ["retired"],
     active: ["retired"],
     retired: [],
   },

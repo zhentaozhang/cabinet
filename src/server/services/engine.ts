@@ -14,6 +14,7 @@ export * from "./queries/task";
 export * from "./queries/review";
 export * from "./queries/memory";
 export * from "./queries/council";
+export * from "./queries/apprenticeship";
 
 export * from "./commands/agents";
 export * from "./commands/goals";

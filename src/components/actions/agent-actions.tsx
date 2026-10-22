@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Pause, Play, Sparkles, UserMinus } from "lucide-react";
+import {
+  Brain,
+  Loader2,
+  Pause,
+  Play,
+  Sparkles,
+  UserMinus,
+} from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/format";
@@ -53,7 +60,7 @@ export function AutonomyControl({
         ))}
       </div>
       <div className="mt-2 text-label text-faint">
-        升级需要：信任分 ≥70 · 成功任务 ≥3 · 非试用期。
+        升级需要：信任分 ≥70 · 成功任务 ≥3 · 有效审计样本 ≥5 · 非试用期。
       </div>
       {error ? <div className="mt-2 text-label text-danger">{error}</div> : null}
     </div>
@@ -72,6 +79,8 @@ export function ExamButton() {
     let text: string;
     if (!data.ok) {
       text = data.error ?? "失败";
+    } else if (data.practicePassed === true) {
+      text = `练习通过 ${Number(data.passed ?? 0)}/${Number(data.required ?? 0)}，学徒进入“练习通过”；转正还需要单独的评估。`;
     } else if (data.promoted === true) {
       text = `考试通过 ${Number(data.passed ?? 0)}/${Number(data.required ?? 0)}，已转正。`;
     } else if (data.retired === true) {
@@ -80,7 +89,7 @@ export function ExamButton() {
       text = `考试未通过 ${Number(data.passed ?? 0)}/${Number(data.required ?? 0)}，仍在观察期，可复习后重考。`;
     }
     setResult(text);
-    if (data.ok && data.promoted === true) {
+    if (data.ok && (data.practicePassed === true || data.promoted === true)) {
       toast.success(text);
     } else {
       toast.error(text);
@@ -246,6 +255,83 @@ export function AgentAdmin({
       </div>
 
       {msg ? <div className="text-label text-muted">{msg}</div> : null}
+    </div>
+  );
+}
+
+type ObservationCandidate = {
+  runId: string;
+  taskId: string;
+  taskTitle: string;
+  artifactId: string | null;
+  endedAt: string | null;
+};
+
+export function ObservationRecorder({
+  candidates,
+  observed,
+  required,
+}: {
+  candidates: ObservationCandidate[];
+  observed: number;
+  required: number;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function record(runId: string) {
+    setBusy(runId);
+    const data = await call("/api/apprentice/observations", "POST", { runId });
+    setBusy(null);
+    if (!data.ok) {
+      toast.error(data.error ?? "记录失败");
+      return;
+    }
+    toast.success(
+      data.duplicate === true
+        ? "这条运行已经记录过，不会重复计数。"
+        : `已记录观摩（${Number(data.observed ?? observed)}/${required}）`,
+    );
+    router.refresh();
+  }
+
+  if (candidates.length === 0) {
+    return (
+      <div className="rounded-md border border-line bg-panel2 px-3 py-2 text-label leading-relaxed text-faint">
+        暂无可记录的 mentor 运行。需要 mentor 完成一次真实模型执行，且任务已经验收通过。
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="text-label text-muted">可记录的 mentor 运行</div>
+      {candidates.map((candidate) => (
+        <div
+          key={candidate.runId}
+          className="flex items-center justify-between gap-2 rounded-md border border-line bg-panel2 px-2.5 py-1.5"
+        >
+          <div className="min-w-0">
+            <div className="truncate text-label text-fg">{candidate.taskTitle}</div>
+            <div className="mono truncate text-label text-faint">
+              {candidate.runId}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => record(candidate.runId)}
+            disabled={busy !== null}
+          >
+            {busy === candidate.runId ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <Brain className="size-3" />
+            )}
+            记录为观摩
+          </Button>
+        </div>
+      ))}
     </div>
   );
 }

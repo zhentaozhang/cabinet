@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, memories, runs, skills, tasks, users } from "@/lib/db/schema";
 import { loadWeeklyUsage } from "./budget";
+import { loadApprenticeshipEvidence } from "./apprenticeship";
 export async function getAgentData(agentId: string, userId: string) {
   // Ownership is part of the WHERE clause, not a post-fetch check.
   const [agent] = await db
@@ -41,8 +42,14 @@ export async function getAgentData(agentId: string, userId: string) {
   const budget = await loadWeeklyUsage(agentId, timezone, new Date(), undefined, {
     provision: false,
   });
+  // Only the apprentice has training evidence; every other page skips the query.
+  const apprenticeship =
+    agent.role === "apprentice"
+      ? await loadApprenticeshipEvidence(userId)
+      : null;
 
   return {
+    apprenticeship,
     timezone,
     agent,
     budget,

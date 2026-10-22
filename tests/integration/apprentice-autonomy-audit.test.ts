@@ -4,6 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
+  apprenticeExamSnapshots,
   artifacts,
   auditEvents,
   runs,
@@ -11,7 +12,12 @@ import {
   tasks,
   users,
 } from "@/lib/db/schema";
-import { runApprenticeExam, setAutonomy, updateAgent } from "@/lib/engine";
+import {
+  recordApprenticeObservation,
+  runApprenticeExam,
+  setAutonomy,
+  updateAgent,
+} from "@/lib/engine";
 import { verifyAuditChain } from "@/lib/audit";
 import {
   ConflictError,
@@ -25,36 +31,55 @@ beforeEach(async () => {
   await resetDb();
 });
 
+/**
+ * Seeds `count` mentor runs that qualify as training evidence (live execution, a
+ * provider attempt, an accepted task and an agent artifact) and records each one
+ * through the command path, so the exam gate is exercised end to end.
+ */
 async function seedShadowRuns(
   userId: string,
   mentorId: string,
   count = 5,
 ): Promise<void> {
-  const taskId = `tsk_shadow_${mentorId}`;
-  await db.insert(tasks).values({
-    id: taskId,
-    userId,
-    title: "Mentor shadow run",
-    description: "Synthetic mentor task used to seed successful shadow runs.",
-    assigneeId: mentorId,
-    status: "done",
-    acceptanceCriteria: "记录一次 mentor 的成功运行。",
-    estimateMin: 10,
-    actionType: "internal",
-    resource: "task",
-  });
-  await db.insert(runs).values(
-    Array.from({ length: count }, (_, index) => ({
-      id: `run_shadow_${mentorId}_${index}`,
+  for (let index = 0; index < count; index += 1) {
+    const runId = `run_shadow_${mentorId}_${index}`;
+    const taskId = `tsk_shadow_${mentorId}_${index}`;
+    await db.insert(tasks).values({
+      id: taskId,
+      userId,
+      title: "Mentor shadow run",
+      description: "Synthetic mentor task used to seed successful shadow runs.",
+      assigneeId: mentorId,
+      status: "accepted",
+      acceptanceCriteria: "记录一次 mentor 的成功运行。",
+      estimateMin: 10,
+      actionType: "internal",
+      resource: "task",
+    });
+    await db.insert(runs).values({
+      id: runId,
       taskId,
       agentId: mentorId,
       status: "succeeded",
-      mode: "demo",
+      mode: "live",
+      providerAttemptId: `att_shadow_${mentorId}_${index}`,
+      sourceType: "system_event",
       startedAt: new Date(),
       endedAt: new Date(),
       replayKey: `shadow_${mentorId}_${index}`,
-    })),
-  );
+    });
+    await db.insert(artifacts).values({
+      id: `art_shadow_${mentorId}_${index}`,
+      runId,
+      taskId,
+      type: "markdown",
+      title: "Mentor shadow output",
+      content: "mentor output",
+      submittedBy: "agent",
+      sourceType: "model_generated",
+    });
+    await recordApprenticeObservation(userId, runId);
+  }
 }
 
 async function agentByRole(userId: string, role: string) {
@@ -67,29 +92,50 @@ async function agentByRole(userId: string, role: string) {
 }
 
 describe("apprenticeship lifecycle", () => {
-  it("promotes exactly once", async () => {
+  it("practice-passes exactly once without promoting", async () => {
     const coach = await agentByRole(DEMO_USER_ID, "coach");
+    const [before] = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.id, "ag_apprentice"));
     await seedShadowRuns(DEMO_USER_ID, coach.id);
 
     const result = await runApprenticeExam(DEMO_USER_ID);
-    expect(result).toMatchObject({ passed: 5, required: 5, promoted: true });
+    expect(result).toMatchObject({
+      passed: 5,
+      required: 5,
+      promoted: false,
+      practicePassed: true,
+      observed: 5,
+      requiredObservations: 5,
+    });
 
     const [agent] = await db
       .select()
       .from(agents)
       .where(eq(agents.id, "ag_apprentice"));
-    expect(agent.lifecycleStage).toBe("active");
+    expect(agent.lifecycleStage).toBe("practice_passed");
+    expect(agent.status).toBe(before.status);
+    expect(agent.autonomyLevel).toBe(before.autonomyLevel);
+    expect(agent.trustScore).toBe(before.trustScore);
+
+    const [skill] = await db
+      .select()
+      .from(skills)
+      .where(eq(skills.agentId, "ag_apprentice"));
+    expect(skill.label).toBe("practice");
+    expect(skill.status).not.toBe("active");
 
     await expect(runApprenticeExam(DEMO_USER_ID)).rejects.toBeInstanceOf(ConflictError);
   });
 
-  it("refuses the exam before enough successful shadow runs", async () => {
+  it("refuses the exam before enough recorded observations", async () => {
     await expect(runApprenticeExam(DEMO_USER_ID)).rejects.toBeInstanceOf(
       ValidationError,
     );
   });
 
-  it("promotes a newly registered workspace with random agent ids", async () => {
+  it("practice-passes a newly registered workspace with random agent ids", async () => {
     const userId = "usr_apprentice_new";
     await db.insert(users).values({
       id: userId,
@@ -104,19 +150,25 @@ describe("apprenticeship lifecycle", () => {
     await seedShadowRuns(userId, coach.id);
 
     const result = await runApprenticeExam(userId);
-    expect(result).toMatchObject({ passed: 5, required: 5, promoted: true });
+    expect(result).toMatchObject({
+      passed: 5,
+      required: 5,
+      promoted: false,
+      practicePassed: true,
+    });
 
     const [agent] = await db
       .select()
       .from(agents)
       .where(and(eq(agents.userId, userId), eq(agents.role, "apprentice")));
-    expect(agent.lifecycleStage).toBe("active");
+    expect(agent.lifecycleStage).toBe("practice_passed");
+    expect(agent.autonomyLevel).toBe(1);
 
     const [skill] = await db
       .select()
       .from(skills)
       .where(eq(skills.agentId, agent.id));
-    expect(skill.label).toBe("production");
+    expect(skill.label).toBe("practice");
   });
 
   it("records the exam as a submitted task with a real audit accept", async () => {
@@ -192,6 +244,14 @@ describe("apprenticeship lifecycle", () => {
       .from(auditEvents)
       .where(eq(auditEvents.action, "apprentice.retired"));
     expect(retiredAudit).toBeDefined();
+
+    const snapshots = await db
+      .select()
+      .from(apprenticeExamSnapshots)
+      .where(eq(apprenticeExamSnapshots.apprenticeId, "ag_apprentice"))
+      .orderBy(apprenticeExamSnapshots.attemptNo);
+    expect(snapshots.map((row) => row.attemptNo)).toEqual([1, 2]);
+    expect(snapshots.every((row) => row.observationIds.length === 5)).toBe(true);
 
     const chain = await verifyAuditChain(DEMO_USER_ID);
     expect(chain.ok).toBe(true);
