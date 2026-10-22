@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { acceptanceItemSchema } from "@/contracts";
 
 export const insightActionSchema = z.object({
   action: z.enum(["accept", "reject", "rollback"]),
@@ -53,6 +54,7 @@ export const taskCreateSchema = z
     resource: z.string().min(1).default("task"),
     estimatedCostCents: z.number().int().min(0).default(0),
     acceptanceCriteria: z.string().min(1).max(2000),
+    acceptanceChecklist: z.array(acceptanceItemSchema).max(20).optional(),
     estimateMin: z.number().int().min(1).max(480).default(25),
     dueAt: z.string().min(1).nullable().optional(),
   })

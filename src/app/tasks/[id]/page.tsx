@@ -111,6 +111,43 @@ export default async function TaskPage({
             <CardHeader eyebrow="Acceptance criteria" title="验收标准" />
             <div className="px-5 py-4">
               <p className="text-xs leading-relaxed text-[#c6ccd8]">{task.acceptanceCriteria}</p>
+              {task.acceptanceChecklist?.length ? (
+                <div className="mt-3 space-y-1.5 rounded-md border border-line bg-panel2/40 px-3 py-2">
+                  {task.acceptanceChecklist.map((item, index) => {
+                    const result = task.acceptanceReport?.[index];
+                    const label =
+                      item.type === "contains"
+                        ? `包含「${item.value}」`
+                        : item.type === "min_words"
+                          ? `至少 ${item.value} 字`
+                          : item.type === "min_sources"
+                            ? `至少 ${item.value} 个来源`
+                            : item.type === "section"
+                              ? `包含章节「${item.value}」`
+                              : `人工项：${item.note}`;
+                    return (
+                      <div
+                        key={`${item.type}-${index}`}
+                        className="flex items-start gap-1.5 text-[10px]"
+                      >
+                        {result ? (
+                          result.passed ? (
+                            <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-teal" />
+                          ) : (
+                            <XCircle className="mt-0.5 size-3 shrink-0 text-danger" />
+                          )
+                        ) : (
+                          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-faint" />
+                        )}
+                        <span className="text-muted">{label}</span>
+                        {result ? (
+                          <span className="text-faint">· {result.reason}</span>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-faint">
                 <span>预估 {task.estimateMin} 分钟</span>
                 <span>截止 {dateTime(task.dueAt)}</span>

@@ -19,6 +19,19 @@ export type Evidence = {
   quote?: string;
 };
 
+export type AcceptanceItem =
+  | { type: "contains"; value: string; required: boolean }
+  | { type: "min_words"; value: number; required: boolean }
+  | { type: "min_sources"; value: number; required: boolean }
+  | { type: "section"; value: string; required: boolean }
+  | { type: "manual"; note: string; required: boolean };
+
+export type AcceptanceResult = {
+  item: AcceptanceItem;
+  passed: boolean;
+  reason: string;
+};
+
 export type ProposedChange =
   | { type: "reschedule"; taskId: string; from: string; to: string }
   | { type: "split_task"; taskId: string; minutes: number }
@@ -249,6 +262,10 @@ export const tasks = pgTable(
     priority: integer("priority").notNull().default(2),
     dueAt: timestamp("due_at", { withTimezone: true }),
     acceptanceCriteria: text("acceptance_criteria").notNull(),
+    acceptanceChecklist: jsonb("acceptance_checklist")
+      .$type<AcceptanceItem[]>(),
+    acceptanceReport: jsonb("acceptance_report")
+      .$type<AcceptanceResult[]>(),
     estimateMin: integer("estimate_min").notNull().default(25),
     actionType: text("action_type").notNull().default("internal"),
     resource: text("resource").notNull().default("task"),

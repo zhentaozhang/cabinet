@@ -436,6 +436,10 @@ export async function seedDemo(): Promise<void> {
       priority: 1,
       dueAt: at(0, 18, 0),
       acceptanceCriteria: "5 道题；每题有参考答案；必须包含评分标准（rubric）。",
+      acceptanceChecklist: [
+        { type: "section", value: "评分标准", required: true },
+        { type: "min_words", value: 50, required: true },
+      ],
       estimateMin: 30,
       createdBy: "agent",
     },

@@ -100,6 +100,42 @@ export const goalDtoSchema = z.object({
 });
 export type GoalDto = z.infer<typeof goalDtoSchema>;
 
+export const acceptanceItemSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("contains"),
+    value: z.string(),
+    required: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("min_words"),
+    value: z.number(),
+    required: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("min_sources"),
+    value: z.number(),
+    required: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("section"),
+    value: z.string(),
+    required: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("manual"),
+    note: z.string(),
+    required: z.boolean(),
+  }),
+]);
+export type AcceptanceItemDto = z.infer<typeof acceptanceItemSchema>;
+
+export const acceptanceResultSchema = z.object({
+  item: acceptanceItemSchema,
+  passed: z.boolean(),
+  reason: z.string(),
+});
+export type AcceptanceResultDto = z.infer<typeof acceptanceResultSchema>;
+
 export const taskDtoSchema = z.object({
   id: z.string(),
   userId: z.string(),
@@ -113,6 +149,8 @@ export const taskDtoSchema = z.object({
   priority: z.number(),
   dueAt: isoDateTime.nullable(),
   acceptanceCriteria: z.string(),
+  acceptanceChecklist: z.array(acceptanceItemSchema).nullable(),
+  acceptanceReport: z.array(acceptanceResultSchema).nullable(),
   estimateMin: z.number(),
   actionType: z.string(),
   resource: z.string(),

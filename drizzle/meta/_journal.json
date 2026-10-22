@@ -57,6 +57,13 @@
       "when": 1792649252670,
       "tag": "0007_broken_princess_powerful",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792649584357,
+      "tag": "0008_real_ezekiel_stane",
+      "breakpoints": true
     }
   ]
 }

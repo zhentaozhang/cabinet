@@ -35,12 +35,18 @@ import {
   users,
 } from "@/lib/db/schema";
 import type {
+  AcceptanceItem,
+  AcceptanceResult,
   CouncilMatrix,
   CouncilResolution,
   Evidence,
   FalsificationCondition,
   ProposedChange,
 } from "@/lib/db/schema";
+import {
+  checklistPassed,
+  evaluateAcceptance,
+} from "@/lib/domain/acceptance";
 import { logAudit } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { weekLabel } from "@/lib/format";
@@ -1286,24 +1292,44 @@ async function auditTaskInner(taskId: string, userId: string) {
   let reason = pass
     ? "产物存在，验收标准逐条对照通过。"
     : "没有找到可验收的产物。";
+  let acceptanceReport: AcceptanceResult[] | null = null;
 
-  const requiresRubric =
-    task.acceptanceCriteria.includes("评分标准") ||
-    task.acceptanceCriteria.toLowerCase().includes("rubric");
-  if (requiresRubric && artifact) {
-    const hasRubric =
-      artifact.content.includes("## 评分标准") ||
-      artifact.content.includes("| 维度 |");
-    if (!hasRubric) {
-      pass = false;
-      reason = "缺少评分标准（rubric），无法判断题目质量。请补充后重新提交。";
+  if (artifact && task.acceptanceChecklist?.length) {
+    acceptanceReport = evaluateAcceptance(
+      artifact.content,
+      task.acceptanceChecklist,
+    );
+    pass = checklistPassed(acceptanceReport);
+    const failed = acceptanceReport.filter(
+      (result) => result.item.required && !result.passed,
+    );
+    reason = pass
+      ? "验收清单逐项通过。"
+      : `验收清单未通过：${failed
+          .map((result) => result.reason)
+          .join("；")}`;
+  } else if (artifact) {
+    const requiresRubric =
+      task.acceptanceCriteria.includes("评分标准") ||
+      task.acceptanceCriteria.toLowerCase().includes("rubric");
+    if (requiresRubric) {
+      const hasRubric =
+        artifact.content.includes("## 评分标准") ||
+        artifact.content.includes("| 维度 |");
+      if (!hasRubric) {
+        pass = false;
+        reason = "缺少评分标准（rubric），无法判断题目质量。请补充后重新提交。";
+      }
     }
   }
 
   await addStep({
     type: "audit",
-    input: { acceptanceCriteria: task.acceptanceCriteria },
-    output: { pass, reason },
+    input: {
+      acceptanceCriteria: task.acceptanceCriteria,
+      checklist: task.acceptanceChecklist ?? null,
+    },
+    output: { pass, reason, checklist: acceptanceReport },
   });
 
   await db
@@ -1329,6 +1355,7 @@ async function auditTaskInner(taskId: string, userId: string) {
     .update(tasks)
     .set({
       status: nextStatus,
+      acceptanceReport,
       updatedAt: new Date(),
       ...(pass
         ? {
@@ -2123,6 +2150,7 @@ export async function createTask(
     resource: string;
     estimatedCostCents: number;
     acceptanceCriteria: string;
+    acceptanceChecklist?: AcceptanceItem[] | null;
     estimateMin: number;
     dueAt?: string | null;
   },
@@ -2185,6 +2213,7 @@ export async function createTask(
       priority: 2,
       dueAt,
       acceptanceCriteria,
+      acceptanceChecklist: input.acceptanceChecklist ?? null,
       estimateMin: Math.max(1, input.estimateMin),
       actionType: input.actionType,
       resource: input.resource,
