@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { handleMutation } from "@/lib/api/mutation";
 import { db } from "@/lib/db";
 import { memories } from "@/lib/db/schema";
@@ -24,17 +24,18 @@ export async function DELETE(
 
       if (!memory) throw new NotFoundError("记忆不存在");
 
-      await db
-        .delete(memories)
-        .where(and(eq(memories.id, id), eq(memories.userId, userId)));
-
-      await logAudit({
-        userId,
-        actor: "user",
-        action: "memory.delete",
-        target: id,
-        before: { content: memory.content, type: memory.type },
-        after: null,
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(memories)
+          .where(and(eq(memories.id, id), eq(memories.userId, userId)));
+        await logAuditTx(tx, {
+          userId,
+          actor: "user",
+          action: "memory.delete",
+          target: id,
+          before: { content: memory.content, type: memory.type },
+          after: null,
+        });
       });
 
       revalidatePath("/memory");
