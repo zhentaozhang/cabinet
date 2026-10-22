@@ -97,6 +97,8 @@ export type PolicyConfig = {
     minTrust: number;
     minSuccesses: number;
     minAuditPassRate: number;
+    /** Eligible audit samples required before a pass rate means anything. */
+    minAuditSamples: number;
   };
   audit: {
     rejectStreakLimit: number;
@@ -130,6 +132,7 @@ export const SEED_POLICY_CONFIG: PolicyConfig = {
     minTrust: 70,
     minSuccesses: 3,
     minAuditPassRate: 0.9,
+    minAuditSamples: 5,
   },
   audit: {
     rejectStreakLimit: 2,
@@ -422,49 +425,109 @@ export function decideAudit(input: {
   return allow("Audit allowed.");
 }
 
+/** The finite set of reasons an upgrade can be refused. */
+export type UpgradeDenialCode =
+  | "insufficient_samples"
+  | "low_pass_rate"
+  | "low_trust"
+  | "too_few_successes"
+  | "not_eligible_role"
+  | "retired"
+  | "paused";
+
+export type UpgradeDecision = PolicyDecision & {
+  /** Null when the upgrade is allowed. */
+  code: UpgradeDenialCode | null;
+  /** Eligible audit samples the pass rate was measured over. */
+  samples: number;
+  /** Pass rate over eligible samples; 0 when there are none. */
+  passRate: number;
+};
+
 /**
  * Decide whether an agent can move to targetLevel.
- * Audit pass rate is calculated by the caller from audit events.
+ *
+ * The audit window is supplied by the caller and must already be filtered to
+ * eligible samples (see `isEligibleAuditSample`) — an empty window is not a
+ * zero pass rate, it is missing evidence.
  */
 export function decideUpgrade(input: {
   actor: Actor;
   targetLevel: number;
   auditPassRate: number;
+  auditSamples: number;
   config: PolicyConfig;
-}): PolicyDecision {
-  const { actor, targetLevel, auditPassRate, config } = input;
+}): UpgradeDecision {
+  const { actor, targetLevel, auditPassRate, auditSamples, config } = input;
+  const outcome = (decision: PolicyDecision, code: UpgradeDenialCode | null) => ({
+    ...decision,
+    code,
+    samples: auditSamples,
+    passRate: auditPassRate,
+  });
 
   if (targetLevel > 3) {
-    return deny("L4 is not available in this MVP.");
+    return outcome(deny("L4 is not available in this MVP."), "not_eligible_role");
   }
 
   if (targetLevel <= actor.autonomyLevel) {
-    return allow("Downgrade or same level is always allowed.");
+    return outcome(allow("Downgrade or same level is always allowed."), null);
+  }
+
+  if (actor.status === "retired" || actor.lifecycleStage === "retired") {
+    return outcome(deny("退休的 Agent 不能升级。"), "retired");
+  }
+
+  if (actor.status === "paused") {
+    return outcome(deny("Agent 已暂停，先恢复在岗再谈升级。"), "paused");
   }
 
   if (actor.status !== "active" || actor.lifecycleStage !== "active") {
-    return deny("Agent is not active.");
+    return outcome(
+      deny("只有正式在岗的 Agent 才能升级（学徒需先通过转正考核）。"),
+      "not_eligible_role",
+    );
   }
 
   if (actor.trustScore < config.autonomy.minTrust) {
-    return deny(
-      `Trust ${actor.trustScore.toFixed(0)} is below ${config.autonomy.minTrust}.`,
+    return outcome(
+      deny(
+        `Trust ${actor.trustScore.toFixed(0)} is below ${config.autonomy.minTrust}.`,
+      ),
+      "low_trust",
     );
   }
 
   if (actor.successCount < config.autonomy.minSuccesses) {
-    return deny(
-      `Success count ${actor.successCount} is below ${config.autonomy.minSuccesses}.`,
+    return outcome(
+      deny(
+        `Success count ${actor.successCount} is below ${config.autonomy.minSuccesses}.`,
+      ),
+      "too_few_successes",
+    );
+  }
+
+  // Missing evidence must not look like a failing rate: check the sample floor
+  // first so the operator sees "not enough real samples" rather than "0%".
+  if (auditSamples < config.autonomy.minAuditSamples) {
+    return outcome(
+      deny(
+        `符合条件的审计样本 ${auditSamples} 个，少于要求的 ${config.autonomy.minAuditSamples} 个。`,
+      ),
+      "insufficient_samples",
     );
   }
 
   if (auditPassRate < config.autonomy.minAuditPassRate) {
-    return deny(
-      `Audit pass rate ${(auditPassRate * 100).toFixed(1)}% is below ${(
-        config.autonomy.minAuditPassRate * 100
-      ).toFixed(0)}%.`,
+    return outcome(
+      deny(
+        `Audit pass rate ${(auditPassRate * 100).toFixed(1)}% is below ${(
+          config.autonomy.minAuditPassRate * 100
+        ).toFixed(0)}%.`,
+      ),
+      "low_pass_rate",
     );
   }
 
-  return allow("Agent meets upgrade thresholds.");
+  return outcome(allow("Agent meets upgrade thresholds."), null);
 }

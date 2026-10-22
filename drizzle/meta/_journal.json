@@ -134,6 +134,13 @@
       "when": 1792662779469,
       "tag": "0018_agent_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792664000000,
+      "tag": "0019_autonomy_min_samples",
+      "breakpoints": true
     }
   ]
 }

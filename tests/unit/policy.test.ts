@@ -332,6 +332,7 @@ describe("decideUpgrade", () => {
       actor: actor({ autonomyLevel: 2, trustScore: 80, successCount: 10 }),
       targetLevel: 3,
       auditPassRate: 0.95,
+      auditSamples: 5,
       config,
     });
     expect(decision.effect).toBe("allow");
@@ -342,6 +343,7 @@ describe("decideUpgrade", () => {
       actor: actor({ trustScore: 50 }),
       targetLevel: 3,
       auditPassRate: 1,
+      auditSamples: 5,
       config,
     });
     expect(decision.effect).toBe("deny");
@@ -352,6 +354,7 @@ describe("decideUpgrade", () => {
       actor: actor({ successCount: 1 }),
       targetLevel: 3,
       auditPassRate: 1,
+      auditSamples: 5,
       config,
     });
     expect(decision.effect).toBe("deny");
@@ -362,6 +365,7 @@ describe("decideUpgrade", () => {
       actor: actor({ autonomyLevel: 1 }),
       targetLevel: 2,
       auditPassRate: 0.5,
+      auditSamples: 5,
       config,
     });
     expect(decision.effect).toBe("deny");
@@ -372,6 +376,7 @@ describe("decideUpgrade", () => {
       actor: actor(),
       targetLevel: 4,
       auditPassRate: 1,
+      auditSamples: 5,
       config,
     });
     expect(decision.effect).toBe("deny");
@@ -382,6 +387,7 @@ describe("decideUpgrade", () => {
       actor: actor({ autonomyLevel: 3 }),
       targetLevel: 1,
       auditPassRate: 0,
+      auditSamples: 0,
       config,
     });
     expect(decision.effect).toBe("allow");

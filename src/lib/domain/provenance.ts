@@ -38,3 +38,29 @@ export function sourceLabel(source: string): string {
       return "来源未知";
   }
 }
+
+/**
+ * One predicate decides whether an audit may count as evidence of real model
+ * execution. Demo fixtures, rule-generated drafts, user submissions and
+ * pre-ledger rows all fail it, so a controllable or unattributable audit can
+ * never move an Agent up the autonomy ladder.
+ *
+ * `executionChannel` is `runs.mode`; `hasProviderAttempt` is
+ * `runs.provider_attempt_id IS NOT NULL`. Both are required: `mode: "live"`
+ * alone can be a channel whose provider never answered.
+ */
+export type AuditSampleInput = {
+  artifactSourceType: string;
+  artifactSubmittedBy: string;
+  executionChannel: string;
+  hasProviderAttempt: boolean;
+};
+
+export function isEligibleAuditSample(input: AuditSampleInput): boolean {
+  return (
+    input.artifactSubmittedBy === "agent" &&
+    input.artifactSourceType === "model_generated" &&
+    input.executionChannel === "live" &&
+    input.hasProviderAttempt
+  );
+}

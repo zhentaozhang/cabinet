@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { AcceptanceResult } from "@/lib/db/schema";
 import {
@@ -19,7 +19,7 @@ import {
   PolicyDenied,
 } from "@/lib/domain/errors";
 import { checklistPassed, evaluateAcceptance } from "@/lib/domain/acceptance";
-import { clamp } from "../../shared/numbers";
+import { isEligibleAuditSample } from "@/lib/domain/provenance";
 import { recalculateGoalProgress } from "../progress";
 
 export async function auditTask(taskId: string, userId: string) {
@@ -246,42 +246,72 @@ async function auditTaskInner(taskId: string, userId: string) {
       | null = null;
 
     if (executor && !userSubmitted) {
-      const nextRejectStreak = pass ? 0 : executor.rejectStreak + 1;
-      const shouldPause =
-        !pass &&
-        nextRejectStreak >= config.audit.rejectStreakLimit &&
-        ["active", "probation"].includes(executor.status);
+      // Only real model execution counts as performance. A demo, rule-generated
+      // or provider-less submission is still audited and recorded, but it must
+      // not move the counters that unlock autonomy.
+      const executorRun = taskRuns.find(
+        (run) => run.agentId === executor.id,
+      );
+      const countsAsEvidence =
+        artifact !== undefined &&
+        executorRun !== undefined &&
+        isEligibleAuditSample({
+          artifactSubmittedBy: artifact.submittedBy,
+          artifactSourceType: artifact.sourceType,
+          executionChannel: executorRun.mode,
+          hasProviderAttempt: executorRun.providerAttemptId !== null,
+        });
 
-      if (shouldPause) {
-        assertTransition("agent", executor.status, "paused");
-        pausedInfo = {
-          executorId: executor.id,
-          before: {
-            status: executor.status,
-            rejectStreak: executor.rejectStreak,
-          },
-          after: {
-            status: "paused",
-            rejectStreak: nextRejectStreak,
-          },
-        };
-      }
-
-      await tx
+      // Increment in SQL, not from the row read before the lock: two audits of
+      // the same Agent would otherwise write the same stale values and one
+      // result would be lost. `returning()` gives the post-increment streak the
+      // pause decision needs.
+      const [afterCounters] = await tx
         .update(agents)
         .set({
-          successCount: executor.successCount + (pass ? 1 : 0),
-          failCount: executor.failCount + (pass ? 0 : 1),
-          trustScore: clamp(executor.trustScore + (pass ? 1 : -2)),
-          rejectStreak: nextRejectStreak,
-          ...(shouldPause ? { status: "paused" } : {}),
+          ...(countsAsEvidence
+            ? {
+                successCount: sql`${agents.successCount} + ${pass ? 1 : 0}`,
+                trustScore: sql`least(100, greatest(0, ${agents.trustScore} + ${
+                  pass ? 1 : -2
+                }))`,
+              }
+            : {}),
+          failCount: sql`${agents.failCount} + ${pass ? 0 : 1}`,
+          rejectStreak: pass ? 0 : sql`${agents.rejectStreak} + 1`,
         })
-        .where(
-          and(
-            eq(agents.id, executor.id),
-            eq(agents.userId, userId),
-          ),
-        );
+        .where(and(eq(agents.id, executor.id), eq(agents.userId, userId)))
+        .returning();
+
+      const shouldPause =
+        !pass &&
+        afterCounters !== undefined &&
+        afterCounters.rejectStreak >= config.audit.rejectStreakLimit &&
+        ["active", "probation"].includes(afterCounters.status);
+
+      if (shouldPause) {
+        assertTransition("agent", afterCounters.status, "paused");
+        const [paused] = await tx
+          .update(agents)
+          .set({ status: "paused" })
+          .where(
+            and(
+              eq(agents.id, executor.id),
+              eq(agents.status, afterCounters.status),
+            ),
+          )
+          .returning();
+        if (paused) {
+          pausedInfo = {
+            executorId: executor.id,
+            before: {
+              status: afterCounters.status,
+              rejectStreak: afterCounters.rejectStreak,
+            },
+            after: { status: "paused", rejectStreak: paused.rejectStreak },
+          };
+        }
+      }
     }
 
     if (pass && task.goalId) {

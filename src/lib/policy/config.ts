@@ -44,6 +44,7 @@ const policyConfigSchema = z.object({
     minTrust: z.number(),
     minSuccesses: z.number(),
     minAuditPassRate: z.number(),
+    minAuditSamples: z.number().int().min(1),
   }),
   audit: z.object({
     rejectStreakLimit: z.number(),

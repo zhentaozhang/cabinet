@@ -495,6 +495,7 @@ export const policyConfigDtoSchema = z.object({
     minTrust: z.number(),
     minSuccesses: z.number(),
     minAuditPassRate: z.number(),
+    minAuditSamples: z.number(),
   }),
   audit: z.object({
     rejectStreakLimit: z.number(),

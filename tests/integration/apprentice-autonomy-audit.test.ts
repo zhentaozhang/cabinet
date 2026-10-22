@@ -4,6 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
+  artifacts,
   auditEvents,
   runs,
   skills,
@@ -252,11 +253,70 @@ describe("agent retirement bookkeeping", () => {
   });
 });
 
+/**
+ * Seeds `count` audited tasks whose provenance is real model execution, which is
+ * the only kind of evidence a promotion may count. Demo fixtures, rule drafts
+ * and pre-ledger runs deliberately do not qualify.
+ */
+async function seedEligibleAudits(
+  agentId: string,
+  auditorId: string,
+  count = 5,
+): Promise<void> {
+  for (let index = 0; index < count; index += 1) {
+    const taskId = `tsk_eligible_${agentId}_${index}`;
+    await db.insert(tasks).values({
+      id: taskId,
+      userId: DEMO_USER_ID,
+      title: `授权证据 ${index}`,
+      description: "真实模型执行产生的验收任务。",
+      assigneeId: agentId,
+      auditorId,
+      status: "accepted",
+      acceptanceCriteria: "产物存在。",
+      estimateMin: 10,
+      actionType: "internal",
+      resource: "task",
+    });
+    await db.insert(runs).values({
+      id: `run_eligible_${agentId}_${index}`,
+      taskId,
+      agentId,
+      status: "succeeded",
+      mode: "live",
+      sourceType: "model_generated",
+      providerAttemptId: `att_eligible_${agentId}_${index}`,
+      startedAt: new Date(),
+      endedAt: new Date(),
+    });
+    await db.insert(artifacts).values({
+      id: `art_eligible_${agentId}_${index}`,
+      taskId,
+      submittedBy: "agent",
+      sourceType: "model_generated",
+      type: "note",
+      title: "产物",
+      content: "## 结论\n\n完成。",
+    });
+    await db.insert(auditEvents).values({
+      id: `evt_eligible_${agentId}_${index}`,
+      userId: DEMO_USER_ID,
+      actor: `agent:${auditorId}`,
+      action: "audit.accept",
+      target: taskId,
+      hash: `hash_eligible_${agentId}_${index}`,
+      prevHash: null,
+    });
+  }
+}
+
 describe("autonomy gate", () => {
-  it("allows the chief after a clean audit window", async () => {
+  it("allows the chief after a clean eligible audit window", async () => {
+    await seedEligibleAudits("ag_chief", "ag_auditor");
     const result = await setAutonomy("ag_chief", 3, DEMO_USER_ID);
     expect(result.level).toBe(3);
-    expect(result.auditPassRate).toBe(1);
+    expect(result.passRate).toBe(1);
+    expect(result.samples).toBeGreaterThanOrEqual(5);
   });
 
   it("blocks an agent below the trust threshold", async () => {

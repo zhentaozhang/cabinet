@@ -166,6 +166,17 @@ pnpm dev
 
 `db:seed` 会清空所有表，只用于本地演示。
 
+### 升级一个已存在的工作区
+
+`policy_config` 里新增的设置项不会单独出一个 migration，而 `getPolicyConfig()` 对缺失的键是 fail-closed：少一个键，Today / Review / Cabinet 全部 500。升级已有数据库（尤其是用 `db:push` 建出来的）后跑一次：
+
+```bash
+pnpm db:sync-policy          # 补齐缺失的分组与嵌套设置项
+pnpm db:sync-policy --check   # 只检查不改，有 drift 时退出码 1（适合放进部署前置检查）
+```
+
+命令只做加法：已存在的值（包括你手改过的）永远保留，因此可以重复执行、也可以对生产执行。
+
 ### 模型与演示模式
 
 二选一：

@@ -5,7 +5,6 @@ import {
   agentTemplates,
   agents,
   goals,
-  policyConfig,
   profiles,
   skills,
   users,
@@ -15,22 +14,10 @@ import {
   APPRENTICE_SKILL,
   ROLE_GRANTS,
 } from "@/contracts/templates";
-import { SEED_POLICY_CONFIG } from "@/lib/domain/policy";
+import { syncPolicyConfig } from "@/lib/policy/sync";
 import { newId } from "@/lib/ids";
 import { logAuditTx } from "@/lib/audit";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
-
-const POLICY_KEYS = [
-  "autonomy",
-  "audit",
-  "budget",
-  "management",
-  "cost",
-  "council",
-  "reflection",
-  "dissent",
-  "learning",
-] as const;
 
 export type SetupInput = {
   userId: string;
@@ -114,19 +101,9 @@ export async function setupWorkspace(input: SetupInput) {
       });
     }
 
-    const existingConfig = await tx
-      .select({ key: policyConfig.key })
-      .from(policyConfig);
-    const configKeys = new Set(existingConfig.map((row) => row.key));
-    for (const key of POLICY_KEYS) {
-      if (!configKeys.has(key)) {
-        await tx.insert(policyConfig).values({
-          key,
-          valueJson: SEED_POLICY_CONFIG[key],
-          description: `Cabinet policy: ${key}`,
-        });
-      }
-    }
+    // Same routine the maintenance command runs, so a fresh workspace and an
+    // existing one converge on exactly the same policy shape.
+    await syncPolicyConfig(tx);
 
     const existingTemplates = await tx
       .select({ role: agentTemplates.role })

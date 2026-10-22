@@ -9,6 +9,7 @@
     "lint": "eslint",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx scripts/seed.ts",
+    "db:sync-policy": "tsx scripts/sync-policy.ts",
     "db:setup": "pnpm db:push && pnpm db:seed",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --maxWorkers=1 --no-file-parallelism",
