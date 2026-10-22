@@ -100,3 +100,37 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     budgetCents: 0,
   },
 ];
+
+/**
+ * Default grants for agents created from a template.
+ * Mechanisms (whether an action needs approval) still live in policy_config.
+ */
+export const ROLE_GRANTS: Record<
+  string,
+  Array<{ resource: string; scope: string }>
+> = {
+  chief: [
+    { resource: "plan", scope: "write" },
+    { resource: "task", scope: "write" },
+  ],
+  researcher: [
+    { resource: "web", scope: "read" },
+    { resource: "task", scope: "write" },
+  ],
+  coach: [
+    { resource: "task", scope: "write" },
+    { resource: "calendar", scope: "write" },
+    { resource: "notes", scope: "read" },
+  ],
+  treasurer: [
+    { resource: "ledger", scope: "read" },
+    { resource: "calendar", scope: "read" },
+    { resource: "task", scope: "write" },
+  ],
+  auditor: [
+    { resource: "artifacts", scope: "read" },
+    { resource: "task", scope: "read" },
+  ],
+  apprentice: [{ resource: "task", scope: "read" }],
+  critic: [{ resource: "plan", scope: "read" }],
+};

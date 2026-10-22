@@ -17,6 +17,7 @@ import {
   CardHeader,
   SectionTitle,
 } from "@/components/ui";
+import { DataControls } from "@/components/data-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -279,6 +280,12 @@ export default async function CabinetPage() {
             <p>
               连续 2 次驳回 → 换人或进入退休评估。所有记录进入哈希链审计日志。
             </p>
+          </div>
+        </Card>
+        <Card>
+          <CardHeader eyebrow="Data" title="数据与账号" />
+          <div className="px-5 py-4">
+            <DataControls />
           </div>
         </Card>
         <Card>

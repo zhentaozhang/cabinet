@@ -29,6 +29,13 @@
       "when": 1792644881964,
       "tag": "0003_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792645086922,
+      "tag": "0004_setup_rate_limits",
+      "breakpoints": true
     }
   ]
 }

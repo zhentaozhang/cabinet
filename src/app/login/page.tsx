@@ -7,8 +7,12 @@ import { ArrowLeft, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Button, Card } from "@/components/ui";
 
+type Mode = "signin" | "signup";
+
 export default function LoginPage() {
   const router = useRouter();
+  const [mode, setMode] = useState<Mode>("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("demo@cabinet.local");
   const [password, setPassword] = useState("cabinet-demo");
   const [busy, setBusy] = useState<string | null>(null);
@@ -34,6 +38,38 @@ export default function LoginPage() {
     router.refresh();
   }
 
+  async function signUp() {
+    if (name.trim().length < 2) {
+      setError("请输入名字");
+      return;
+    }
+    setBusy("signup");
+    setError(null);
+    const { error: authError } = await authClient.signUp.email({
+      email,
+      password,
+      name: name.trim(),
+    });
+    if (authError) {
+      setBusy(null);
+      setError(authError.message ?? "注册失败");
+      return;
+    }
+
+    // Ensure a session exists before sending the user to setup.
+    const { error: signInError } = await authClient.signIn.email({
+      email,
+      password,
+    });
+    setBusy(null);
+    if (signInError) {
+      setError(signInError.message ?? "注册成功，但自动登录失败");
+      return;
+    }
+    router.push("/setup");
+    router.refresh();
+  }
+
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center">
       <Link
@@ -50,14 +86,30 @@ export default function LoginPage() {
             Cabinet · access
           </div>
           <h1 className="text-lg font-semibold tracking-tight text-ink">
-            登录你的内阁
+            {mode === "signin" ? "登录你的内阁" : "创建你的账号"}
           </h1>
           <p className="mt-1 text-[11px] leading-relaxed text-muted">
-            演示账号已内置：`demo@cabinet.local` / `cabinet-demo`。
+            {mode === "signin"
+              ? "演示账号：demo@cabinet.local / cabinet-demo。"
+              : "注册后进入 /setup，创建 7 个默认 Agent。"}
           </p>
         </div>
 
         <div className="space-y-3 px-6 py-5">
+          {mode === "signup" ? (
+            <div>
+              <label className="mb-1.5 block text-[10px] uppercase tracking-[0.16em] text-faint">
+                Name
+              </label>
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="你的名字"
+                className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 focus:outline-none"
+              />
+            </div>
+          ) : null}
+
           <div>
             <label className="mb-1.5 block text-[10px] uppercase tracking-[0.16em] text-faint">
               Email
@@ -90,34 +142,41 @@ export default function LoginPage() {
           <Button
             variant="primary"
             className="w-full"
-            onClick={() => signIn()}
+            onClick={() =>
+              mode === "signin" ? signIn() : signUp()
+            }
             disabled={busy !== null}
           >
-            {busy === "password" ? (
+            {busy === "password" || busy === "signup" ? (
               <Loader2 className="size-3 animate-spin" />
             ) : (
               <LogIn className="size-3" />
             )}
-            登录
+            {mode === "signin" ? "登录" : "注册并创建内阁"}
           </Button>
 
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => signIn("demo@cabinet.local", "cabinet-demo", "demo")}
-            disabled={busy !== null}
-          >
-            {busy === "demo" ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <ShieldCheck className="size-3" />
-            )}
-            使用演示账号
-          </Button>
-
-          <p className="pt-1 text-[10px] leading-relaxed text-faint">
-            账号注册与 `/setup` 会在下一步接入；当前请使用演示账号。
-          </p>
+          <div className="flex items-center justify-between pt-1 text-[10px]">
+            <button
+              className="text-faint hover:text-muted"
+              onClick={() => {
+                setMode(mode === "signin" ? "signup" : "signin");
+                setError(null);
+                if (mode === "signin") {
+                  setEmail("");
+                  setPassword("");
+                }
+              }}
+            >
+              {mode === "signin" ? "创建新账号 →" : "已有账号？登录"}
+            </button>
+            <button
+              className="text-faint hover:text-muted"
+              onClick={() => signIn("demo@cabinet.local", "cabinet-demo", "demo")}
+              disabled={busy !== null}
+            >
+              使用演示账号
+            </button>
+          </div>
         </div>
       </Card>
     </div>

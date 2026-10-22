@@ -52,7 +52,8 @@ export async function seedDemo(): Promise<void> {
       council_positions, councils, skills, checkins, audit_events, approvals,
       reviews, insights, memories, artifacts, steps, runs, tasks, goals,
       agent_grants, agent_templates, agents, profiles, policy_config,
-      idempotency_keys, user_actions, sessions, accounts, verifications, users
+      idempotency_keys, rate_limits, user_actions, sessions, accounts,
+      verifications, users
     CASCADE
   `);
 

@@ -245,12 +245,14 @@ pnpm build
 - `AUTH_REQUIRED=false`：本地演示不拦截。
 - `AUTH_REQUIRED=true`：页面 redirect `/login`，API 返回 401。
 - 租户作用域（A2）已完成：所有 service/query 接收 `userId`，跨用户访问返回 404，并有 7 条隔离测试。
-- 目前还没有注册/`/setup`，所以实际可登录账号只有 seed 的 demo 账号。
+- 注册与 `/setup`（A5）已完成：新账号注册后创建 profile、7 个 Agent、默认授权与可选首个目标。
+- CSRF Origin 校验、DB rate limit、数据导出与删除账号已接入。
+- `/api/demo/reset` 仅本地演示可用；生产环境返回 404。
 
 ## 已知边界（下一步）
 
-- **`/setup` 与注册**：A5 才会做；当前只有 demo 账号可登录。
-- **engine 拆分**：已加 `userId`，但 2,300 行文件尚未拆到 `src/lib/services/`；与 A3 同批做。
+- **engine 拆分**：2,300 行文件尚未拆到 `src/lib/services/`；下一步与 B1 一起处理。
+- **核心 FK**：CHECK 已加，外键尚未加；迁移前需要 orphan 检查。
 - **Onboarding**：仍依赖 `db:seed`；`/setup` 创建真实 workspace 是 P1。
 - **自动内阁**：会议目前是预置/手动的；规则触发 + LLM 立场生成是 P1。
 - **技能评测**：学徒转正是状态机；留出集、灰度、回滚的评测管线是 P1。

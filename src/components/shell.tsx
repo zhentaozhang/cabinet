@@ -7,10 +7,12 @@ import {
   Brain,
   ClipboardCheck,
   Gavel,
+  LogOut,
   RefreshCw,
   Sun,
   Users,
 } from "lucide-react";
+import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/format";
 
 const NAV = [
@@ -98,6 +100,13 @@ function ResetButton() {
 }
 
 export function Shell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const { data: session } = authClient.useSession();
+  const user = session?.user;
+  const isDemo = !user || user.email === "demo@cabinet.local";
+  const displayName = user?.name ?? "Zhen";
+  const displayEmail = user?.email ?? "demo workspace";
+
   return (
     <div className="relative z-10 min-h-screen">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r border-line bg-panel/70 backdrop-blur-xl md:flex">
@@ -145,16 +154,31 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
           <div className="mb-2 flex items-center gap-2 px-1">
             <div className="flex size-6 items-center justify-center rounded-md border border-line2 bg-panel2 text-[10px] text-muted">
-              Z
+              {displayName.slice(0, 1).toUpperCase()}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="truncate text-[11px] font-medium text-ink">
-                Zhen
+                {displayName}
               </div>
-              <div className="text-[9px] text-faint">owner · demo workspace</div>
+              <div className="truncate text-[9px] text-faint">
+                {displayEmail}
+              </div>
             </div>
+            {user ? (
+              <button
+                onClick={async () => {
+                  await authClient.signOut();
+                  router.push("/login");
+                  router.refresh();
+                }}
+                className="rounded p-1 text-faint hover:bg-white/[0.04] hover:text-muted"
+                title="退出"
+              >
+                <LogOut className="size-3" />
+              </button>
+            ) : null}
           </div>
-          <ResetButton />
+          {isDemo ? <ResetButton /> : null}
         </div>
       </aside>
 

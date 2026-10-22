@@ -497,3 +497,21 @@ export const agentTemplates = pgTable("agent_templates", {
     .notNull()
     .defaultNow(),
 });
+
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    action: text("action").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    uniqueIndex("rate_limit_unique_idx").on(
+      t.userId,
+      t.action,
+      t.windowStart,
+    ),
+  ],
+);

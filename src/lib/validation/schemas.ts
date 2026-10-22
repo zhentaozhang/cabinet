@@ -82,3 +82,17 @@ export const agentUpdateSchema = z
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required.",
   });
+
+export const setupSchema = z.object({
+  timezone: z.string().min(1).max(100).default("Asia/Shanghai"),
+  name: z.string().min(1).max(100).optional(),
+  goal: z
+    .object({
+      title: z.string().min(1).max(200),
+      why: z.string().max(1000).default(""),
+      target: z.string().min(1).max(2000),
+      horizon: z.string().min(1).max(100).default("6 weeks"),
+      domain: z.string().min(1).max(50).default("learning"),
+    })
+    .optional(),
+});

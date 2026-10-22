@@ -1,5 +1,7 @@
 export type ErrorCode =
   | "unauthorized"
+  | "forbidden"
+  | "rate_limited"
   | "validation_error"
   | "policy_denied"
   | "conflict"
@@ -21,6 +23,18 @@ export class DomainError extends Error {
 export class UnauthorizedError extends DomainError {
   constructor(message = "Unauthorized") {
     super("unauthorized", message, 401);
+  }
+}
+
+export class ForbiddenError extends DomainError {
+  constructor(message = "Forbidden") {
+    super("forbidden", message, 403);
+  }
+}
+
+export class RateLimitError extends DomainError {
+  constructor(message = "Too many requests") {
+    super("rate_limited", message, 429);
   }
 }
 
