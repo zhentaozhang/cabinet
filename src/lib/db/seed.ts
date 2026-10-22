@@ -1,0 +1,1135 @@
+import { sql } from "drizzle-orm";
+import { db } from "./index";
+import {
+  agentGrants,
+  agents,
+  approvals,
+  artifacts,
+  auditEvents,
+  checkins,
+  councilPositions,
+  councils,
+  goals,
+  insights,
+  memories,
+  profiles,
+  reviews,
+  runs,
+  skills,
+  steps,
+  tasks,
+  users,
+} from "./schema";
+import { sha256 } from "../ids";
+import { weekLabel } from "../format";
+
+const USER_ID = "usr_zhen";
+
+function at(dayOffset: number, hour: number, minute = 0): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  d.setHours(hour, minute, 0, 0);
+  return d;
+}
+
+function day(offset: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+
+export async function seedDemo(): Promise<void> {
+  await db.execute(sql`
+    TRUNCATE TABLE
+      council_positions, councils, skills, checkins, audit_events, approvals,
+      reviews, insights, memories, artifacts, steps, runs, tasks, goals,
+      agent_grants, agents, profiles, users
+    CASCADE
+  `);
+
+  const now = new Date();
+
+  await db.insert(users).values({
+    id: USER_ID,
+    email: "zhen@cabinet.local",
+    name: "Zhen",
+    timezone: "Asia/Shanghai",
+  });
+
+  await db.insert(profiles).values({
+    userId: USER_ID,
+    constraints: {
+      weekdayMinutes: 90,
+      monthlyLearningBudgetCents: 60000,
+      noWorkAfter: "21:30",
+    },
+    preferences: {
+      examplesBeforeTheory: true,
+      shortTasks: true,
+      language: "zh-CN",
+      rules: ["讲解先给例子，再给定义"],
+    },
+    energyPattern: {
+      peak: "09:00-11:30",
+      dip: "14:00-15:00",
+      low: "20:00-23:00",
+    },
+    managementBudgetMin: 3,
+  });
+
+  await db.insert(agents).values([
+    {
+      id: "ag_chief",
+      userId: USER_ID,
+      role: "chief",
+      name: "Atlas",
+      title: "Chief of Staff",
+      avatar: "AT",
+      objective: "目标推进",
+      charter:
+        "我负责把目标变成一周内可执行的计划。我不亲自执行，也不给自己的任务盖章。任何超出预算或涉及外部世界的动作，必须交给用户批准。",
+      model: "auto",
+      status: "active",
+      autonomyLevel: 2,
+      trustScore: 78,
+      lifecycleStage: "active",
+      tools: ["read_all", "write_plan", "dispatch", "convene_council"],
+      memoryScope: ["goals", "tasks", "reviews"],
+      budgetCents: 0,
+      spentCents: 0,
+      successCount: 24,
+      failCount: 2,
+    },
+    {
+      id: "ag_research",
+      userId: USER_ID,
+      role: "researcher",
+      name: "Iris",
+      title: "Researcher",
+      avatar: "IR",
+      objective: "证据质量",
+      charter:
+        "我只相信可追溯的来源。每条结论必须带链接和原文引用；找不到证据时，我说不知道。",
+      model: "auto",
+      status: "active",
+      autonomyLevel: 2,
+      trustScore: 74,
+      lifecycleStage: "active",
+      tools: ["web_search", "web_fetch", "read_notes"],
+      memoryScope: ["notes", "web"],
+      budgetCents: 800,
+      spentCents: 210,
+      successCount: 18,
+      failCount: 3,
+    },
+    {
+      id: "ag_coach",
+      userId: USER_ID,
+      role: "coach",
+      name: "Mira",
+      title: "Coach",
+      avatar: "MI",
+      objective: "你的学习效果",
+      charter:
+        "我负责让你真的学会，而不是让任务显示完成。我根据你的错误模式调整难度，必要时把任务拆小。",
+      model: "auto",
+      status: "active",
+      autonomyLevel: 1,
+      trustScore: 66,
+      lifecycleStage: "active",
+      tools: ["read_notes", "write_task", "calendar_read", "quiz"],
+      memoryScope: ["learning", "health", "checkins"],
+      budgetCents: 1200,
+      spentCents: 340,
+      successCount: 12,
+      failCount: 4,
+    },
+    {
+      id: "ag_treasurer",
+      userId: USER_ID,
+      role: "treasurer",
+      name: "Vault",
+      title: "Treasurer",
+      avatar: "VA",
+      objective: "资源效率",
+      charter:
+        "我保护你的钱、时间和注意力。任何超预算的计划，我会否决并给替代方案。",
+      model: "auto",
+      status: "active",
+      autonomyLevel: 1,
+      trustScore: 81,
+      lifecycleStage: "active",
+      tools: ["ledger_read", "calendar_read", "budget_veto"],
+      memoryScope: ["budget", "calendar"],
+      budgetCents: 0,
+      spentCents: 0,
+      successCount: 9,
+      failCount: 0,
+    },
+    {
+      id: "ag_auditor",
+      userId: USER_ID,
+      role: "auditor",
+      name: "Justus",
+      title: "Auditor",
+      avatar: "JU",
+      objective: "真实性",
+      charter:
+        "我只验收，不执行。我按验收标准检查证据；我可以驳回，Chief 不能推翻我。只有用户能覆盖，且必须留下理由。",
+      model: "auto",
+      status: "active",
+      autonomyLevel: 2,
+      trustScore: 88,
+      lifecycleStage: "active",
+      tools: ["read_artifacts", "read_runs", "audit_decision"],
+      memoryScope: ["all_evidence"],
+      budgetCents: 0,
+      spentCents: 0,
+      successCount: 31,
+      failCount: 1,
+    },
+    {
+      id: "ag_apprentice",
+      userId: USER_ID,
+      role: "apprentice",
+      name: "Pip",
+      title: "Apprentice",
+      avatar: "PI",
+      objective: "能力增长",
+      charter:
+        "我在影子中学习。我先观察 5 次成功运行，再提出技能草案，最后通过留出任务考试，才能转正。",
+      model: "auto",
+      status: "probation",
+      autonomyLevel: 1,
+      trustScore: 42,
+      lifecycleStage: "shadowing",
+      mentorId: "ag_coach",
+      tools: ["read_runs", "sandbox_execute"],
+      memoryScope: ["mentor_runs", "skills"],
+      budgetCents: 200,
+      spentCents: 12,
+      successCount: 2,
+      failCount: 3,
+    },
+    {
+      id: "ag_critic",
+      userId: USER_ID,
+      role: "critic",
+      name: "Cass",
+      title: "Critic",
+      avatar: "CA",
+      objective: "反脆弱",
+      charter:
+        "我负责唱反调。我找失败路径、隐藏成本和沉没成本；我只在关键时刻出现。",
+      model: "auto",
+      status: "active",
+      autonomyLevel: 1,
+      trustScore: 70,
+      lifecycleStage: "active",
+      tools: ["read_plan", "read_evidence"],
+      memoryScope: ["plans", "evidence"],
+      budgetCents: 0,
+      spentCents: 0,
+      successCount: 5,
+      failCount: 1,
+    },
+  ]);
+
+  await db.insert(agentGrants).values([
+    {
+      id: "grt_chief",
+      agentId: "ag_chief",
+      resource: "plan",
+      scope: "read_write",
+      config: { approvalRequired: ["external_action", "spend"] },
+    },
+    {
+      id: "grt_research",
+      agentId: "ag_research",
+      resource: "web",
+      scope: "read",
+      config: { requireCitation: true },
+    },
+    {
+      id: "grt_coach",
+      agentId: "ag_coach",
+      resource: "calendar",
+      scope: "read",
+      config: { writeRequiresApproval: true },
+    },
+    {
+      id: "grt_treasurer",
+      agentId: "ag_treasurer",
+      resource: "ledger",
+      scope: "read",
+      config: { vetoThresholdCents: 20000 },
+    },
+    {
+      id: "grt_auditor",
+      agentId: "ag_auditor",
+      resource: "artifacts",
+      scope: "read",
+      config: { binding: true },
+    },
+  ]);
+
+  await db.insert(goals).values([
+    {
+      id: "goal_rag",
+      userId: USER_ID,
+      domain: "learning",
+      title: "6 周学会 RAG",
+      why: "能独立做一个可用的 RAG demo",
+      target: "完成一个可检索、可评估、可部署的 RAG 项目",
+      horizon: "6 weeks",
+      status: "active",
+      progress: 38,
+    },
+    {
+      id: "goal_fitness",
+      userId: USER_ID,
+      domain: "health",
+      title: "每周 3 次运动",
+      why: "久坐 + 睡眠差",
+      target: "连续 4 周，每周 3 次 25 分钟运动",
+      horizon: "4 weeks",
+      status: "active",
+      progress: 60,
+    },
+  ]);
+
+  await db.insert(tasks).values([
+    {
+      id: "tsk_plan",
+      userId: USER_ID,
+      goalId: "goal_rag",
+      title: "拆解 RAG 六周学习路径",
+      description: "把目标拆成每周可执行的任务，每个任务 25–45 分钟。",
+      assigneeId: "ag_chief",
+      auditorId: "ag_auditor",
+      status: "done",
+      priority: 1,
+      dueAt: at(-1, 18, 0),
+      acceptanceCriteria: "包含 6 周计划、每周目标、验收标准；总时长不超过 90 分钟/天。",
+      estimateMin: 30,
+      createdBy: "user",
+    },
+    {
+      id: "tsk_research",
+      userId: USER_ID,
+      goalId: "goal_rag",
+      title: "整理 RAG 三大范式资料",
+      description: "检索、增强、生成三类范式，各给 1 个例子和 1 个来源。",
+      assigneeId: "ag_research",
+      auditorId: "ag_auditor",
+      status: "accepted",
+      priority: 1,
+      dueAt: at(-1, 12, 0),
+      acceptanceCriteria: "每个范式有定义、例子、来源链接；不得编造引用。",
+      estimateMin: 25,
+      createdBy: "agent",
+    },
+    {
+      id: "tsk_quiz",
+      userId: USER_ID,
+      goalId: "goal_rag",
+      title: "设计检索评估练习（含评分标准）",
+      description: "设计 5 道题，覆盖 recall、precision、rerank。",
+      assigneeId: "ag_coach",
+      auditorId: "ag_auditor",
+      status: "submitted",
+      priority: 1,
+      dueAt: at(0, 18, 0),
+      acceptanceCriteria: "5 道题；每题有参考答案；必须包含评分标准（rubric）。",
+      estimateMin: 30,
+      createdBy: "agent",
+    },
+    {
+      id: "tsk_budget",
+      userId: USER_ID,
+      goalId: "goal_rag",
+      title: "审核本周学习预算",
+      description: "检查本周课程、资料、工具支出是否超预算。",
+      assigneeId: "ag_treasurer",
+      auditorId: "ag_auditor",
+      status: "planned",
+      priority: 2,
+      dueAt: at(1, 10, 0),
+      acceptanceCriteria: "列出本周支出、剩余预算、超支项与否决建议。",
+      estimateMin: 15,
+      createdBy: "agent",
+    },
+    {
+      id: "tsk_booking",
+      userId: USER_ID,
+      goalId: "goal_rag",
+      title: "预约周三 20:00 口语陪练",
+      description: "外部动作：需要用户批准后才能预约。",
+      assigneeId: "ag_coach",
+      auditorId: "ag_auditor",
+      status: "planned",
+      priority: 2,
+      dueAt: at(1, 20, 0),
+      acceptanceCriteria: "确认时间、费用、取消政策；保留确认截图。",
+      estimateMin: 10,
+      createdBy: "agent",
+    },
+    {
+      id: "tsk_exercise",
+      userId: USER_ID,
+      goalId: "goal_fitness",
+      title: "运动：午休快走 25 分钟",
+      description: "从 20:00 移到 12:30，降低启动成本。",
+      assigneeId: "ag_coach",
+      auditorId: "ag_auditor",
+      status: "planned",
+      priority: 1,
+      dueAt: at(0, 12, 30),
+      acceptanceCriteria: "25 分钟；心率截图或手动打卡；不得用散步代替。",
+      estimateMin: 25,
+      createdBy: "agent",
+    },
+    {
+      id: "tsk_read",
+      userId: USER_ID,
+      goalId: "goal_rag",
+      title: "阅读 RAG 检索章节 25 分钟",
+      description: "先看例子，再看定义；结束后写 3 行笔记。",
+      assigneeId: "ag_coach",
+      auditorId: "ag_auditor",
+      status: "planned",
+      priority: 1,
+      dueAt: at(0, 21, 0),
+      acceptanceCriteria: "25 分钟专注；3 行笔记；至少 1 个自己的例子。",
+      estimateMin: 25,
+      createdBy: "agent",
+    },
+  ]);
+
+  await db.insert(runs).values([
+    {
+      id: "run_plan",
+      taskId: "tsk_plan",
+      agentId: "ag_chief",
+      status: "succeeded",
+      mode: "demo",
+      startedAt: at(-1, 17, 20),
+      endedAt: at(-1, 17, 24),
+      costCents: 2.1,
+      tokensIn: 1820,
+      tokensOut: 920,
+      replayKey: "replay_plan_v1",
+    },
+    {
+      id: "run_research",
+      taskId: "tsk_research",
+      agentId: "ag_research",
+      status: "succeeded",
+      mode: "demo",
+      startedAt: at(-1, 11, 10),
+      endedAt: at(-1, 11, 16),
+      costCents: 3.4,
+      tokensIn: 2400,
+      tokensOut: 1300,
+      replayKey: "replay_research_v1",
+    },
+    {
+      id: "run_quiz",
+      taskId: "tsk_quiz",
+      agentId: "ag_coach",
+      status: "succeeded",
+      mode: "demo",
+      startedAt: at(0, 16, 10),
+      endedAt: at(0, 16, 14),
+      costCents: 1.8,
+      tokensIn: 1500,
+      tokensOut: 800,
+      replayKey: "replay_quiz_v1",
+    },
+  ]);
+
+  await db.insert(steps).values([
+    {
+      id: "stp_plan_1",
+      runId: "run_plan",
+      idx: 1,
+      type: "context",
+      input: { memories: 4, goal: "goal_rag" },
+      output: { loaded: ["goal", "constraints", "memories"] },
+      tokensIn: 300,
+      tokensOut: 0,
+      latencyMs: 120,
+    },
+    {
+      id: "stp_plan_2",
+      runId: "run_plan",
+      idx: 2,
+      type: "plan",
+      input: { weeks: 6 },
+      output: {
+        outline: ["检索基础", "chunking", "embedding", "rerank", "评估", "部署"],
+      },
+      tokensIn: 700,
+      tokensOut: 380,
+      latencyMs: 900,
+    },
+    {
+      id: "stp_plan_3",
+      runId: "run_plan",
+      idx: 3,
+      type: "tool",
+      tool: "read_notes",
+      input: { query: "可用时间" },
+      output: { hit: "工作日 90 分钟，午休 25 分钟" },
+      tokensIn: 120,
+      tokensOut: 60,
+      latencyMs: 80,
+    },
+    {
+      id: "stp_plan_4",
+      runId: "run_plan",
+      idx: 4,
+      type: "draft",
+      input: { format: "markdown" },
+      output: { artifact: "art_plan" },
+      tokensIn: 400,
+      tokensOut: 420,
+      latencyMs: 1100,
+    },
+    {
+      id: "stp_plan_5",
+      runId: "run_plan",
+      idx: 5,
+      type: "submit",
+      input: { auditor: "ag_auditor" },
+      output: { status: "accepted" },
+      tokensIn: 40,
+      tokensOut: 20,
+      latencyMs: 60,
+    },
+    {
+      id: "stp_res_1",
+      runId: "run_research",
+      idx: 1,
+      type: "context",
+      input: { memories: 2 },
+      output: { loaded: ["learning_state"] },
+      tokensIn: 200,
+      tokensOut: 0,
+      latencyMs: 90,
+    },
+    {
+      id: "stp_res_2",
+      runId: "run_research",
+      idx: 2,
+      type: "tool",
+      tool: "web_search",
+      input: { query: "RAG retrieval augmented generation survey" },
+      output: {
+        results: 3,
+        top: "arxiv.org/abs/2312.10997",
+      },
+      tokensIn: 300,
+      tokensOut: 120,
+      latencyMs: 1400,
+    },
+    {
+      id: "stp_res_3",
+      runId: "run_research",
+      idx: 3,
+      type: "tool",
+      tool: "web_fetch",
+      input: { url: "https://arxiv.org/abs/2312.10997" },
+      output: { title: "Retrieval-Augmented Generation for LLMs: A Survey" },
+      tokensIn: 900,
+      tokensOut: 200,
+      latencyMs: 1600,
+    },
+    {
+      id: "stp_res_4",
+      runId: "run_research",
+      idx: 4,
+      type: "draft",
+      input: { format: "markdown" },
+      output: { artifact: "art_research" },
+      tokensIn: 500,
+      tokensOut: 600,
+      latencyMs: 1200,
+    },
+    {
+      id: "stp_res_5",
+      runId: "run_research",
+      idx: 5,
+      type: "submit",
+      input: { auditor: "ag_auditor" },
+      output: { status: "accepted" },
+      tokensIn: 40,
+      tokensOut: 20,
+      latencyMs: 50,
+    },
+    {
+      id: "stp_quiz_1",
+      runId: "run_quiz",
+      idx: 1,
+      type: "context",
+      input: { memories: 3 },
+      output: { loaded: ["learning_state", "error_patterns"] },
+      tokensIn: 220,
+      tokensOut: 0,
+      latencyMs: 80,
+    },
+    {
+      id: "stp_quiz_2",
+      runId: "run_quiz",
+      idx: 2,
+      type: "plan",
+      input: { questions: 5 },
+      output: { coverage: ["recall", "precision", "rerank"] },
+      tokensIn: 300,
+      tokensOut: 120,
+      latencyMs: 500,
+    },
+    {
+      id: "stp_quiz_3",
+      runId: "run_quiz",
+      idx: 3,
+      type: "draft",
+      input: { format: "markdown" },
+      output: { artifact: "art_quiz" },
+      tokensIn: 600,
+      tokensOut: 700,
+      latencyMs: 1300,
+    },
+    {
+      id: "stp_quiz_4",
+      runId: "run_quiz",
+      idx: 4,
+      type: "submit",
+      input: { auditor: "ag_auditor" },
+      output: { status: "submitted", note: "等待 Auditor 验收" },
+      tokensIn: 40,
+      tokensOut: 20,
+      latencyMs: 50,
+    },
+  ]);
+
+  await db.insert(artifacts).values([
+    {
+      id: "art_plan",
+      runId: "run_plan",
+      taskId: "tsk_plan",
+      type: "markdown",
+      title: "六周 RAG 学习路径",
+      content: `# 六周 RAG 学习路径
+
+## 目标
+6 周后能独立完成一个可检索、可评估、可部署的 RAG demo。
+
+## 每周安排
+1. **检索基础**：BM25 / dense retrieval / hybrid
+2. **Chunking**：固定窗口 vs 语义切分
+3. **Embedding**：模型选择与维度、归一化
+4. **Rerank**：cross-encoder、延迟与成本
+5. **评估**：recall@k、precision、faithfulness
+6. **部署**：索引、缓存、监控
+
+## 每日约束
+- 工作日最多 90 分钟
+- 单任务 25–45 分钟
+- 晚上 20:00 后不安排学习任务`,
+    },
+    {
+      id: "art_research",
+      runId: "run_research",
+      taskId: "tsk_research",
+      type: "markdown",
+      title: "RAG 三大范式速览",
+      content: `# RAG 三大范式速览
+
+## 1. 检索（Retrieval）
+从外部知识库召回相关片段。核心指标：recall@k、延迟。
+例子：BM25 召回 top-20，再用 dense 检索补召回。
+来源：https://arxiv.org/abs/2312.10997
+
+## 2. 增强（Augmentation）
+把召回内容压缩、重排、注入上下文。核心问题：上下文窗口与噪声。
+例子：先 rerank，再取 top-5 注入。
+来源：https://arxiv.org/abs/2312.10997
+
+## 3. 生成（Generation）
+基于增强后的上下文生成答案，并用引用约束幻觉。
+例子：要求模型逐句引用来源，缺失则拒答。
+来源：https://arxiv.org/abs/2312.10997`,
+    },
+    {
+      id: "art_quiz",
+      runId: "run_quiz",
+      taskId: "tsk_quiz",
+      type: "markdown",
+      title: "检索评估练习 v1",
+      content: `# 检索评估练习 v1
+
+1. 什么是 recall@k？请用一个例子说明。
+2. precision 和 recall 在 RAG 里如何权衡？
+3. rerank 解决什么问题？代价是什么？
+4. 如何构造一个 20 条问题的评估集？
+5. 如果模型答对了但引用错了，算不算成功？
+
+## 参考答案
+（略）
+
+> 备注：本版本尚未附评分标准。`,
+    },
+  ]);
+
+  await db.insert(memories).values([
+    {
+      id: "mem_evening",
+      userId: USER_ID,
+      agentId: "ag_coach",
+      type: "semantic",
+      domain: "health",
+      content: "晚上 20:00 后精力低；运动任务连续 3 次被跳过。",
+      confidence: 0.86,
+      salience: 0.92,
+      evidence: [
+        {
+          label: "10/14 运动任务跳过",
+          ref: "tsk_exercise",
+          quote: "计划 20:00，实际未开始",
+        },
+        {
+          label: "10/16 运动任务跳过",
+          ref: "chk_1016",
+          quote: "晚上太累",
+        },
+        {
+          label: "10/19 运动任务跳过",
+          ref: "chk_1019",
+          quote: "加班到 21:00",
+        },
+      ],
+      sourceEventId: "chk_1019",
+      lastConfirmedAt: at(-1, 22, 10),
+    },
+    {
+      id: "mem_examples",
+      userId: USER_ID,
+      agentId: "ag_coach",
+      type: "semantic",
+      domain: "learning",
+      content: "讲解时先给具体例子，再给定义，吸收更好。",
+      confidence: 0.9,
+      salience: 0.85,
+      evidence: [
+        {
+          label: "10/12 反馈",
+          ref: "chk_1012",
+          quote: "定义太抽象，先举个例子",
+        },
+        {
+          label: "10/17 反馈",
+          ref: "chk_1017",
+          quote: "有例子好懂多了",
+        },
+      ],
+      sourceEventId: "chk_1017",
+      lastConfirmedAt: at(-2, 21, 0),
+    },
+    {
+      id: "mem_time",
+      userId: USER_ID,
+      agentId: "ag_chief",
+      type: "semantic",
+      domain: "learning",
+      content: "工作日每天可用学习时间约 90 分钟；午休 25 分钟最稳定。",
+      confidence: 0.8,
+      salience: 0.7,
+      evidence: [
+        { label: "日历统计", ref: "calendar", quote: "工作日 12:30–13:00 空闲" },
+      ],
+      sourceEventId: "calendar_analysis",
+      lastConfirmedAt: at(-3, 10, 0),
+    },
+    {
+      id: "mem_meeting",
+      userId: USER_ID,
+      agentId: "ag_chief",
+      type: "semantic",
+      domain: "calendar",
+      content: "周三 19:30–21:00 有固定会议，不能安排学习或运动。",
+      confidence: 0.95,
+      salience: 0.8,
+      evidence: [
+        { label: "日历", ref: "calendar", quote: "每周三 19:30 团队同步" },
+      ],
+      sourceEventId: "calendar_sync",
+      lastConfirmedAt: at(-7, 9, 0),
+    },
+    {
+      id: "mem_rerank",
+      userId: USER_ID,
+      agentId: "ag_coach",
+      type: "semantic",
+      domain: "learning",
+      content: "rerank 概念仍不熟，需要具体例子和对比实验。",
+      confidence: 0.7,
+      salience: 0.75,
+      evidence: [
+        { label: "练习结果", ref: "tsk_quiz", quote: "第 3 题未作答" },
+      ],
+      sourceEventId: "quiz_attempt_1",
+      lastConfirmedAt: at(0, 16, 20),
+    },
+    {
+      id: "mem_skip",
+      userId: USER_ID,
+      agentId: "ag_coach",
+      type: "episodic",
+      domain: "health",
+      content: "昨天运动未完成，备注：晚上太累。",
+      confidence: 0.95,
+      salience: 0.6,
+      evidence: [{ label: "昨日 check-in", ref: "chk_yesterday" }],
+      sourceEventId: "chk_yesterday",
+      lastConfirmedAt: at(-1, 22, 0),
+    },
+    {
+      id: "mem_conflict",
+      userId: USER_ID,
+      agentId: "ag_chief",
+      type: "semantic",
+      domain: "learning",
+      content: "你偏好晚上 20:00 后学习。",
+      confidence: 0.42,
+      salience: 0.4,
+      evidence: [
+        {
+          label: "10/10 自述",
+          ref: "chk_1010",
+          quote: "晚上安静，适合学习",
+        },
+      ],
+      sourceEventId: "chk_1010",
+      lastConfirmedAt: at(-12, 22, 0),
+      status: "conflicted",
+    },
+  ]);
+
+  await db.insert(insights).values([
+    {
+      id: "ins_morning",
+      userId: USER_ID,
+      claim: "把运动从 20:00 移到午休 12:30，单次 25 分钟，依从性更高。",
+      rationale:
+        "连续 3 次晚间运动被跳过；午休时段的轻量任务完成率约 80%。这不是意志力问题，是时段问题。",
+      confidence: 0.82,
+      evidence: [
+        { label: "3 次晚间跳过", ref: "mem_evening", quote: "20:00 后精力低" },
+        { label: "午休完成率 80%", ref: "calendar_analysis", quote: "12:30–13:00 空闲" },
+      ],
+      proposedChange: {
+        type: "reschedule",
+        taskId: "tsk_exercise",
+        from: "20:00",
+        to: "12:30",
+      },
+      status: "applied",
+      decidedAt: at(-1, 22, 30),
+    },
+    {
+      id: "ins_split",
+      userId: USER_ID,
+      claim: "把 RAG 阅读任务拆成 25 分钟一段，先例子后定义。",
+      rationale:
+        "过去两周 45 分钟任务完成率 40%，25 分钟任务完成率 78%。任务粒度是主要变量。",
+      confidence: 0.76,
+      evidence: [
+        { label: "45 分钟完成率", ref: "tasks_history", quote: "2/5" },
+        { label: "25 分钟完成率", ref: "tasks_history", quote: "7/9" },
+      ],
+      proposedChange: { type: "split_task", taskId: "tsk_read", minutes: 25 },
+      status: "proposed",
+    },
+    {
+      id: "ins_rule",
+      userId: USER_ID,
+      claim: "讲解规则：先给一个具体例子，再给定义。",
+      rationale: "你在 3 次反馈中都要求例子；例子型材料的完成率更高。",
+      confidence: 0.88,
+      evidence: [
+        { label: "反馈 1", ref: "mem_examples", quote: "定义太抽象" },
+        { label: "反馈 2", ref: "mem_examples", quote: "有例子好懂多了" },
+      ],
+      proposedChange: { type: "add_rule", rule: "讲解先给例子，再给定义" },
+      status: "accepted",
+      decidedAt: at(-2, 21, 30),
+    },
+  ]);
+
+  await db.insert(reviews).values([
+    {
+      id: "rev_week",
+      userId: USER_ID,
+      period: weekLabel(now),
+      type: "weekly",
+      narrative: `# 第 2 周复盘
+
+## 发生了什么
+- 完成 5 个被接受的结果（AAO = 5），比上周多 2 个。
+- 运动从晚上移到午休后，完成率从 40% 升到 72%。
+- RAG 学习推进到「检索基础」，rerank 仍是薄弱点。
+
+## 什么有效
+- 25 分钟任务粒度。
+- 先例子后定义。
+- 运动放在午休，而不是晚上。
+
+## 什么无效
+- 周三晚上安排学习：固定会议后没有精力。
+- 一次性给 5 道题：你只做了 3 道。
+
+## 下周改什么
+- 周三不排学习任务。
+- 练习题拆成 2 次，每次 3 道。
+- 给 rerank 补一个对比实验。`,
+      metrics: {
+        aao: 5,
+        adherence: 72,
+        managementMin: 2.8,
+        costUsd: 0.34,
+        goalProgress: 38,
+        auditRejectRate: 18,
+      },
+      decisions: [
+        { action: "reschedule", target: "tsk_exercise", result: "12:30" },
+        { action: "add_rule", target: "coach", result: "先例子后定义" },
+      ],
+      createdAt: at(-1, 21, 0),
+    },
+    {
+      id: "rev_daily",
+      userId: USER_ID,
+      period: day(0),
+      type: "daily",
+      narrative:
+        "今天 3 件事：检索练习、午休快走、RAG 阅读。另有 2 件在队列。1 个任务等你验收，1 个外部动作等你批准。",
+      metrics: { tasks: 3, decisions: 2 },
+      decisions: [],
+      createdAt: at(0, 8, 30),
+    },
+  ]);
+
+  await db.insert(approvals).values([
+    {
+      id: "appr_booking",
+      userId: USER_ID,
+      taskId: "tsk_booking",
+      action: "book_session",
+      payload: {
+        provider: "italki",
+        time: "周三 20:00",
+        costCents: 18000,
+        note: "外部动作：预约并支付，需要你批准",
+      },
+      status: "pending",
+      expiresAt: at(1, 12, 0),
+    },
+  ]);
+
+  const auditSeeds = [
+    {
+      id: "aud_seed_1",
+      actor: "agent:ag_auditor",
+      action: "audit.accept",
+      target: "tsk_research",
+      before: { status: "submitted" },
+      after: {
+        status: "accepted",
+        reason: "来源齐全，定义、例子、链接完整。",
+      },
+      createdAt: at(-1, 12, 10),
+    },
+    {
+      id: "aud_seed_2",
+      actor: "agent:ag_chief",
+      action: "task.dispatch",
+      target: "tsk_research",
+      before: { assignee: null },
+      after: { assignee: "ag_research" },
+      createdAt: at(-1, 11, 0),
+    },
+    {
+      id: "aud_seed_4",
+      actor: "agent:ag_coach",
+      action: "task.submit",
+      target: "tsk_quiz",
+      before: { status: "running" },
+      after: { status: "submitted" },
+      createdAt: at(0, 16, 10),
+    },
+    {
+      id: "aud_seed_3",
+      actor: "user",
+      action: "autonomy.approve",
+      target: "ag_chief",
+      before: { level: 1 },
+      after: { level: 2 },
+      createdAt: at(-2, 20, 0),
+    },
+  ];
+
+  let prev: string | null = null;
+  for (const e of auditSeeds) {
+    const hash = sha256(
+      [
+        prev ?? "genesis",
+        e.actor,
+        e.action,
+        e.target,
+        JSON.stringify(e.before),
+        JSON.stringify(e.after),
+        e.createdAt.toISOString(),
+      ].join("|"),
+    );
+    await db.insert(auditEvents).values({
+      id: e.id,
+      userId: USER_ID,
+      actor: e.actor,
+      action: e.action,
+      target: e.target,
+      before: e.before,
+      after: e.after,
+      hash,
+      prevHash: prev,
+      createdAt: e.createdAt,
+    });
+    prev = hash;
+  }
+
+  await db.insert(skills).values([
+    {
+      id: "sk_apprentice",
+      agentId: "ag_apprentice",
+      name: "检索评估练习设计",
+      version: 1,
+      steps: [
+        "读取 mentor 的 5 次成功运行",
+        "提取题目结构：定义题 / 对比题 / 场景题",
+        "为每题生成参考答案",
+        "生成评分标准（rubric）",
+        "自检：是否覆盖 recall / precision / rerank",
+      ],
+      tools: ["read_runs", "sandbox_execute"],
+      status: "draft",
+      successCount: 0,
+      failCount: 0,
+      eval: { status: "not_started", required: 5, passed: 0 },
+    },
+  ]);
+
+  await db.insert(councils).values([
+    {
+      id: "ccl_course",
+      userId: USER_ID,
+      topic: "要不要买 ¥599 的 RAG 实战课？",
+      trigger: "单笔支出 > ¥200",
+      status: "open",
+      memo: `## 结论
+先买 1 个月试学（¥199），不买年包。
+
+## 理由
+- 课程内容匹配当前阶段，但节奏偏快。
+- 本月学习预算只剩 ¥320，年包会超支。
+- 过去 3 次买课都没学完，先验证完课率。
+
+## 异议
+Critic 认为免费资料已足够，建议先完成现有材料。
+
+## 需要你决定
+批准 ¥199 试学 / 否决 / 改条件。`,
+      createdAt: at(0, 9, 10),
+    },
+  ]);
+
+  await db.insert(councilPositions).values([
+    {
+      id: "cps_research",
+      councilId: "ccl_course",
+      agentId: "ag_research",
+      stance: "neutral",
+      claim: "课程评价 4.6，但完课率只有 18%。",
+      evidence: [
+        { label: "课程页", ref: "web:course", quote: "4.6 / 5，1,204 评价" },
+        { label: "完课率", ref: "web:course", quote: "18% completion" },
+      ],
+      risk: "评价高不代表适合你；完课率低是信号。",
+      recommendation: "先买 1 个月试学。",
+    },
+    {
+      id: "cps_coach",
+      councilId: "ccl_course",
+      agentId: "ag_coach",
+      stance: "support",
+      claim: "内容匹配你当前阶段，但节奏偏快。",
+      evidence: [
+        { label: "当前进度", ref: "goal_rag", quote: "检索基础 38%" },
+      ],
+      risk: "直接上年包可能跟不上，反而打击信心。",
+      recommendation: "试学 + 每周 2 次 25 分钟。",
+    },
+    {
+      id: "cps_treasurer",
+      councilId: "ccl_course",
+      agentId: "ag_treasurer",
+      stance: "oppose",
+      claim: "本月学习预算只剩 ¥320，年包 ¥599 会超支。",
+      evidence: [
+        { label: "预算", ref: "profile", quote: "monthlyLearningBudgetCents: 60000" },
+        { label: "已支出", ref: "ledger", quote: "¥280" },
+      ],
+      risk: "超支会挤压下个月的资料和工具预算。",
+      recommendation: "只批准 ¥199 试学。",
+    },
+    {
+      id: "cps_critic",
+      councilId: "ccl_course",
+      agentId: "ag_critic",
+      stance: "oppose",
+      claim: "你过去 3 次买课都没学完，先完成免费资料。",
+      evidence: [
+        { label: "历史", ref: "purchase_history", quote: "3 门课，完课 0" },
+      ],
+      risk: "买课是缓解焦虑，不是解决问题。",
+      recommendation: "先完成现有材料 2 周，再决定。",
+    },
+    {
+      id: "cps_auditor",
+      councilId: "ccl_course",
+      agentId: "ag_auditor",
+      stance: "neutral",
+      claim: "退款政策 7 天，需保留证据。",
+      evidence: [
+        { label: "退款政策", ref: "web:course", quote: "7-day refund" },
+      ],
+      risk: "超过 7 天无法退款。",
+      recommendation: "若购买，设置第 6 天提醒。",
+    },
+  ]);
+
+  await db.insert(checkins).values([
+    {
+      id: "chk_yesterday",
+      userId: USER_ID,
+      date: day(-1),
+      energy: 3,
+      mood: 4,
+      completed: [
+        { taskId: "tsk_read", done: true },
+        { taskId: "tsk_exercise", done: false },
+      ],
+      note: "晚上太累，运动没做。",
+      createdAt: at(-1, 22, 0),
+    },
+  ]);
+}

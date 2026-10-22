@@ -1,0 +1,200 @@
+import Link from "next/link";
+import {
+  ArrowLeft,
+  Clock3,
+  Gavel,
+  Scale,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
+import { getCouncilData } from "@/lib/engine";
+import { roleMeta } from "@/lib/agents";
+import { dateTime } from "@/lib/format";
+import {
+  Avatar,
+  Badge,
+  Card,
+  CardHeader,
+  EmptyState,
+} from "@/components/ui";
+import { CouncilActions } from "@/components/actions";
+import { Markdown } from "@/components/markdown";
+
+export const dynamic = "force-dynamic";
+
+function stanceTone(stance: string) {
+  if (stance === "support") return "teal" as const;
+  if (stance === "oppose") return "danger" as const;
+  return "accent" as const;
+}
+
+function stanceLabel(stance: string) {
+  if (stance === "support") return "支持";
+  if (stance === "oppose") return "反对";
+  return "中立";
+}
+
+export default async function CouncilPage() {
+  const data = await getCouncilData();
+  if (!data) {
+    return (
+      <div className="py-16">
+        <EmptyState title="没有进行中的内阁会议" hint="当支出、时间冲突或目标变更触发时，会自动召开。" />
+      </div>
+    );
+  }
+  const { council, positions, agents } = data;
+  const agentById = new Map(agents.map((a) => [a.id, a]));
+  const support = positions.filter((p) => p.stance === "support").length;
+  const oppose = positions.filter((p) => p.stance === "oppose").length;
+
+  return (
+    <div>
+      <Link
+        href="/"
+        className="mb-5 inline-flex items-center gap-1 text-[11px] text-faint hover:text-muted"
+      >
+        <ArrowLeft className="size-3" /> 返回今日
+      </Link>
+
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Badge tone="violet">
+              <Gavel className="size-2.5" /> Council
+            </Badge>
+            <Badge tone={council.status === "open" ? "accent" : "teal"}>
+              {council.status === "open" ? "进行中" : "已决议"}
+            </Badge>
+            <span className="text-[10px] text-faint">触发：{council.trigger}</span>
+          </div>
+          <h1 className="text-xl font-semibold tracking-tight text-ink">{council.topic}</h1>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-faint">
+            <span className="inline-flex items-center gap-1">
+              <Users className="size-3" /> {positions.length} 位 Agent 提交立场
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Clock3 className="size-3" /> {dateTime(council.createdAt)}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge tone="teal">{support} 支持</Badge>
+          <Badge tone="danger">{oppose} 反对</Badge>
+          <Badge tone="neutral">{positions.length - support - oppose} 中立</Badge>
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
+        <div className="space-y-5">
+          <Card>
+            <CardHeader
+              eyebrow="Positions"
+              title="各方立场"
+              right={<span className="text-[10px] text-faint">每人 60 秒 · 最多 2 轮</span>}
+            />
+            <div className="divide-y divide-line">
+              {positions.map((position) => {
+                const agent = agentById.get(position.agentId);
+                const meta = agent ? roleMeta(agent.role) : null;
+                return (
+                  <div key={position.id} className="px-5 py-4">
+                    <div className="flex items-start gap-3">
+                      <Avatar
+                        initials={agent?.avatar ?? "??"}
+                        accent={meta?.accent ?? "#8b95a7"}
+                        size={30}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-medium text-ink">
+                            {agent?.name ?? position.agentId}
+                          </span>
+                          <Badge tone={stanceTone(position.stance)}>
+                            {stanceLabel(position.stance)}
+                          </Badge>
+                          <span className="text-[9px] text-faint">
+                            {agent?.title ?? ""}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-[#c6ccd8]">
+                          {position.claim}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {position.evidence.map((e) => (
+                            <span
+                              key={`${e.label}-${e.ref ?? ""}`}
+                              title={e.quote}
+                              className="rounded border border-line bg-panel px-1.5 py-0.5 text-[9px] text-muted"
+                            >
+                              {e.label}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-md border border-line bg-panel2/40 px-2.5 py-2">
+                            <div className="text-[9px] uppercase tracking-wider text-faint">Risk</div>
+                            <div className="mt-0.5 text-[10px] text-muted">{position.risk}</div>
+                          </div>
+                          <div className="rounded-md border border-line bg-panel2/40 px-2.5 py-2">
+                            <div className="text-[9px] uppercase tracking-wider text-faint">Recommendation</div>
+                            <div className="mt-0.5 text-[10px] text-accent">{position.recommendation}</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader eyebrow="Memo" title="决策备忘录" right={<Scale className="size-3.5 text-violet" />} />
+            <div className="px-5 py-4">
+              <Markdown content={council.memo} />
+            </div>
+          </Card>
+        </div>
+
+        <div className="space-y-5">
+          <Card className={council.status === "open" ? "border-accent/30" : "border-teal/25"}>
+            <CardHeader
+              eyebrow="Your call"
+              title={council.status === "open" ? "轮到你决定" : "已决议"}
+            />
+            <div className="px-5 py-4">
+              {council.status === "open" ? (
+                <CouncilActions councilId={council.id} />
+              ) : (
+                <div className="text-[11px] text-muted">
+                  决定已记录在审计日志；下次遇到类似议题会作为判例。
+                </div>
+              )}
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader eyebrow="Rules" title="会议规则" />
+            <div className="space-y-2 px-5 py-4 text-[11px] leading-relaxed text-muted">
+              <p>① 只在高风险决策时召开，不替代日常执行。</p>
+              <p>② 每个 Agent 必须给证据，不允许只给观点。</p>
+              <p>③ Critic 必须唱反调，否则会议无效。</p>
+              <p>④ Auditor 只旁听，不投票；验收时独立判断。</p>
+              <p>⑤ 你有一票否决权，但必须留下理由。</p>
+            </div>
+          </Card>
+
+          <Card>
+            <div className="flex items-start gap-3 px-5 py-4">
+              <ShieldCheck className="mt-0.5 size-4 text-teal" />
+              <div className="text-[11px] leading-relaxed text-muted">
+                内阁会议是未来 Agent 社区的治理缩微版：身份、立场、证据、投票、异议、判例。
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}

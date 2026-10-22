@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:18
+    container_name: cabinet-db
+    environment:
+      POSTGRES_USER: cabinet
+      POSTGRES_PASSWORD: cabinet
+      POSTGRES_DB: cabinet_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - cabinet_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cabinet -d cabinet_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cabinet_pgdata:
