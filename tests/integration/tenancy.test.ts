@@ -61,7 +61,7 @@ async function seedOtherWorkspace() {
     title: "Other task",
     description: "跨用户任务",
     assigneeId: "ag_other",
-    auditorId: "ag_other",
+    auditorId: "ag_auditor",
     status: "planned",
     acceptanceCriteria: "有产物",
     estimateMin: 25,

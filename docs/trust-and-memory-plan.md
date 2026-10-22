@@ -220,4 +220,6 @@ Merkle 树、Biscuit、OPA/Rego、链上身份、完整 mem0/Graphiti、Guest Ag
 - ✅ A2：所有 service/query 接收 `userId`；跨用户访问返回 404；新增 7 条租户隔离测试。
   - engine 拆分仍延后，先完成安全/可靠性主线。
 - ✅ A3：`withIdempotency` + `Idempotency-Key` + Zod schema；同 key 重放返回缓存响应，不同 body 409，并发 409。
-- ⏳ A4–A5、B1–B3、C：未开始。
+- 🟡 A4：DB CHECK（自验收/负成本/自主范围/负预算）、audit seq 唯一、`runTask` claim/finalize 事务、失败注入测试已完成；核心 FK 延后。
+- ⏳ A5、B1–B3、C：未开始。
+- 当前测试：104。

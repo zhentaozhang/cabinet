@@ -25,19 +25,16 @@ describe("runtime policy enforcement", () => {
     await expect(runTask("tsk_read", DEMO_USER_ID)).rejects.toBeInstanceOf(PolicyDenied);
   });
 
-  it("blocks self-audit even when the actor has the auditor role", async () => {
-    await db
-      .update(tasks)
-      .set({
-        assigneeId: "ag_auditor",
-        auditorId: "ag_auditor",
-        status: "submitted",
-      })
-      .where(eq(tasks.id, "tsk_research"));
-
-    await expect(auditTask("tsk_research", DEMO_USER_ID)).rejects.toBeInstanceOf(
-      PolicyDenied,
-    );
+  it("rejects self-audit assignment at the database layer", async () => {
+    await expect(
+      db
+        .update(tasks)
+        .set({
+          assigneeId: "ag_auditor",
+          auditorId: "ag_auditor",
+        })
+        .where(eq(tasks.id, "tsk_research")),
+    ).rejects.toThrow();
   });
 
   it("creates an approval instead of running an external action", async () => {

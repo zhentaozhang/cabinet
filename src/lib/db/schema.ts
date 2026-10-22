@@ -1,6 +1,8 @@
+import { sql } from "drizzle-orm";
 import {
   bigserial,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -156,7 +158,11 @@ export const agents = pgTable(
       .defaultNow(),
     retiredAt: timestamp("retired_at", { withTimezone: true }),
   },
-  (t) => [index("agents_user_idx").on(t.userId)],
+  (t) => [
+    index("agents_user_idx").on(t.userId),
+    check("agents_autonomy_range", sql`${t.autonomyLevel} BETWEEN 0 AND 3`),
+    check("agents_budget_non_negative", sql`${t.budgetCents} >= 0`),
+  ],
 );
 
 export const agentGrants = pgTable("agent_grants", {
@@ -219,6 +225,14 @@ export const tasks = pgTable(
   (t) => [
     index("tasks_status_idx").on(t.status),
     index("tasks_assignee_idx").on(t.assigneeId),
+    check(
+      "tasks_assignee_not_auditor",
+      sql`${t.assigneeId} IS NULL OR ${t.auditorId} IS NULL OR ${t.assigneeId} <> ${t.auditorId}`,
+    ),
+    check(
+      "tasks_cost_non_negative",
+      sql`${t.estimatedCostCents} >= 0`,
+    ),
   ],
 );
 
@@ -367,7 +381,10 @@ export const auditEvents = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [index("audit_user_idx").on(t.userId)],
+  (t) => [
+    index("audit_user_idx").on(t.userId),
+    uniqueIndex("audit_seq_idx").on(t.seq),
+  ],
 );
 
 export const skills = pgTable("skills", {

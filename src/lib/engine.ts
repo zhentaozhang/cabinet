@@ -838,51 +838,53 @@ export async function runTask(taskId: string, userId: string) {
     };
   }
 
-  let status = task.status;
-  if (status === "planned") {
-    assertTransition("task", status, "assigned");
-    const [assigned] = await db
-      .update(tasks)
-      .set({ status: "assigned", updatedAt: new Date() })
-      .where(and(eq(tasks.id, taskId), eq(tasks.status, "planned")))
-      .returning();
-    if (!assigned) throw new ConflictError("Task state changed; retry.");
-    status = "assigned";
-  }
-
-  assertTransition("task", status, "running");
-  const [running] = await db
-    .update(tasks)
-    .set({ status: "running", updatedAt: new Date() })
-    .where(and(eq(tasks.id, taskId), eq(tasks.status, status)))
-    .returning();
-  if (!running) throw new ConflictError("Task state changed; retry.");
-
-  if (approval?.status === "approved" && !approval.consumedAt) {
-    const [consumed] = await db
-      .update(approvals)
-      .set({ consumedAt: new Date() })
-      .where(
-        and(
-          eq(approvals.id, approval.id),
-          eq(approvals.status, "approved"),
-          isNull(approvals.consumedAt),
-        ),
-      )
-      .returning();
-    if (!consumed) throw new ConflictError("Approval already consumed.");
-  }
-
   const runId = newId("run");
   const startedAt = new Date();
-  await db.insert(runs).values({
-    id: runId,
-    taskId,
-    agentId: agent.id,
-    status: "running",
-    mode: process.env.OPENAI_API_KEY ? "live" : "demo",
-    startedAt,
-    replayKey: `replay_${taskId}_${prior.length + 1}`,
+  await db.transaction(async (tx) => {
+    let status = task.status;
+    if (status === "planned") {
+      assertTransition("task", status, "assigned");
+      const [assigned] = await tx
+        .update(tasks)
+        .set({ status: "assigned", updatedAt: new Date() })
+        .where(and(eq(tasks.id, taskId), eq(tasks.status, "planned")))
+        .returning();
+      if (!assigned) throw new ConflictError("Task state changed; retry.");
+      status = "assigned";
+    }
+
+    assertTransition("task", status, "running");
+    const [running] = await tx
+      .update(tasks)
+      .set({ status: "running", updatedAt: new Date() })
+      .where(and(eq(tasks.id, taskId), eq(tasks.status, status)))
+      .returning();
+    if (!running) throw new ConflictError("Task state changed; retry.");
+
+    if (approval?.status === "approved" && !approval.consumedAt) {
+      const [consumed] = await tx
+        .update(approvals)
+        .set({ consumedAt: new Date() })
+        .where(
+          and(
+            eq(approvals.id, approval.id),
+            eq(approvals.status, "approved"),
+            isNull(approvals.consumedAt),
+          ),
+        )
+        .returning();
+      if (!consumed) throw new ConflictError("Approval already consumed.");
+    }
+
+    await tx.insert(runs).values({
+      id: runId,
+      taskId,
+      agentId: agent.id,
+      status: "running",
+      mode: process.env.OPENAI_API_KEY ? "live" : "demo",
+      startedAt,
+      replayKey: `replay_${taskId}_${prior.length + 1}`,
+    });
   });
 
   let idx = 0;
@@ -995,14 +997,6 @@ export async function runTask(taskId: string, userId: string) {
       generated ??
       draftFor(agent.role, task.title, prior.length, Boolean(priorRejection));
     const artifactId = newId("art");
-    await db.insert(artifacts).values({
-      id: artifactId,
-      runId,
-      taskId,
-      type: "markdown",
-      title: draft.title,
-      content: draft.content,
-    });
 
     await addStep({
       type: "draft",
@@ -1012,13 +1006,6 @@ export async function runTask(taskId: string, userId: string) {
       to: generated ? generated.tokensOut : 600,
       latency: generated ? 2400 : 1100,
     });
-
-    const [submitted] = await db
-      .update(tasks)
-      .set({ status: "submitted", updatedAt: new Date() })
-      .where(and(eq(tasks.id, taskId), eq(tasks.status, "running")))
-      .returning();
-    if (!submitted) throw new ConflictError("Task is not running anymore.");
 
     await addStep({
       type: "submit",
@@ -1034,21 +1021,40 @@ export async function runTask(taskId: string, userId: string) {
         2,
       ),
     );
-    await db
-      .update(runs)
-      .set({
-        status: "succeeded",
-        endedAt: new Date(),
-        costCents: cost,
-        tokensIn,
-        tokensOut,
-      })
-      .where(eq(runs.id, runId));
 
-    await db
-      .update(agents)
-      .set({ spentCents: sql`${agents.spentCents} + ${cost}` })
-      .where(eq(agents.id, agent.id));
+    await db.transaction(async (tx) => {
+      await tx.insert(artifacts).values({
+        id: artifactId,
+        runId,
+        taskId,
+        type: "markdown",
+        title: draft.title,
+        content: draft.content,
+      });
+
+      const [submitted] = await tx
+        .update(tasks)
+        .set({ status: "submitted", updatedAt: new Date() })
+        .where(and(eq(tasks.id, taskId), eq(tasks.status, "running")))
+        .returning();
+      if (!submitted) throw new ConflictError("Task is not running anymore.");
+
+      await tx
+        .update(runs)
+        .set({
+          status: "succeeded",
+          endedAt: new Date(),
+          costCents: cost,
+          tokensIn,
+          tokensOut,
+        })
+        .where(eq(runs.id, runId));
+
+      await tx
+        .update(agents)
+        .set({ spentCents: sql`${agents.spentCents} + ${cost}` })
+        .where(eq(agents.id, agent.id));
+    });
 
     await logAudit({
       userId: task.userId,
