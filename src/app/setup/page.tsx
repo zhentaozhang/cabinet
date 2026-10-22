@@ -30,7 +30,7 @@ export default async function SetupPage() {
             </p>
             <Link
               href="/"
-              className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-[11px] text-ink hover:border-line2/80"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-micro text-ink hover:border-line2/80"
             >
               进入 Today <ArrowRight className="size-3" />
             </Link>

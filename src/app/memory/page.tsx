@@ -66,7 +66,7 @@ export default async function MemoryPage({
     <div>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.2em] text-faint">
+          <div className="mb-2 flex items-center gap-2 text-mini font-medium uppercase tracking-[0.2em] text-faint">
             <Brain className="size-3 text-accent" />
             Memory
           </div>
@@ -113,12 +113,12 @@ export default async function MemoryPage({
               href={hrefFor(tab.key)}
               className={
                 active
-                  ? "rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1 text-[11px] text-accent"
-                  : "rounded-md border border-line bg-panel2 px-2.5 py-1 text-[11px] text-muted hover:border-line2"
+                  ? "rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1 text-micro text-accent"
+                  : "rounded-md border border-line bg-panel2 px-2.5 py-1 text-micro text-muted hover:border-line2"
               }
             >
               {tab.label}
-              <span className="ml-1.5 text-[9px] text-faint">
+              <span className="ml-1.5 text-nano text-faint">
                 {tab.key ? data.counts[tab.key as "semantic" | "episodic" | "procedural"] : data.counts.all}
               </span>
             </Link>
@@ -131,8 +131,8 @@ export default async function MemoryPage({
           href={hrefFor(type ?? "")}
           className={
             view === "current"
-              ? "rounded-md border border-teal/40 bg-teal/10 px-2.5 py-1 text-[11px] text-teal"
-              : "rounded-md border border-line bg-panel2 px-2.5 py-1 text-[11px] text-muted hover:border-line2"
+              ? "rounded-md border border-teal/40 bg-teal/10 px-2.5 py-1 text-micro text-teal"
+              : "rounded-md border border-line bg-panel2 px-2.5 py-1 text-micro text-muted hover:border-line2"
           }
         >
           当前事实
@@ -144,8 +144,8 @@ export default async function MemoryPage({
           }).toString()}`}
           className={
             view === "history"
-              ? "rounded-md border border-violet/40 bg-violet/10 px-2.5 py-1 text-[11px] text-violet"
-              : "rounded-md border border-line bg-panel2 px-2.5 py-1 text-[11px] text-muted hover:border-line2"
+              ? "rounded-md border border-violet/40 bg-violet/10 px-2.5 py-1 text-micro text-violet"
+              : "rounded-md border border-line bg-panel2 px-2.5 py-1 text-micro text-muted hover:border-line2"
           }
         >
           历史版本
@@ -183,7 +183,7 @@ export default async function MemoryPage({
                     ) : null}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="mono text-[10px] text-muted">
+                    <span className="mono text-mini text-muted">
                       {Math.round(memory.confidence * 100)}%
                     </span>
                     {view === "current" ? (
@@ -194,7 +194,7 @@ export default async function MemoryPage({
 
                 <p className="mt-2.5 text-xs leading-relaxed text-[#c6ccd8]">{memory.content}</p>
                 {memory.value ? (
-                  <p className="mt-1 text-[10px] text-accent">
+                  <p className="mt-1 text-mini text-accent">
                     事实值：{memory.value}
                   </p>
                 ) : null}
@@ -204,14 +204,14 @@ export default async function MemoryPage({
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 text-[9px] text-faint">
+                  <span className="inline-flex items-center gap-1 text-nano text-faint">
                     <Link2 className="size-2.5" /> evidence
                   </span>
                   {memory.evidence.map((e) => {
                     const ref = e.ref ?? "";
                     const content = (
                       <span
-                        className="rounded border border-line bg-panel px-1.5 py-0.5 text-[9px] text-muted hover:border-line2"
+                        className="rounded border border-line bg-panel px-1.5 py-0.5 text-nano text-muted hover:border-line2"
                         title={e.quote}
                       >
                         {e.label}
@@ -227,7 +227,7 @@ export default async function MemoryPage({
                   })}
                 </div>
 
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-[9px] text-faint">
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-nano text-faint">
                   <span>生效 {dateTime(memory.validFrom)}</span>
                   {memory.validTo ? (
                     <span>失效 {dateTime(memory.validTo)}</span>
@@ -248,7 +248,7 @@ export default async function MemoryPage({
         <div className="space-y-5">
           <Card>
             <CardHeader eyebrow="Governance" title="记忆治理" />
-            <div className="space-y-3 px-5 py-4 text-[11px] leading-relaxed text-muted">
+            <div className="space-y-3 px-5 py-4 text-micro leading-relaxed text-muted">
               <div className="flex gap-2">
                 <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-teal" />
                 <p>没有来源事件的记忆不许写入，防止模型编造。</p>
@@ -270,7 +270,7 @@ export default async function MemoryPage({
 
           <Card>
             <CardHeader eyebrow="Legend" title="三种记忆" />
-            <div className="space-y-3 px-5 py-4 text-[11px]">
+            <div className="space-y-3 px-5 py-4 text-micro">
               <div>
                 <Badge tone="teal">episodic</Badge>
                 <p className="mt-1 text-muted">发生了什么：check-in、事件、结果。</p>

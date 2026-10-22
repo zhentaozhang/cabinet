@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Shell } from "@/components/shell";
+import { ToastContainer } from "@/components/ui/toast";
 import { fetchShellContext } from "@/lib/api/pages";
 
 const geistSans = Geist({
@@ -36,6 +37,7 @@ export default async function RootLayout({
     >
       <body className="min-h-full">
         <Shell context={shellContext}>{children}</Shell>
+        <ToastContainer />
       </body>
     </html>
   );

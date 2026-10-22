@@ -54,7 +54,7 @@ export default async function CouncilPage() {
     <div>
       <Link
         href="/"
-        className="mb-5 inline-flex items-center gap-1 text-[11px] text-faint hover:text-muted"
+        className="mb-5 inline-flex items-center gap-1 text-micro text-faint hover:text-muted"
       >
         <ArrowLeft className="size-3" /> 返回今日
       </Link>
@@ -82,10 +82,10 @@ export default async function CouncilPage() {
                     ? "立场生成失败"
                     : "已决议"}
             </Badge>
-            <span className="text-[10px] text-faint">触发：{council.trigger}</span>
+            <span className="text-mini text-faint">触发：{council.trigger}</span>
           </div>
           <h1 className="text-xl font-semibold tracking-tight text-ink">{council.topic}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-faint">
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-mini text-faint">
             <span className="inline-flex items-center gap-1">
               <Users className="size-3" /> {positions.length} 位 Agent 提交立场
             </span>
@@ -107,7 +107,7 @@ export default async function CouncilPage() {
             eyebrow="Matrix"
             title="内阁矩阵"
             right={
-              <span className="text-[10px] text-faint">
+              <span className="text-mini text-faint">
                 综合健康度 {council.matrix.overall} / 100
               </span>
             }
@@ -127,7 +127,7 @@ export default async function CouncilPage() {
                   key={key}
                   className="rounded-md border border-line bg-panel2/40 px-3 py-2"
                 >
-                  <div className="text-[9px] uppercase tracking-wider text-faint">
+                  <div className="text-nano uppercase tracking-wider text-faint">
                     {label}
                   </div>
                   <div className="mt-1 flex items-center gap-2">
@@ -137,7 +137,7 @@ export default async function CouncilPage() {
                         style={{ width: `${value}%` }}
                       />
                     </div>
-                    <span className="w-7 text-right text-[10px] text-muted">
+                    <span className="w-7 text-right text-mini text-muted">
                       {value}
                     </span>
                   </div>
@@ -162,7 +162,7 @@ export default async function CouncilPage() {
             <CardHeader
               eyebrow="Positions"
               title="各方立场"
-              right={<span className="text-[10px] text-faint">每人 60 秒 · 最多 2 轮</span>}
+              right={<span className="text-mini text-faint">每人 60 秒 · 最多 2 轮</span>}
             />
             <div className="divide-y divide-line">
               {positions.map((position) => {
@@ -178,7 +178,7 @@ export default async function CouncilPage() {
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[11px] font-medium text-ink">
+                          <span className="text-micro font-medium text-ink">
                             {agent?.name ?? position.agentId}
                           </span>
                           <Badge tone={stanceTone(position.stance)}>
@@ -187,7 +187,7 @@ export default async function CouncilPage() {
                           {position.isDissent ? (
                             <Badge tone="danger">正式异议</Badge>
                           ) : null}
-                          <span className="text-[9px] text-faint">
+                          <span className="text-nano text-faint">
                             {agent?.title ?? ""}
                           </span>
                         </div>
@@ -199,14 +199,14 @@ export default async function CouncilPage() {
                             <span
                               key={`${e.label}-${e.ref ?? ""}`}
                               title={e.quote}
-                              className="rounded border border-line bg-panel px-1.5 py-0.5 text-[9px] text-muted"
+                              className="rounded border border-line bg-panel px-1.5 py-0.5 text-nano text-muted"
                             >
                               {e.label}
                             </span>
                           ))}
                         </div>
                         {position.scores ? (
-                          <div className="mt-2 flex flex-wrap gap-2 text-[9px] text-faint">
+                          <div className="mt-2 flex flex-wrap gap-2 text-nano text-faint">
                             <span>可行性 {position.scores.feasibility}</span>
                             <span>成本 {position.scores.costEfficiency}</span>
                             <span>证据 {position.scores.evidenceQuality}</span>
@@ -215,12 +215,12 @@ export default async function CouncilPage() {
                         ) : null}
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">
                           <div className="rounded-md border border-line bg-panel2/40 px-2.5 py-2">
-                            <div className="text-[9px] uppercase tracking-wider text-faint">Risk</div>
-                            <div className="mt-0.5 text-[10px] text-muted">{position.risk}</div>
+                            <div className="text-nano uppercase tracking-wider text-faint">Risk</div>
+                            <div className="mt-0.5 text-mini text-muted">{position.risk}</div>
                           </div>
                           <div className="rounded-md border border-line bg-panel2/40 px-2.5 py-2">
-                            <div className="text-[9px] uppercase tracking-wider text-faint">Recommendation</div>
-                            <div className="mt-0.5 text-[10px] text-accent">{position.recommendation}</div>
+                            <div className="text-nano uppercase tracking-wider text-faint">Recommendation</div>
+                            <div className="mt-0.5 text-mini text-accent">{position.recommendation}</div>
                           </div>
                         </div>
                       </div>
@@ -249,7 +249,7 @@ export default async function CouncilPage() {
               {council.status === "open" ? (
                 <CouncilActions councilId={council.id} />
               ) : council.resolution ? (
-                <div className="space-y-2 text-[11px] leading-relaxed text-muted">
+                <div className="space-y-2 text-micro leading-relaxed text-muted">
                   <div className="text-ink">
                     {council.resolution.decision === "approve"
                       ? "批准"
@@ -271,12 +271,12 @@ export default async function CouncilPage() {
                       {council.resolution.dissents.length} 条正式异议已归档。
                     </div>
                   ) : null}
-                  <div className="text-[10px] text-faint">
+                  <div className="text-mini text-faint">
                     决定已记录在审计日志；下次遇到类似议题会作为判例。
                   </div>
                 </div>
               ) : (
-                <div className="text-[11px] text-muted">
+                <div className="text-micro text-muted">
                   决定已记录在审计日志；下次遇到类似议题会作为判例。
                 </div>
               )}
@@ -292,7 +292,7 @@ export default async function CouncilPage() {
 
           <Card>
             <CardHeader eyebrow="Rules" title="会议规则" />
-            <div className="space-y-2 px-5 py-4 text-[11px] leading-relaxed text-muted">
+            <div className="space-y-2 px-5 py-4 text-micro leading-relaxed text-muted">
               <p>① 只在高风险决策时召开，不替代日常执行。</p>
               <p>② 每个 Agent 必须给证据，不允许只给观点。</p>
               <p>③ Critic 必须唱反调，否则会议无效。</p>
@@ -304,7 +304,7 @@ export default async function CouncilPage() {
           <Card>
             <div className="flex items-start gap-3 px-5 py-4">
               <ShieldCheck className="mt-0.5 size-4 text-teal" />
-              <div className="text-[11px] leading-relaxed text-muted">
+              <div className="text-micro leading-relaxed text-muted">
                 内阁会议是未来 Agent 社区的治理缩微版：身份、立场、证据、投票、异议、判例。
               </div>
             </div>

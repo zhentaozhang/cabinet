@@ -61,7 +61,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
         <CardHeader eyebrow="Step 1" title="基础设置" />
         <div className="space-y-3 px-5 py-4">
           <div>
-            <label className="mb-1.5 block text-[10px] uppercase tracking-[0.16em] text-faint">
+            <label className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint">
               Timezone
             </label>
             <select
@@ -78,7 +78,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
           </div>
 
           <div className="border-t border-line pt-3">
-            <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-faint">
+            <div className="mb-2 text-mini uppercase tracking-[0.16em] text-faint">
               Optional first goal
             </div>
             <input
@@ -102,7 +102,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
           </div>
 
           {error ? (
-            <div className="rounded-md border border-danger/30 bg-danger/[0.05] px-3 py-2 text-[11px] text-danger">
+            <div className="rounded-md border border-danger/30 bg-danger/[0.05] px-3 py-2 text-micro text-danger">
               {error}
             </div>
           ) : null}
@@ -133,10 +133,10 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
           {agents.map((agent) => (
             <div key={agent.role} className="px-5 py-2.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] text-ink">{agent.name}</span>
-                <span className="text-[9px] text-faint">{agent.title}</span>
+                <span className="text-micro text-ink">{agent.name}</span>
+                <span className="text-nano text-faint">{agent.title}</span>
               </div>
-              <div className="mt-0.5 text-[9px] text-faint">{agent.objective}</div>
+              <div className="mt-0.5 text-nano text-faint">{agent.objective}</div>
             </div>
           ))}
         </div>

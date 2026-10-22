@@ -62,7 +62,7 @@ export default async function TaskPage({
     <div>
       <Link
         href="/"
-        className="mb-5 inline-flex items-center gap-1 text-[11px] text-faint hover:text-muted"
+        className="mb-5 inline-flex items-center gap-1 text-micro text-faint hover:text-muted"
       >
         <ArrowLeft className="size-3" /> 返回今日
       </Link>
@@ -72,7 +72,7 @@ export default async function TaskPage({
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <Badge tone={statusTone(task.status)}>{statusLabel(task.status)}</Badge>
             {goal ? <Badge tone="neutral">{goal.title}</Badge> : null}
-            <span className="mono text-[10px] text-faint">{task.id}</span>
+            <span className="mono text-mini text-faint">{task.id}</span>
           </div>
           <h1 className="text-xl font-semibold tracking-tight text-ink">{task.title}</h1>
           <p className="mt-1.5 max-w-2xl text-xs leading-relaxed text-muted">{task.description}</p>
@@ -97,11 +97,11 @@ export default async function TaskPage({
             <div className="text-xs font-medium text-ink">
               {latestAudit.action === "audit.accept" ? "Auditor 验收通过" : "Auditor 驳回"}
             </div>
-            <div className="mt-1 text-[11px] text-muted">
+            <div className="mt-1 text-micro text-muted">
               {String((latestAudit.after as Record<string, unknown> | null)?.reason ?? "")}
             </div>
           </div>
-          <span className="text-[10px] text-faint">{dateTime(latestAudit.createdAt)}</span>
+          <span className="text-mini text-faint">{dateTime(latestAudit.createdAt)}</span>
         </div>
       ) : null}
 
@@ -128,7 +128,7 @@ export default async function TaskPage({
                     return (
                       <div
                         key={`${item.type}-${index}`}
-                        className="flex items-start gap-1.5 text-[10px]"
+                        className="flex items-start gap-1.5 text-mini"
                       >
                         {result ? (
                           result.passed ? (
@@ -148,7 +148,7 @@ export default async function TaskPage({
                   })}
                 </div>
               ) : null}
-              <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-faint">
+              <div className="mt-3 flex flex-wrap gap-4 text-mini text-faint">
                 <span>预估 {task.estimateMin} 分钟</span>
                 <span>截止 {dateTime(task.dueAt)}</span>
                 <span>创建者 {task.createdBy}</span>
@@ -160,7 +160,7 @@ export default async function TaskPage({
             <CardHeader
               eyebrow="Run trace"
               title="运行轨迹"
-              right={<span className="text-[10px] text-faint">{runs.length} 次运行</span>}
+              right={<span className="text-mini text-faint">{runs.length} 次运行</span>}
             />
             {runs.length === 0 ? (
               <div className="px-5 py-6">
@@ -185,15 +185,15 @@ export default async function TaskPage({
                                 : "size-1.5 rounded-full bg-accent"
                           }
                         />
-                        <span className="mono text-[11px] text-ink">{run.id}</span>
+                        <span className="mono text-micro text-ink">{run.id}</span>
                         <Badge tone={run.agentId === "ag_auditor" ? "danger" : "neutral"}>
                           {run.agentId}
                         </Badge>
-                        <span className="text-[10px] text-faint">
+                        <span className="text-mini text-faint">
                           {run.status} · {run.mode} · {run.tokensIn + run.tokensOut} tokens ·{" "}
                           {money(run.costCents)}
                         </span>
-                        <span className="ml-auto text-[10px] text-faint">
+                        <span className="ml-auto text-mini text-faint">
                           {timeOnly(run.startedAt)} → {timeOnly(run.endedAt)}
                         </span>
                       </div>
@@ -206,7 +206,7 @@ export default async function TaskPage({
                             ) : null}
                             <span
                               className={
-                                "relative z-10 mt-1 size-[15px] shrink-0 rounded-full border border-line bg-panel text-center text-[8px] leading-[13px] " +
+                                "relative z-10 mt-1 size-[15px] shrink-0 rounded-full border border-line bg-panel text-center text-nano leading-[13px] " +
                                 (STEP_TONE[step.type] ?? "text-muted")
                               }
                             >
@@ -214,27 +214,27 @@ export default async function TaskPage({
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className={"text-[11px] font-medium " + (STEP_TONE[step.type] ?? "text-muted")}>
+                                <span className={"text-micro font-medium " + (STEP_TONE[step.type] ?? "text-muted")}>
                                   {step.type}
                                 </span>
                                 {step.tool ? (
-                                  <span className="mono rounded border border-line bg-panel2 px-1.5 py-0.5 text-[9px] text-violet">
+                                  <span className="mono rounded border border-line bg-panel2 px-1.5 py-0.5 text-nano text-violet">
                                     {step.tool}
                                   </span>
                                 ) : null}
-                                <span className="text-[9px] text-faint">
+                                <span className="text-nano text-faint">
                                   {step.latencyMs}ms · {step.tokensIn + step.tokensOut} tok
                                 </span>
                               </div>
                               <details className="group mt-1">
-                                <summary className="cursor-pointer text-[10px] text-faint hover:text-muted">
+                                <summary className="cursor-pointer text-mini text-faint hover:text-muted">
                                   查看输入 / 输出
                                 </summary>
                                 <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-                                  <pre className="overflow-x-auto rounded border border-line bg-[#0b0e14] p-2 text-[9px] leading-relaxed text-muted">
+                                  <pre className="overflow-x-auto rounded border border-line bg-[#0b0e14] p-2 text-nano leading-relaxed text-muted">
                                     {JSON.stringify(step.input, null, 2)}
                                   </pre>
-                                  <pre className="overflow-x-auto rounded border border-line bg-[#0b0e14] p-2 text-[9px] leading-relaxed text-teal/80">
+                                  <pre className="overflow-x-auto rounded border border-line bg-[#0b0e14] p-2 text-nano leading-relaxed text-teal/80">
                                     {JSON.stringify(step.output, null, 2)}
                                   </pre>
                                 </div>
@@ -245,7 +245,7 @@ export default async function TaskPage({
                       </div>
 
                       {run.replayKey ? (
-                        <div className="mt-2 flex items-center gap-1 text-[9px] text-faint">
+                        <div className="mt-2 flex items-center gap-1 text-nano text-faint">
                           <Play className="size-2.5" /> replay: <span className="mono">{run.replayKey}</span>
                         </div>
                       ) : null}
@@ -267,10 +267,10 @@ export default async function TaskPage({
                     <div className="mb-2 flex items-center gap-2">
                       <FileText className="size-3.5 text-teal" />
                       <span className="text-xs font-medium text-ink">{artifact.title}</span>
-                      <span className="text-[9px] text-faint">{dateTime(artifact.createdAt)}</span>
+                      <span className="text-nano text-faint">{dateTime(artifact.createdAt)}</span>
                     </div>
                     <details open={artifact.id === artifacts[0]?.id}>
-                      <summary className="cursor-pointer text-[10px] text-faint hover:text-muted">
+                      <summary className="cursor-pointer text-mini text-faint hover:text-muted">
                         展开内容
                       </summary>
                       <div className="mt-2 rounded-lg border border-line bg-[#0b0e14] px-4 py-3">
@@ -292,8 +292,8 @@ export default async function TaskPage({
                 <Link href={`/cabinet/${assignee.id}`} className="flex items-center gap-2.5">
                   <Avatar initials={assignee.avatar} accent={roleMeta(assignee.role).accent} size={30} />
                   <div>
-                    <div className="text-[11px] text-ink">{assignee.name}</div>
-                    <div className="text-[9px] text-faint">执行 · {assignee.title}</div>
+                    <div className="text-micro text-ink">{assignee.name}</div>
+                    <div className="text-nano text-faint">执行 · {assignee.title}</div>
                   </div>
                 </Link>
               ) : null}
@@ -301,12 +301,12 @@ export default async function TaskPage({
                 <Link href={`/cabinet/${auditor.id}`} className="flex items-center gap-2.5">
                   <Avatar initials={auditor.avatar} accent={roleMeta(auditor.role).accent} size={30} />
                   <div>
-                    <div className="text-[11px] text-ink">{auditor.name}</div>
-                    <div className="text-[9px] text-faint">验收 · {auditor.title}</div>
+                    <div className="text-micro text-ink">{auditor.name}</div>
+                    <div className="text-nano text-faint">验收 · {auditor.title}</div>
                   </div>
                 </Link>
               ) : null}
-              <div className="rounded-md border border-line bg-panel2/50 px-3 py-2 text-[10px] text-muted">
+              <div className="rounded-md border border-line bg-panel2/50 px-3 py-2 text-mini text-muted">
                 <ShieldCheck className="mr-1 inline size-3 text-teal" />
                 执行者不能验收自己的产物。
               </div>
@@ -315,7 +315,7 @@ export default async function TaskPage({
 
           <Card>
             <CardHeader eyebrow="Timeline" title="关键时间" />
-            <div className="space-y-3 px-5 py-4 text-[11px]">
+            <div className="space-y-3 px-5 py-4 text-micro">
               <div className="flex items-center justify-between">
                 <span className="text-faint">创建</span>
                 <span className="text-muted">{dateTime(task.createdAt)}</span>
@@ -336,7 +336,7 @@ export default async function TaskPage({
               <CardHeader eyebrow="Approval" title="需要批准" />
               <div className="space-y-2 px-5 py-4">
                 {approvals.map((approval) => (
-                  <div key={approval.id} className="text-[11px] text-muted">
+                  <div key={approval.id} className="text-micro text-muted">
                     <div className="flex items-center gap-2 text-ink">
                       <CircleAlert className="size-3 text-accent" /> {approval.action}
                     </div>
@@ -355,16 +355,16 @@ export default async function TaskPage({
             <div className="divide-y divide-line">
               {audit.slice(0, 5).map((event) => (
                 <div key={event.id} className="px-5 py-2.5">
-                  <div className="flex items-center gap-2 text-[10px]">
+                  <div className="flex items-center gap-2 text-mini">
                     <span className="mono text-muted">{event.action}</span>
                     <span className="text-faint">·</span>
                     <span className="truncate text-faint">{event.actor}</span>
                   </div>
-                  <div className="mt-0.5 text-[9px] text-faint">{dateTime(event.createdAt)}</div>
+                  <div className="mt-0.5 text-nano text-faint">{dateTime(event.createdAt)}</div>
                 </div>
               ))}
               {audit.length === 0 ? (
-                <div className="px-5 py-4 text-[10px] text-faint">暂无记录。</div>
+                <div className="px-5 py-4 text-mini text-faint">暂无记录。</div>
               ) : null}
             </div>
           </Card>
@@ -372,7 +372,7 @@ export default async function TaskPage({
           <Card>
             <div className="flex items-start gap-3 px-5 py-4">
               <Clock3 className="mt-0.5 size-4 text-blue" />
-              <div className="text-[11px] leading-relaxed text-muted">
+              <div className="text-micro leading-relaxed text-muted">
                 运行是可回放的：同一个 <span className="mono text-ink">replayKey</span>{" "}
                 可以复现步骤与产物，方便复盘和排查。
               </div>

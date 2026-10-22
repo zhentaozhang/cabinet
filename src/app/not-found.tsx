@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 export default function NotFound() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
-      <div className="mono text-[10px] uppercase tracking-[0.24em] text-faint">
+      <div className="mono text-mini uppercase tracking-[0.24em] text-faint">
         404 · not in the cabinet
       </div>
       <h1 className="mt-3 text-xl font-semibold tracking-tight text-ink">
@@ -15,7 +15,7 @@ export default function NotFound() {
       </p>
       <Link
         href="/"
-        className="mt-5 inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-[11px] text-ink hover:border-line2/80"
+        className="mt-5 inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-micro text-ink hover:border-line2/80"
       >
         <ArrowLeft className="size-3" /> 返回今日
       </Link>

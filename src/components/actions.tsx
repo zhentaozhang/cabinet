@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { Button, Progress } from "@/components/ui";
+import { toast } from "@/components/ui/toast";
 import { browserApi, idempotencyKey } from "@/lib/api/browser";
 import type { InsightDto } from "@/contracts";
 import { cn } from "@/lib/format";
@@ -60,16 +61,27 @@ export function TaskActions({
     setBusy(null);
     if (!data.ok) {
       setMsg(data.error ?? "操作失败");
+      toast.error(data.error ?? "操作失败");
       return;
     }
     if (label === "audit") {
-      setMsg(`验收结果：${data.decision === "accepted" ? "通过" : "驳回"}`);
+      const isAccepted = data.decision === "accepted";
+      const txt = `验收结果：${isAccepted ? "通过" : "驳回"}`;
+      setMsg(txt);
+      if (isAccepted) {
+        toast.success(txt);
+      } else {
+        toast.error(txt);
+      }
     } else if (data.requiresApproval) {
       setMsg("已提交审批，等待你批准");
+      toast.info("已提交审批，等待你批准");
     } else if (data.suggested) {
       setMsg("L1 只生成建议，已保存草稿");
+      toast.info("L1 只生成建议，已保存草稿");
     } else {
       setMsg("执行完成");
+      toast.success("执行完成");
     }
     router.refresh();
   }
@@ -96,9 +108,11 @@ export function TaskActions({
     setBusy(null);
     if (!data.ok) {
       setMsg(data.error ?? "采纳失败");
+      toast.error(data.error ?? "采纳失败");
       return;
     }
     setMsg("已采纳建议，可以执行");
+    toast.success("已采纳建议，可以执行");
     router.refresh();
   }
 
@@ -143,9 +157,9 @@ export function TaskActions({
         {busy === "audit" ? <Loader2 className="size-3 animate-spin" /> : <FileCheck2 className="size-3" />}
         提交验收
       </Button>
-      {msg ? <span className="text-[11px] text-muted">{msg}</span> : null}
+      {msg ? <span className="text-micro text-muted">{msg}</span> : null}
       {status === "rejected" ? (
-        <span className="text-[10px] text-danger">
+        <span className="text-mini text-danger">
           已驳回：先重新执行，再提交验收。
         </span>
       ) : null}
@@ -159,11 +173,16 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
 
   async function decide(decision: "approve" | "reject") {
     setBusy(decision);
-    await call(`/api/approvals/${approvalId}`, "PATCH", {
+    const data = await call(`/api/approvals/${approvalId}`, "PATCH", {
       decision,
       reason: decision === "reject" ? "用户拒绝" : "用户批准",
     });
     setBusy(null);
+    if (!data.ok) {
+      toast.error(data.error ?? "审批失败");
+      return;
+    }
+    toast.success(decision === "approve" ? "已批准外部动作" : "已拒绝动作");
     router.refresh();
   }
 
@@ -204,9 +223,12 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
     setBusy(null);
     if (!data.ok) {
       setMsg(data.error ?? "操作失败");
+      toast.error(data.error ?? "操作失败");
       return;
     }
-    setMsg(action === "accept" ? "已采纳" : action === "reject" ? "已拒绝" : "已回滚");
+    const label = action === "accept" ? "已采纳" : action === "reject" ? "已拒绝" : "已回滚";
+    setMsg(label);
+    toast.success(label);
     router.refresh();
   }
 
@@ -223,7 +245,7 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Sparkles className="size-3.5 text-accent" />
-            <span className="text-[10px] uppercase tracking-[0.16em] text-faint">
+            <span className="text-mini uppercase tracking-[0.16em] text-faint">
               insight · {insight.status}
             </span>
           </div>
@@ -233,14 +255,14 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
         </div>
         <div className="shrink-0 text-right">
           <div className="mono text-lg text-ink">{Math.round(insight.confidence * 100)}%</div>
-          <div className="text-[10px] text-faint">confidence</div>
+          <div className="text-mini text-faint">confidence</div>
         </div>
       </div>
 
       <p className="mt-2 text-xs leading-relaxed text-muted">{insight.rationale}</p>
 
       <div className="mt-3 rounded-lg border border-line bg-panel/60 px-3 py-2">
-        <div className="text-[10px] uppercase tracking-[0.14em] text-faint">proposed change</div>
+        <div className="text-mini uppercase tracking-[0.14em] text-faint">proposed change</div>
         <div className="mt-1 text-xs text-accent">{changeLabel(insight.proposedChange)}</div>
       </div>
 
@@ -248,7 +270,7 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
         {insight.evidence.map((e) => (
           <span
             key={`${e.label}-${e.ref ?? ""}`}
-            className="rounded border border-line bg-panel px-2 py-1 text-[10px] text-muted"
+            className="rounded border border-line bg-panel px-2 py-1 text-mini text-muted"
             title={e.quote}
           >
             {e.label}
@@ -274,7 +296,7 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
             回滚
           </Button>
         ) : null}
-        {msg ? <span className="text-[11px] text-muted">{msg}</span> : null}
+        {msg ? <span className="text-micro text-muted">{msg}</span> : null}
       </div>
 
       <div className="mt-3">
@@ -306,24 +328,27 @@ export function CheckinForm({
       completed: tasks.map((t) => ({ taskId: t.id, done: Boolean(done[t.id]) })),
     });
     setBusy(false);
-    if (data.ok) {
-      setSaved(true);
-      router.refresh();
+    if (!data.ok) {
+      toast.error(data.error ?? "打卡保存失败");
+      return;
     }
+    setSaved(true);
+    toast.success("今日 check-in 已封存");
+    router.refresh();
   }
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-faint">energy</div>
+          <div className="mb-2 text-mini uppercase tracking-[0.16em] text-faint">energy</div>
           <div className="flex gap-1">
             {[1, 2, 3, 4, 5].map((n) => (
               <button
                 key={n}
                 onClick={() => setEnergy(n)}
                 className={cn(
-                  "h-7 flex-1 rounded border text-[11px] transition-colors",
+                  "h-7 flex-1 rounded border text-micro transition-colors",
                   energy === n
                     ? "border-accent/50 bg-accent/15 text-accent"
                     : "border-line bg-panel2 text-muted hover:border-line2",
@@ -335,14 +360,14 @@ export function CheckinForm({
           </div>
         </div>
         <div>
-          <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-faint">mood</div>
+          <div className="mb-2 text-mini uppercase tracking-[0.16em] text-faint">mood</div>
           <div className="flex gap-1">
             {[1, 2, 3, 4, 5].map((n) => (
               <button
                 key={n}
                 onClick={() => setMood(n)}
                 className={cn(
-                  "h-7 flex-1 rounded border text-[11px] transition-colors",
+                  "h-7 flex-1 rounded border text-micro transition-colors",
                   mood === n
                     ? "border-teal/50 bg-teal/15 text-teal"
                     : "border-line bg-panel2 text-muted hover:border-line2",
@@ -385,7 +410,7 @@ export function CheckinForm({
           {busy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
           {saved ? "已保存" : "完成 check-in"}
         </Button>
-        <span className="text-[10px] text-faint">会写入记忆，供明天使用</span>
+        <span className="text-mini text-faint">会写入记忆，供明天使用</span>
       </div>
     </div>
   );
@@ -409,8 +434,10 @@ export function AutonomyControl({
     setBusy(null);
     if (!data.ok) {
       setError(data.error ?? "升级失败");
+      toast.error(data.error ?? "升级失败");
       return;
     }
+    toast.success(`授权已调整为 L${next}`);
     router.refresh();
   }
 
@@ -423,7 +450,7 @@ export function AutonomyControl({
             onClick={() => change(n)}
             disabled={busy !== null}
             className={cn(
-              "flex-1 rounded-md border px-2 py-2 text-[11px] transition-colors",
+              "flex-1 rounded-md border px-2 py-2 text-micro transition-colors",
               level === n
                 ? "border-accent/50 bg-accent/15 text-accent"
                 : "border-line bg-panel2 text-muted hover:border-line2",
@@ -433,10 +460,10 @@ export function AutonomyControl({
           </button>
         ))}
       </div>
-      <div className="mt-2 text-[10px] text-faint">
+      <div className="mt-2 text-mini text-faint">
         升级需要：信任分 ≥70 · 成功任务 ≥3 · 非试用期。
       </div>
-      {error ? <div className="mt-2 text-[11px] text-danger">{error}</div> : null}
+      {error ? <div className="mt-2 text-micro text-danger">{error}</div> : null}
     </div>
   );
 }
@@ -450,7 +477,15 @@ export function ExamButton() {
     setBusy(true);
     const data = await call("/api/apprentice/exam", "POST");
     setBusy(false);
-    setResult(data.ok ? `考试通过 ${data.passed}/${data.required}，已转正。` : (data.error ?? "失败"));
+    const text = data.ok
+      ? `考试通过 ${data.passed}/${data.required}，已转正。`
+      : (data.error ?? "失败");
+    setResult(text);
+    if (data.ok) {
+      toast.success(text);
+    } else {
+      toast.error(text);
+    }
     router.refresh();
   }
 
@@ -460,7 +495,7 @@ export function ExamButton() {
         {busy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
         运行结业考试
       </Button>
-      {result ? <span className="text-[11px] text-muted">{result}</span> : null}
+      {result ? <span className="text-micro text-muted">{result}</span> : null}
     </div>
   );
 }
@@ -481,10 +516,12 @@ export function CouncilActions({ councilId }: { councilId: string }) {
     setBusy(null);
     if (!data.ok) {
       setMsg(data.error ?? "决定失败");
+      toast.error(data.error ?? "决定失败");
       return;
     }
     setNote("");
     setMsg("决定已写入审计链");
+    toast.success("决定已写入审计链");
     router.refresh();
   }
 
@@ -508,7 +545,7 @@ export function CouncilActions({ councilId }: { councilId: string }) {
           否决
         </Button>
       </div>
-      {msg ? <div className="text-[10px] text-muted">{msg}</div> : null}
+      {msg ? <div className="text-mini text-muted">{msg}</div> : null}
     </div>
   );
 }
@@ -522,14 +559,18 @@ export function ReflectButton() {
     setBusy(true);
     const data = await call("/api/reflect", "POST");
     setBusy(false);
-    setMsg(
-      data.ok
-        ? String(
-            data.message ??
-              (data.insightId ? "已生成新洞察" : "没有新的可执行信号"),
-          )
-        : (data.error ?? "失败"),
-    );
+    const text = data.ok
+      ? String(
+          data.message ??
+            (data.insightId ? "已生成新洞察" : "没有新的可执行信号"),
+        )
+      : (data.error ?? "失败");
+    setMsg(text);
+    if (data.ok) {
+      toast.success(text);
+    } else {
+      toast.error(text);
+    }
     router.refresh();
   }
 
@@ -539,7 +580,7 @@ export function ReflectButton() {
         {busy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
         运行反思
       </Button>
-      {msg ? <span className="text-[10px] text-muted">{msg}</span> : null}
+      {msg ? <span className="text-mini text-muted">{msg}</span> : null}
     </div>
   );
 }
@@ -549,8 +590,13 @@ export function BriefButton() {
   const [busy, setBusy] = useState(false);
   async function run() {
     setBusy(true);
-    await call("/api/brief", "POST");
+    const data = await call("/api/brief", "POST");
     setBusy(false);
+    if (!data.ok) {
+      toast.error(data.error ?? "早报生成失败");
+      return;
+    }
+    toast.success("早报已重新生成");
     router.refresh();
   }
   return (
@@ -571,11 +617,15 @@ export function VerifyAuditButton() {
     const res = await fetch("/api/audit/verify");
     const data = await res.json();
     setBusy(false);
-    setMsg(
-      data.ok
-        ? `链完整 · ${data.checked} 条`
-        : `首个不一致：${data.firstMismatch ?? "未知"}`,
-    );
+    const text = data.ok
+      ? `链完整 · ${data.checked} 条`
+      : `首个不一致：${data.firstMismatch ?? "未知"}`;
+    setMsg(text);
+    if (data.ok) {
+      toast.success(text);
+    } else {
+      toast.error(text);
+    }
   }
 
   return (
@@ -588,7 +638,7 @@ export function VerifyAuditButton() {
         )}
         验证审计链
       </Button>
-      {msg ? <span className="text-[10px] text-muted">{msg}</span> : null}
+      {msg ? <span className="text-mini text-muted">{msg}</span> : null}
     </div>
   );
 }
@@ -617,10 +667,21 @@ export function AgentAdmin({
     const data = await call(`/api/agents/${agentId}`, "PATCH", body);
     setBusy(null);
     setMsg(data.ok ? "已保存" : (data.error ?? "保存失败"));
-    if (data.ok) {
-      if (label === "retire") setConfirmRetire(false);
-      router.refresh();
+    if (!data.ok) {
+      toast.error(data.error ?? "保存失败");
+      return;
     }
+    toast.success(
+      label === "retire"
+        ? "Agent 已退休"
+        : label === "pause"
+          ? "Agent 已暂停"
+          : label === "resume"
+            ? "Agent 已恢复"
+            : "已保存",
+    );
+    if (label === "retire") setConfirmRetire(false);
+    router.refresh();
   }
 
   return (
@@ -678,14 +739,14 @@ export function AgentAdmin({
       </div>
 
       <div>
-        <div className="mb-1.5 text-[10px] uppercase tracking-[0.16em] text-faint">
+        <div className="mb-1.5 text-mini uppercase tracking-[0.16em] text-faint">
           Charter
         </div>
         <textarea
           value={draftCharter}
           onChange={(event) => setDraftCharter(event.target.value)}
           rows={4}
-          className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-[11px] leading-relaxed text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-micro leading-relaxed text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         />
         <Button
           size="sm"
@@ -698,7 +759,7 @@ export function AgentAdmin({
       </div>
 
       <div>
-        <div className="mb-1.5 text-[10px] uppercase tracking-[0.16em] text-faint">
+        <div className="mb-1.5 text-mini uppercase tracking-[0.16em] text-faint">
           Weekly budget (¥)
         </div>
         <div className="flex items-center gap-2">
@@ -708,7 +769,7 @@ export function AgentAdmin({
             step={1}
             value={budgetYuan}
             onChange={(event) => setBudgetYuan(event.target.value)}
-            className="h-8 w-24 rounded-md border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-24 rounded-md border border-line bg-panel2 px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <Button
             size="sm"
@@ -725,7 +786,7 @@ export function AgentAdmin({
         </div>
       </div>
 
-      {msg ? <div className="text-[10px] text-muted">{msg}</div> : null}
+      {msg ? <div className="text-mini text-muted">{msg}</div> : null}
     </div>
   );
 }
@@ -767,6 +828,11 @@ export function QuickCreate({
     const data = await call(url, "POST", body);
     setBusy(null);
     setMsg(data.ok ? "已创建" : (data.error ?? "创建失败"));
+    if (!data.ok) {
+      toast.error(data.error ?? "创建失败");
+      return;
+    }
+    toast.success(label === "task" ? "任务已创建" : "目标已创建");
     if (data.ok) {
       if (label === "task") {
         setTaskTitle("");
@@ -785,7 +851,7 @@ export function QuickCreate({
   return (
     <div className="space-y-2">
       <details className="rounded-md border border-line bg-panel2/40 px-3 py-2">
-        <summary className="cursor-pointer text-[11px] text-muted">
+        <summary className="cursor-pointer text-micro text-muted">
           <Plus className="mr-1 inline size-3" /> 新建任务
         </summary>
         <div className="mt-3 space-y-2">
@@ -793,27 +859,27 @@ export function QuickCreate({
             value={taskTitle}
             onChange={(event) => setTaskTitle(event.target.value)}
             placeholder="任务标题"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <textarea
             value={taskDesc}
             onChange={(event) => setTaskDesc(event.target.value)}
             placeholder="描述"
             rows={2}
-            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <textarea
             value={taskCriteria}
             onChange={(event) => setTaskCriteria(event.target.value)}
             placeholder="验收标准"
             rows={2}
-            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <div className="grid grid-cols-2 gap-2">
             <select
               value={taskAssignee}
               onChange={(event) => setTaskAssignee(event.target.value)}
-              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
@@ -824,7 +890,7 @@ export function QuickCreate({
             <select
               value={taskAuditor}
               onChange={(event) => setTaskAuditor(event.target.value)}
-              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               {agents
                 .filter((agent) => agent.role === "auditor")
@@ -839,7 +905,7 @@ export function QuickCreate({
             <select
               value={taskAction}
               onChange={(event) => setTaskAction(event.target.value)}
-              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               <option value="internal">内部动作</option>
               <option value="external">外部动作</option>
@@ -848,7 +914,7 @@ export function QuickCreate({
             <select
               value={taskGoal}
               onChange={(event) => setTaskGoal(event.target.value)}
-              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               <option value="">无目标</option>
               {goals.map((goal) => (
@@ -894,7 +960,7 @@ export function QuickCreate({
       </details>
 
       <details className="rounded-md border border-line bg-panel2/40 px-3 py-2">
-        <summary className="cursor-pointer text-[11px] text-muted">
+        <summary className="cursor-pointer text-micro text-muted">
           <Plus className="mr-1 inline size-3" /> 新建目标
         </summary>
         <div className="mt-3 space-y-2">
@@ -902,30 +968,30 @@ export function QuickCreate({
             value={goalTitle}
             onChange={(event) => setGoalTitle(event.target.value)}
             placeholder="目标标题"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
             value={goalWhy}
             onChange={(event) => setGoalWhy(event.target.value)}
             placeholder="为什么（一句话）"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
             value={goalTarget}
             onChange={(event) => setGoalTarget(event.target.value)}
             placeholder="可验收的目标"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <div className="grid grid-cols-2 gap-2">
             <input
               value={goalHorizon}
               onChange={(event) => setGoalHorizon(event.target.value)}
-              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <select
               value={goalDomain}
               onChange={(event) => setGoalDomain(event.target.value)}
-              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               <option value="learning">学习</option>
               <option value="health">健康</option>
@@ -961,7 +1027,7 @@ export function QuickCreate({
         </div>
       </details>
 
-      {msg ? <div className="text-[10px] text-muted">{msg}</div> : null}
+      {msg ? <div className="text-mini text-muted">{msg}</div> : null}
     </div>
   );
 }
@@ -980,11 +1046,13 @@ export function NewCouncilForm() {
     setBusy(false);
     if (!data.ok) {
       setMsg(data.error ?? "失败");
+      toast.error(data.error ?? "发起失败");
       return;
     }
     setTopic("");
     setTrigger("");
     setMsg("已发起，各方正在独立提交立场");
+    toast.success("会议已发起，各方正在提交立场");
     router.refresh();
   }
 
@@ -994,13 +1062,13 @@ export function NewCouncilForm() {
         value={topic}
         onChange={(event) => setTopic(event.target.value)}
         placeholder="议题"
-        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <input
         value={trigger}
         onChange={(event) => setTrigger(event.target.value)}
         placeholder="触发条件（如：单笔支出 > ¥200）"
-        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <Button
         size="sm"
@@ -1010,7 +1078,7 @@ export function NewCouncilForm() {
         {busy ? <Loader2 className="size-3 animate-spin" /> : null}
         发起会议
       </Button>
-      {msg ? <div className="text-[10px] text-muted">{msg}</div> : null}
+      {msg ? <div className="text-mini text-muted">{msg}</div> : null}
     </div>
   );
 }

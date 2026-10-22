@@ -34,7 +34,7 @@ export function MemoryActions({ memoryId }: { memoryId: string }) {
         <button
           onClick={remove}
           disabled={busy}
-          className="inline-flex items-center gap-1 rounded border border-danger/40 px-1.5 py-0.5 text-[9px] text-danger disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded border border-danger/40 px-1.5 py-0.5 text-nano text-danger disabled:opacity-50"
         >
           {busy ? <Loader2 className="size-2.5 animate-spin" /> : null}
           确认删除
@@ -42,11 +42,11 @@ export function MemoryActions({ memoryId }: { memoryId: string }) {
         <button
           onClick={() => setConfirming(false)}
           disabled={busy}
-          className="rounded border border-line px-1.5 py-0.5 text-[9px] text-faint hover:text-muted disabled:opacity-50"
+          className="rounded border border-line px-1.5 py-0.5 text-nano text-faint hover:text-muted disabled:opacity-50"
         >
           取消
         </button>
-        {msg ? <span className="text-[9px] text-danger">{msg}</span> : null}
+        {msg ? <span className="text-nano text-danger">{msg}</span> : null}
       </span>
     );
   }
@@ -54,7 +54,7 @@ export function MemoryActions({ memoryId }: { memoryId: string }) {
   return (
     <button
       onClick={() => setConfirming(true)}
-      className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[9px] text-faint transition-colors hover:border-danger/40 hover:text-danger"
+      className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-nano text-faint transition-colors hover:border-danger/40 hover:text-danger"
     >
       <Trash2 className="size-2.5" />
       删除

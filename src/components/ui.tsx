@@ -1,20 +1,30 @@
 import { cn } from "@/lib/format";
 import type { ReactNode } from "react";
 
+export type CardVariant = "default" | "elevated" | "decision" | "ghost";
+
+const cardVariants: Record<CardVariant, string> = {
+  default:
+    "relative rounded-xl border border-line bg-panel/85 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05),0_8px_24px_-4px_rgba(0,0,0,0.45)] backdrop-blur-md",
+  elevated:
+    "relative rounded-xl border border-line2/80 bg-panel-raised/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08),0_12px_32px_-4px_rgba(0,0,0,0.55)] backdrop-blur-md",
+  decision:
+    "relative rounded-xl decision-halo bg-panel/90 backdrop-blur-md",
+  ghost:
+    "relative rounded-xl border border-dashed border-line bg-transparent",
+};
+
 export function Card({
   children,
   className,
+  variant = "default",
 }: {
   children: ReactNode;
   className?: string;
+  variant?: CardVariant;
 }) {
   return (
-    <div
-      className={cn(
-        "relative rounded-xl border border-line bg-panel/80 backdrop-blur-[2px]",
-        className,
-      )}
-    >
+    <div className={cn(cardVariants[variant], className)}>
       {children}
     </div>
   );
@@ -40,11 +50,11 @@ export function CardHeader({
     >
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.18em] text-faint">
+          <div className="mb-1 text-micro font-medium uppercase tracking-[0.16em] text-faint">
             {eyebrow}
           </div>
         ) : null}
-        <div className="truncate text-sm font-medium text-ink">{title}</div>
+        <div className="truncate text-sm font-semibold tracking-tight text-ink">{title}</div>
       </div>
       {right ? <div className="shrink-0">{right}</div> : null}
     </div>
@@ -54,19 +64,20 @@ export function CardHeader({
 type BadgeTone = "neutral" | "accent" | "teal" | "danger" | "blue" | "violet";
 
 const badgeTones: Record<BadgeTone, string> = {
-  neutral: "border-line2 bg-panel2 text-muted",
-  accent: "border-accent/30 bg-accent/10 text-accent",
-  teal: "border-teal/30 bg-teal/10 text-teal",
-  danger: "border-danger/30 bg-danger/10 text-danger",
-  blue: "border-blue/30 bg-blue/10 text-blue",
-  violet: "border-violet/30 bg-violet/10 text-violet",
+  neutral: "border-line2/80 bg-panel2/80 text-muted shadow-sm",
+  accent: "border-accent/40 bg-accent/15 text-accent shadow-[0_0_12px_-2px_rgba(226,163,54,0.18)]",
+  teal: "border-teal/40 bg-teal/15 text-teal shadow-[0_0_12px_-2px_rgba(59,185,158,0.18)]",
+  danger: "border-danger/40 bg-danger/15 text-danger shadow-[0_0_12px_-2px_rgba(234,85,85,0.18)]",
+  blue: "border-blue/40 bg-blue/15 text-blue shadow-[0_0_12px_-2px_rgba(91,159,248,0.18)]",
+  violet: "border-violet/40 bg-violet/15 text-violet shadow-[0_0_12px_-2px_rgba(163,113,247,0.18)]",
 };
 
 export function Badge({
   children,
   tone = "neutral",
   className,
-}: {
+  ...props
+}: React.HTMLAttributes<HTMLSpanElement> & {
   children: ReactNode;
   tone?: BadgeTone;
   className?: string;
@@ -74,10 +85,11 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium tracking-wide",
+        "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-micro font-medium tracking-wide transition-colors",
         badgeTones[tone],
         className,
       )}
+      {...props}
     >
       {children}
     </span>
@@ -113,7 +125,7 @@ export function Button({
       className={cn(
         "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45",
         "outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-        size === "sm" ? "h-7 px-2.5 text-[11px]" : "h-9 px-3.5 text-xs",
+        size === "sm" ? "h-7 px-2.5 text-micro" : "h-9 px-3.5 text-xs",
         buttonVariants[variant],
         className,
       )}
@@ -134,10 +146,10 @@ export function Progress({
   tone?: "accent" | "teal" | "danger" | "blue";
 }) {
   const tones = {
-    accent: "bg-accent",
-    teal: "bg-teal",
-    danger: "bg-danger",
-    blue: "bg-blue",
+    accent: "bg-accent shadow-[0_0_8px_rgba(226,163,54,0.35)]",
+    teal: "bg-teal shadow-[0_0_8px_rgba(59,185,158,0.35)]",
+    danger: "bg-danger shadow-[0_0_8px_rgba(234,85,85,0.35)]",
+    blue: "bg-blue shadow-[0_0_8px_rgba(91,159,248,0.35)]",
   };
   const clamped = Math.max(0, Math.min(100, Math.round(value)));
   return (
@@ -146,10 +158,10 @@ export function Progress({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={clamped}
-      className={cn("h-1.5 w-full overflow-hidden rounded-full bg-line", className)}
+      className={cn("relative h-2 w-full overflow-hidden rounded-full bg-line/80", className)}
     >
       <div
-        className={cn("h-full rounded-full transition-all", tones[tone])}
+        className={cn("h-full rounded-full transition-all duration-500 ease-out", tones[tone])}
         style={{ width: `${clamped}%` }}
       />
     </div>
@@ -169,13 +181,13 @@ export function Stat({
 }) {
   return (
     <div className={cn("min-w-0", className)}>
-      <div className="text-[10px] font-medium uppercase tracking-[0.16em] text-faint">
+      <div className="text-micro font-medium uppercase tracking-[0.14em] text-faint">
         {label}
       </div>
-      <div className="mt-1.5 text-lg font-semibold tracking-tight text-ink tabular-nums">
+      <div className="mt-1 text-xl font-semibold tracking-tight text-ink tabular-nums font-mono">
         {value}
       </div>
-      {hint ? <div className="mt-0.5 text-[11px] text-muted">{hint}</div> : null}
+      {hint ? <div className="mt-0.5 text-caption text-muted">{hint}</div> : null}
     </div>
   );
 }
@@ -194,15 +206,16 @@ export function Avatar({
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-lg border font-mono text-[11px] font-semibold",
+        "flex shrink-0 items-center justify-center rounded-lg border font-mono text-micro font-semibold shadow-sm transition-transform duration-200 hover:scale-105",
         className,
       )}
       style={{
         width: size,
         height: size,
         color: accent,
-        borderColor: `${accent}55`,
-        background: `${accent}14`,
+        borderColor: `${accent}40`,
+        background: `radial-gradient(circle at 30% 30%, ${accent}24, ${accent}08)`,
+        boxShadow: `0 0 12px -3px ${accent}25`,
       }}
     >
       {initials}
@@ -225,14 +238,14 @@ export function SectionTitle({
     <div className="mb-4 flex items-end justify-between gap-4">
       <div>
         {eyebrow ? (
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-[0.2em] text-faint">
+          <div className="mb-1 text-micro font-medium uppercase tracking-[0.16em] text-faint">
             {eyebrow}
           </div>
         ) : null}
-        <h2 className="text-[15px] font-semibold tracking-tight text-ink">
+        <h2 className="text-base font-semibold tracking-tight text-ink">
           {title}
         </h2>
-        {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+        {hint ? <p className="mt-1 text-caption text-muted">{hint}</p> : null}
       </div>
       {right}
     </div>

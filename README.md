@@ -158,13 +158,21 @@ OPENAI_MODEL=gpt-4.1-mini
 ## 架构
 
 ```
-Next.js App（UI + API + SSE）
+前端（RSC 页面 + Client 组件）
+   │  只允许 import: @/contracts  ·  @/lib/api
+   │  HTTP（fetch，同源；配 API_BASE_URL 即跨部署）
+后端（app/api/** → readmodels / services）
    │
 Core Domain（TypeScript）
    Org · Task · Run Engine · Memory · Learning · Policy · Review
    │
 Postgres（Drizzle） · 可选 LLM（AI SDK）
 ```
+
+前后端在**代码层面已经分离**：页面不 import 数据库、不 import engine，只通过 HTTP 调自己的 API；
+`contracts/` 是唯一共享层（zod schema + DTO + 文案标签）。这条边界由 ESLint + `tests/unit/boundary.test.ts` 强制。
+
+拆成两个部署单元只需搬目录 + 配 `API_BASE_URL`，详见 **[docs/frontend-backend-separation.md](docs/frontend-backend-separation.md)**（含施工顺序、跨域清单、验收命令）。
 
 | 层 | 选择 |
 |---|---|
@@ -175,6 +183,7 @@ Postgres（Drizzle） · 可选 LLM（AI SDK）
 | 状态 | 自写状态机 + `runs/steps` 事件流 |
 | 审计 | SHA-256 哈希链 |
 | 部署 | Vercel + Neon（或任意 Node 主机 + Postgres） |
+| 分层 | contracts（契约）/ server（后端）/ app+components（前端），HTTP 单一通路 |
 
 **没有用 LangGraph / CrewAI 作为核心。** 组织语义、任务状态机、审计和授权是产品本身，不能被框架抽象掉。
 

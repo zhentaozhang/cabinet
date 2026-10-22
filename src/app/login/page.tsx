@@ -73,21 +73,21 @@ export default function LoginPage() {
     <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center">
       <Link
         href="/"
-        className="mb-6 inline-flex items-center gap-1 text-[11px] text-faint hover:text-muted"
+        className="mb-6 inline-flex items-center gap-1 text-micro text-faint hover:text-muted"
       >
         <ArrowLeft className="size-3" /> 返回 Today
       </Link>
 
       <Card className="overflow-hidden">
         <div className="border-b border-line px-6 py-5">
-          <div className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.2em] text-faint">
+          <div className="mb-2 flex items-center gap-2 text-mini font-medium uppercase tracking-[0.2em] text-faint">
             <ShieldCheck className="size-3 text-accent" />
             Cabinet · access
           </div>
           <h1 className="text-lg font-semibold tracking-tight text-ink">
             {mode === "signin" ? "登录你的内阁" : "创建你的账号"}
           </h1>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted">
+          <p className="mt-1 text-micro leading-relaxed text-muted">
             {mode === "signin"
               ? "演示账号：demo@cabinet.local / cabinet-demo。"
               : "注册后进入 /setup，创建 7 个默认 Agent。"}
@@ -97,7 +97,7 @@ export default function LoginPage() {
         <div className="space-y-3 px-6 py-5">
           {mode === "signup" ? (
             <div>
-              <label className="mb-1.5 block text-[10px] uppercase tracking-[0.16em] text-faint">
+              <label className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint">
                 Name
               </label>
               <input
@@ -110,7 +110,7 @@ export default function LoginPage() {
           ) : null}
 
           <div>
-            <label className="mb-1.5 block text-[10px] uppercase tracking-[0.16em] text-faint">
+            <label className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint">
               Email
             </label>
             <input
@@ -121,7 +121,7 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-[10px] uppercase tracking-[0.16em] text-faint">
+            <label className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint">
               Password
             </label>
             <input
@@ -133,7 +133,7 @@ export default function LoginPage() {
           </div>
 
           {error ? (
-            <div className="rounded-md border border-danger/30 bg-danger/[0.05] px-3 py-2 text-[11px] text-danger">
+            <div className="rounded-md border border-danger/30 bg-danger/[0.05] px-3 py-2 text-micro text-danger">
               {error}
             </div>
           ) : null}
@@ -154,7 +154,7 @@ export default function LoginPage() {
             {mode === "signin" ? "登录" : "注册并创建内阁"}
           </Button>
 
-          <div className="flex items-center justify-between pt-1 text-[10px]">
+          <div className="flex items-center justify-between pt-1 text-mini">
             <button
               className="text-faint hover:text-muted"
               onClick={() => {

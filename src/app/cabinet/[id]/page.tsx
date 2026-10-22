@@ -46,7 +46,7 @@ export default async function AgentPage({
     <div>
       <Link
         href="/cabinet"
-        className="mb-5 inline-flex items-center gap-1 text-[11px] text-faint hover:text-muted"
+        className="mb-5 inline-flex items-center gap-1 text-micro text-faint hover:text-muted"
       >
         <ArrowLeft className="size-3" /> 返回内阁
       </Link>
@@ -66,7 +66,7 @@ export default async function AgentPage({
               <Link
                 href={`/api/agents/${agent.id}/card`}
                 target="_blank"
-                className="rounded-md border border-line bg-panel2 px-2 py-0.5 text-[10px] text-muted hover:border-line2"
+                className="rounded-md border border-line bg-panel2 px-2 py-0.5 text-mini text-muted hover:border-line2"
               >
                 Agent Card
               </Link>
@@ -74,7 +74,7 @@ export default async function AgentPage({
             <div className="mt-1 text-xs text-muted">
               {agent.title} · {meta.objective}
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-faint">
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-mini text-faint">
               <span className="inline-flex items-center gap-1">
                 <ShieldCheck className="size-3 text-teal" /> {AUTONOMY_LABELS[agent.autonomyLevel]}
               </span>
@@ -102,7 +102,7 @@ export default async function AgentPage({
             <CardHeader
               eyebrow="Performance"
               title="绩效"
-              right={<span className="text-[10px] text-faint">{agent.successCount} 通过 / {agent.failCount} 驳回</span>}
+              right={<span className="text-mini text-faint">{agent.successCount} 通过 / {agent.failCount} 驳回</span>}
             />
             <div className="grid grid-cols-2 gap-5 px-5 py-4 sm:grid-cols-4">
               <Stat label="Trust" value={Math.round(agent.trustScore)} hint="0–100" />
@@ -112,14 +112,14 @@ export default async function AgentPage({
             </div>
             <div className="space-y-3 border-t border-line px-5 py-4">
               <div>
-                <div className="mb-1 flex items-center justify-between text-[10px] text-faint">
+                <div className="mb-1 flex items-center justify-between text-mini text-faint">
                   <span>信任分</span>
                   <span className="mono">{Math.round(agent.trustScore)} / 100</span>
                 </div>
                 <Progress value={agent.trustScore} tone="teal" />
               </div>
               <div>
-                <div className="mb-1 flex items-center justify-between text-[10px] text-faint">
+                <div className="mb-1 flex items-center justify-between text-mini text-faint">
                   <span>预算使用</span>
                   <span className="mono">
                     {agent.budgetCents > 0 ? pct((agent.spentCents / agent.budgetCents) * 100) : "—"}
@@ -134,7 +134,7 @@ export default async function AgentPage({
           </Card>
 
           <Card>
-            <CardHeader eyebrow="Runs" title="最近运行" right={<span className="text-[10px] text-faint">可回放</span>} />
+            <CardHeader eyebrow="Runs" title="最近运行" right={<span className="text-mini text-faint">可回放</span>} />
             <div className="divide-y divide-line">
               {runs.map((run) => (
                 <Link
@@ -152,14 +152,14 @@ export default async function AgentPage({
                     }
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="mono truncate text-[11px] text-ink">{run.id}</div>
-                    <div className="mt-0.5 text-[10px] text-faint">
+                    <div className="mono truncate text-micro text-ink">{run.id}</div>
+                    <div className="mt-0.5 text-mini text-faint">
                       {run.taskId} · {run.mode} · {run.tokensIn + run.tokensOut} tokens
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="mono text-[10px] text-muted">{money(run.costCents)}</div>
-                    <div className="text-[9px] text-faint">{timeOnly(run.createdAt)}</div>
+                    <div className="mono text-mini text-muted">{money(run.costCents)}</div>
+                    <div className="text-nano text-faint">{timeOnly(run.createdAt)}</div>
                   </div>
                 </Link>
               ))}
@@ -178,13 +178,13 @@ export default async function AgentPage({
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-xs font-medium text-ink">{skill.name}</div>
-                        <div className="mt-0.5 text-[10px] text-faint">
+                        <div className="mt-0.5 text-mini text-faint">
                           v{skill.version} · {skill.label} · {skill.successCount} 通过 / {skill.failCount} 失败
                         </div>
                       </div>
                       <Badge tone={skill.status === "active" ? "teal" : "accent"}>{skill.status}</Badge>
                     </div>
-                    <ol className="mt-3 space-y-1 text-[11px] text-muted">
+                    <ol className="mt-3 space-y-1 text-micro text-muted">
                       {skill.steps.map((step, i) => (
                         <li key={i} className="flex gap-2">
                           <span className="mono text-faint">{i + 1}.</span>
@@ -193,7 +193,7 @@ export default async function AgentPage({
                       ))}
                     </ol>
                     {skill.eval ? (
-                      <div className="mt-3 rounded-md border border-line bg-panel2/50 px-3 py-2 text-[10px] text-muted">
+                      <div className="mt-3 rounded-md border border-line bg-panel2/50 px-3 py-2 text-mini text-muted">
                         考试：{String(skill.eval.passed ?? 0)} / {String(skill.eval.required ?? 5)} ·{" "}
                         {String(skill.eval.status ?? "not_started")}
                       </div>
@@ -229,18 +229,18 @@ export default async function AgentPage({
             <Card className="border-accent/25 bg-accent/[0.03]">
               <CardHeader eyebrow="Apprenticeship" title="学徒转正" />
               <div className="px-5 py-4">
-                <div className="mb-3 flex items-center gap-2 text-[11px] text-muted">
+                <div className="mb-3 flex items-center gap-2 text-micro text-muted">
                   <GraduationCap className="size-4 text-accent" />
                   影子学习 → 技能草案 → 5 题留出考试 → 转正
                 </div>
                 {agent.lifecycleStage === "active" ? (
-                  <div className="rounded-md border border-teal/25 bg-teal/[0.04] px-3 py-2 text-[11px] text-teal">
+                  <div className="rounded-md border border-teal/25 bg-teal/[0.04] px-3 py-2 text-micro text-teal">
                     已转正：技能 v1 已激活，可接单。
                   </div>
                 ) : (
                   <ExamButton />
                 )}
-                <p className="mt-3 text-[10px] leading-relaxed text-faint">
+                <p className="mt-3 text-mini leading-relaxed text-faint">
                   考试由 Auditor 监考；≥4/5 通过。通过后获得技能 v1，信任分 +10。
                 </p>
               </div>
@@ -251,7 +251,7 @@ export default async function AgentPage({
             <CardHeader eyebrow="Tools & grants" title="工具与权限" />
             <div className="space-y-2 px-5 py-4">
               {agent.tools.map((tool) => (
-                <div key={tool} className="flex items-center gap-2 text-[11px] text-muted">
+                <div key={tool} className="flex items-center gap-2 text-micro text-muted">
                   <KeyRound className="size-3 text-faint" />
                   <span className="mono">{tool}</span>
                 </div>
@@ -266,7 +266,7 @@ export default async function AgentPage({
                 <Badge key={scope} tone="neutral">{scope}</Badge>
               ))}
             </div>
-            <div className="border-t border-line px-5 py-3 text-[10px] text-faint">
+            <div className="border-t border-line px-5 py-3 text-mini text-faint">
               只读取授权范围内的记忆；不共享其他 Agent 的私有上下文。
             </div>
           </Card>
@@ -279,8 +279,8 @@ export default async function AgentPage({
                   <div className="flex items-start gap-2">
                     <BookOpen className="mt-0.5 size-3 text-faint" />
                     <div className="min-w-0">
-                      <div className="text-[11px] leading-relaxed text-muted">{memory.content}</div>
-                      <div className="mt-1 flex items-center gap-2 text-[9px] text-faint">
+                      <div className="text-micro leading-relaxed text-muted">{memory.content}</div>
+                      <div className="mt-1 flex items-center gap-2 text-nano text-faint">
                         <span>{memory.type}</span>
                         <span>·</span>
                         <span>{Math.round(memory.confidence * 100)}%</span>
@@ -292,7 +292,7 @@ export default async function AgentPage({
                 </div>
               ))}
               {memories.length === 0 ? (
-                <div className="px-5 py-6 text-center text-[11px] text-faint">暂无记忆。</div>
+                <div className="px-5 py-6 text-center text-micro text-faint">暂无记忆。</div>
               ) : null}
             </div>
           </Card>
@@ -301,7 +301,7 @@ export default async function AgentPage({
             <Card className="border-violet/20">
               <div className="flex items-start gap-3 px-5 py-4">
                 <Sparkles className="mt-0.5 size-4 text-violet" />
-                <div className="text-[11px] leading-relaxed text-muted">
+                <div className="text-micro leading-relaxed text-muted">
                   学徒的价值不是“多一个 Agent”，而是证明系统能
                   <span className="text-ink">长出</span>新能力：观察 → 提炼 → 考试 → 转正。
                 </div>

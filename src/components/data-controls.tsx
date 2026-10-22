@@ -5,21 +5,20 @@ import { useRouter } from "next/navigation";
 import { Download, Loader2, Trash2 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui";
+import { toast } from "@/components/ui/toast";
 
 export function DataControls() {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function exportData() {
     setBusy("export");
-    setMsg(null);
     const response = await fetch("/api/export");
     const data = await response.json();
     setBusy(null);
     if (!response.ok || !data.ok) {
-      setMsg(data.error ?? "导出失败");
+      toast.error(data.error ?? "导出失败");
       return;
     }
     const blob = new Blob([JSON.stringify(data.data, null, 2)], {
@@ -31,12 +30,11 @@ export function DataControls() {
     anchor.download = "cabinet-export.json";
     anchor.click();
     URL.revokeObjectURL(url);
-    setMsg("已导出");
+    toast.success("数据导出成功");
   }
 
   async function deleteData() {
     setBusy("delete");
-    setMsg(null);
     const response = await fetch("/api/account", {
       method: "DELETE",
       headers: { "Idempotency-Key": crypto.randomUUID() },
@@ -44,9 +42,10 @@ export function DataControls() {
     const data = await response.json();
     setBusy(null);
     if (!response.ok || !data.ok) {
-      setMsg(data.error ?? "删除失败");
+      toast.error(data.error ?? "删除失败");
       return;
     }
+    toast.success("账号已注销");
     await authClient.signOut();
     router.push("/login");
     router.refresh();
@@ -76,7 +75,7 @@ export function DataControls() {
               ) : (
                 <Trash2 className="size-3" />
               )}
-              确认删除账号
+              确认彻底删除账号
             </Button>
             <Button
               size="sm"
@@ -98,10 +97,9 @@ export function DataControls() {
           </Button>
         )}
       </div>
-      <p className="text-[10px] leading-relaxed text-faint">
+      <p className="text-micro leading-relaxed text-faint">
         导出包含 Agent、目标、任务、记忆、复盘和审计事件；不包含密码或会话。
       </p>
-      {msg ? <div className="text-[10px] text-muted">{msg}</div> : null}
     </div>
   );
 }
