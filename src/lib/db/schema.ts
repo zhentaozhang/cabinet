@@ -219,20 +219,27 @@ export const agents = pgTable(
   },
   (t) => [
     index("agents_user_idx").on(t.userId),
+    index("agents_user_status_idx").on(t.userId, t.status),
     check("agents_autonomy_range", sql`${t.autonomyLevel} BETWEEN 0 AND 3`),
     check("agents_budget_non_negative", sql`${t.budgetCents} >= 0`),
   ],
 );
 
-export const agentGrants = pgTable("agent_grants", {
-  id: text("id").primaryKey(),
-  agentId: text("agent_id").notNull().references(() => agents.id),
-  resource: text("resource").notNull(),
-  scope: text("scope").notNull(),
-  config: jsonb("config").$type<Record<string, unknown>>().notNull(),
-});
+export const agentGrants = pgTable(
+  "agent_grants",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").notNull().references(() => agents.id),
+    resource: text("resource").notNull(),
+    scope: text("scope").notNull(),
+    config: jsonb("config").$type<Record<string, unknown>>().notNull(),
+  },
+  (t) => [index("agent_grants_agent_idx").on(t.agentId)],
+);
 
-export const goals = pgTable("goals", {
+export const goals = pgTable(
+  "goals",
+  {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
   domain: text("domain").notNull(),
@@ -245,7 +252,9 @@ export const goals = pgTable("goals", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+  },
+  (t) => [index("goals_user_status_idx").on(t.userId, t.status)],
+);
 
 export const tasks = pgTable(
   "tasks",
@@ -288,6 +297,10 @@ export const tasks = pgTable(
   (t) => [
     index("tasks_status_idx").on(t.status),
     index("tasks_assignee_idx").on(t.assigneeId),
+    index("tasks_user_status_idx").on(t.userId, t.status),
+    index("tasks_user_due_idx").on(t.userId, t.dueAt),
+    index("tasks_user_updated_idx").on(t.userId, t.updatedAt),
+    index("tasks_user_accepted_idx").on(t.userId, t.acceptedAt),
     check(
       "tasks_assignee_not_auditor",
       sql`${t.assigneeId} IS NULL OR ${t.auditorId} IS NULL OR ${t.assigneeId} <> ${t.auditorId}`,
@@ -318,7 +331,10 @@ export const runs = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [index("runs_task_idx").on(t.taskId)],
+  (t) => [
+    index("runs_task_idx").on(t.taskId),
+    index("runs_agent_idx").on(t.agentId),
+  ],
 );
 
 export const steps = pgTable(
@@ -341,17 +357,24 @@ export const steps = pgTable(
   (t) => [index("steps_run_idx").on(t.runId)],
 );
 
-export const artifacts = pgTable("artifacts", {
-  id: text("id").primaryKey(),
-  runId: text("run_id").notNull().references(() => runs.id),
-  taskId: text("task_id").notNull().references(() => tasks.id),
-  type: text("type").notNull(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const artifacts = pgTable(
+  "artifacts",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull().references(() => runs.id),
+    taskId: text("task_id").notNull().references(() => tasks.id),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("artifacts_task_idx").on(t.taskId, t.createdAt),
+    index("artifacts_run_idx").on(t.runId),
+  ],
+);
 
 export const memories = pgTable(
   "memories",
@@ -391,7 +414,9 @@ export const memories = pgTable(
   ],
 );
 
-export const insights = pgTable("insights", {
+export const insights = pgTable(
+  "insights",
+  {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
   claim: text("claim").notNull(),
@@ -408,9 +433,16 @@ export const insights = pgTable("insights", {
     .notNull()
     .defaultNow(),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
-});
+},
+  (t) => [
+    index("insights_user_status_idx").on(t.userId, t.status),
+    index("insights_user_created_idx").on(t.userId, t.createdAt),
+  ],
+);
 
-export const reviews = pgTable("reviews", {
+export const reviews = pgTable(
+  "reviews",
+  {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
   period: text("period").notNull(),
@@ -423,9 +455,15 @@ export const reviews = pgTable("reviews", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+},
+  (t) => [
+    index("reviews_user_type_idx").on(t.userId, t.type, t.createdAt),
+  ],
+);
 
-export const approvals = pgTable("approvals", {
+export const approvals = pgTable(
+  "approvals",
+  {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
   taskId: text("task_id").references(() => tasks.id),
@@ -440,7 +478,12 @@ export const approvals = pgTable("approvals", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+},
+  (t) => [
+    index("approvals_user_status_idx").on(t.userId, t.status),
+    index("approvals_task_idx").on(t.taskId),
+  ],
+);
 
 export const auditEvents = pgTable(
   "audit_events",
@@ -461,11 +504,15 @@ export const auditEvents = pgTable(
   },
   (t) => [
     index("audit_user_idx").on(t.userId),
+    index("audit_user_created_idx").on(t.userId, t.createdAt),
+    index("audit_user_target_idx").on(t.userId, t.target),
     uniqueIndex("audit_seq_idx").on(t.seq),
   ],
 );
 
-export const skills = pgTable("skills", {
+export const skills = pgTable(
+  "skills",
+  {
   id: text("id").primaryKey(),
   agentId: text("agent_id").notNull().references(() => agents.id),
   name: text("name").notNull(),
@@ -481,9 +528,13 @@ export const skills = pgTable("skills", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+  },
+  (t) => [index("skills_agent_idx").on(t.agentId)],
+);
 
-export const councils = pgTable("councils", {
+export const councils = pgTable(
+  "councils",
+  {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
   topic: text("topic").notNull(),
@@ -499,9 +550,13 @@ export const councils = pgTable("councils", {
     .notNull()
     .defaultNow(),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
-});
+},
+  (t) => [index("councils_user_status_idx").on(t.userId, t.status)],
+);
 
-export const councilPositions = pgTable("council_positions", {
+export const councilPositions = pgTable(
+  "council_positions",
+  {
   id: text("id").primaryKey(),
   councilId: text("council_id").notNull().references(() => councils.id),
   agentId: text("agent_id").notNull().references(() => agents.id),
@@ -516,7 +571,9 @@ export const councilPositions = pgTable("council_positions", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+  },
+  (t) => [index("council_positions_council_idx").on(t.councilId)],
+);
 
 export const dissents = pgTable(
   "dissents",
@@ -541,7 +598,9 @@ export const dissents = pgTable(
   ],
 );
 
-export const checkins = pgTable("checkins", {
+export const checkins = pgTable(
+  "checkins",
+  {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),
   date: text("date").notNull(),
@@ -554,7 +613,9 @@ export const checkins = pgTable("checkins", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+},
+  (t) => [uniqueIndex("checkins_user_date_idx").on(t.userId, t.date)],
+);
 
 export const policyConfig = pgTable("policy_config", {
   key: text("key").primaryKey(),
@@ -584,7 +645,9 @@ export const idempotencyKeys = pgTable(
   (t) => [uniqueIndex("idempotency_user_key_idx").on(t.userId, t.key)],
 );
 
-export const userActions = pgTable("user_actions", {
+export const userActions = pgTable(
+  "user_actions",
+  {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id),
   action: text("action").notNull(),
@@ -592,7 +655,9 @@ export const userActions = pgTable("user_actions", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+  },
+  (t) => [index("user_actions_user_created_idx").on(t.userId, t.createdAt)],
+);
 
 export const agentTemplates = pgTable("agent_templates", {
   role: text("role").primaryKey(),

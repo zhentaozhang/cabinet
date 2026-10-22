@@ -11,6 +11,9 @@ import {
 import { getPolicyConfig } from "@/lib/policy/config";
 import { getWeeklyMetrics } from "./metrics";
 import { getWorkspace } from "./workspace";
+/** Hard ceiling for the audit fold; window semantics are preserved. */
+const MAX_AUDIT_ROWS = 2000;
+
 export type ReviewPageOptions = {
   insightOffset?: number;
   dissentOffset?: number;
@@ -24,75 +27,100 @@ export async function getReviewData(
   const limit = Math.min(Math.max(options.limit ?? 20, 1), 50);
   const insightOffset = Math.max(options.insightOffset ?? 0, 0);
   const dissentOffset = Math.max(options.dissentOffset ?? 0, 0);
-  const { user, profile } = await getWorkspace(userId);
-  const [weekly] = await db
-    .select()
-    .from(reviews)
-    .where(and(eq(reviews.userId, userId), eq(reviews.type, "weekly")))
-    .orderBy(desc(reviews.createdAt))
-    .limit(1);
-  const [insightCounts] = await db
-    .select({
-      total: sql<number>`count(*)`,
-      proposed: sql<number>`count(*) filter (where ${insights.status} = 'proposed')`,
-      applied: sql<number>`count(*) filter (where ${insights.status} = 'applied')`,
-    })
-    .from(insights)
-    .where(eq(insights.userId, userId));
-  const allInsights = await db
-    .select()
-    .from(insights)
-    .where(eq(insights.userId, userId))
-    .orderBy(desc(insights.createdAt), desc(insights.id))
-    .limit(limit)
-    .offset(insightOffset);
-  const allAgents = await db
-    .select()
-    .from(agents)
-    .where(eq(agents.userId, userId))
-    .orderBy(asc(agents.createdAt));
-  const allTasks = await db
-    .select()
-    .from(tasks)
-    .where(eq(tasks.userId, userId))
-    .orderBy(desc(tasks.updatedAt))
-    .limit(200);
-  const recentAudit = await db
-    .select()
-    .from(auditEvents)
-    .where(eq(auditEvents.userId, userId))
-    .orderBy(desc(auditEvents.createdAt))
-    .limit(12);
-  const [dissentCounts] = await db
-    .select({
-      total: sql<number>`count(*)`,
-      pending: sql<number>`count(*) filter (where ${dissents.status} = 'pending')`,
-    })
-    .from(dissents)
-    .where(eq(dissents.userId, userId));
-  const allDissents = await db
-    .select()
-    .from(dissents)
-    .where(eq(dissents.userId, userId))
-    .orderBy(desc(dissents.createdAt), desc(dissents.id))
-    .limit(limit)
-    .offset(dissentOffset);
+  // One round-trip instead of eleven: none of these reads depend on another.
+  const [
+    workspace,
+    weeklyRows,
+    insightCountRows,
+    allInsights,
+    allAgents,
+    allTasks,
+    recentAudit,
+    dissentCountRows,
+    allDissents,
+    config,
+    auditRows,
+    weeklyMetrics,
+  ] = await Promise.all([
+    getWorkspace(userId),
+    db
+      .select()
+      .from(reviews)
+      .where(and(eq(reviews.userId, userId), eq(reviews.type, "weekly")))
+      .orderBy(desc(reviews.createdAt))
+      .limit(1),
+    db
+      .select({
+        total: sql<number>`count(*)`,
+        proposed: sql<number>`count(*) filter (where ${insights.status} = 'proposed')`,
+        applied: sql<number>`count(*) filter (where ${insights.status} = 'applied')`,
+      })
+      .from(insights)
+      .where(eq(insights.userId, userId)),
+    db
+      .select()
+      .from(insights)
+      .where(eq(insights.userId, userId))
+      .orderBy(desc(insights.createdAt), desc(insights.id))
+      .limit(limit)
+      .offset(insightOffset),
+    db
+      .select()
+      .from(agents)
+      .where(eq(agents.userId, userId))
+      .orderBy(asc(agents.createdAt)),
+    db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.userId, userId))
+      .orderBy(desc(tasks.updatedAt))
+      .limit(200),
+    db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.userId, userId))
+      .orderBy(desc(auditEvents.createdAt))
+      .limit(12),
+    db
+      .select({
+        total: sql<number>`count(*)`,
+        pending: sql<number>`count(*) filter (where ${dissents.status} = 'pending')`,
+      })
+      .from(dissents)
+      .where(eq(dissents.userId, userId)),
+    db
+      .select()
+      .from(dissents)
+      .where(eq(dissents.userId, userId))
+      .orderBy(desc(dissents.createdAt), desc(dissents.id))
+      .limit(limit)
+      .offset(dissentOffset),
+    getPolicyConfig(),
+    // The fold below only keeps `passRateWindow` events per agent, so reading
+    // the whole ledger was unbounded growth for no gain. Newest-first is the
+    // same window semantics; the cap is far above any legal window.
+    db
+      .select({
+        assigneeId: tasks.assigneeId,
+        action: auditEvents.action,
+      })
+      .from(auditEvents)
+      .innerJoin(tasks, eq(tasks.id, auditEvents.target))
+      .where(
+        and(
+          eq(auditEvents.userId, userId),
+          inArray(auditEvents.action, ["audit.accept", "audit.reject"]),
+        ),
+      )
+      .orderBy(desc(auditEvents.seq))
+      .limit(MAX_AUDIT_ROWS),
+    getWeeklyMetrics(userId),
+  ]);
 
-  const config = await getPolicyConfig();
-  const auditRows = await db
-    .select({
-      assigneeId: tasks.assigneeId,
-      action: auditEvents.action,
-    })
-    .from(auditEvents)
-    .innerJoin(tasks, eq(tasks.id, auditEvents.target))
-    .where(
-      and(
-        eq(auditEvents.userId, userId),
-        inArray(auditEvents.action, ["audit.accept", "audit.reject"]),
-      ),
-    )
-    .orderBy(desc(auditEvents.seq));
+  const { user, profile } = workspace;
+  const weekly = weeklyRows[0];
+  const [insightCounts] = insightCountRows;
+  const [dissentCounts] = dissentCountRows;
 
   const auditStats: Record<
     string,
@@ -130,6 +158,6 @@ export async function getReviewData(
     limit,
     auditStats,
     config,
-    weeklyMetrics: await getWeeklyMetrics(userId),
+    weeklyMetrics,
   };
 }

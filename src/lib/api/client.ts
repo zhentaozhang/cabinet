@@ -5,6 +5,7 @@ import {
   ERROR_CODE_LABEL,
   type ErrorCode,
 } from "@/contracts/errors";
+import { attemptScope, beginAttempt, settleAttempt } from "./attempt";
 
 /**
  * The only place the frontend is allowed to talk to the backend.
@@ -35,6 +36,13 @@ export type RequestOptions = {
   body?: unknown;
   idempotencyKey?: string;
   signal?: AbortSignal;
+  /**
+   * How the success body is shaped. Read endpoints answer
+   * `{ ok: true, data }`; mutation endpoints answer `{ ok: true, ...fields }`.
+   * The shape is declared by the caller, never sniffed from the payload: a
+   * mutation that happens to return a field named `data` must not be unwrapped.
+   */
+  envelope?: "data" | "flat";
 };
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -148,9 +156,12 @@ export function createApiClient(config: ApiClientConfig) {
       );
     }
 
-    // Read endpoints answer `{ ok: true, data }`; mutation endpoints keep their
-    // legacy flat shape `{ ok: true, ...fields }`. Unwrap only the former.
-    const data = "data" in asRecord ? asRecord.data : (payload as T);
+    const data =
+      options.envelope === "flat"
+        ? (payload as T)
+        : // `query()` declares "data"; anything else falls back to the read shape
+          // so a forgotten option cannot silently hand back the whole envelope.
+          (asRecord.data as T);
 
     if (options.schema) {
       const parsed = options.schema.safeParse(data);
@@ -173,36 +184,35 @@ export function createApiClient(config: ApiClientConfig) {
   return {
     request,
     query<T>(path: string, schema: z.ZodType<T>): Promise<ClientResult<T>> {
-      return request(path, { schema });
+      return request(path, { schema, envelope: "data" });
     },
-    mutate<T = Record<string, unknown>>(
+    async mutate<T = Record<string, unknown>>(
       path: string,
       options: RequestOptions & { schema?: z.ZodType<T> } = {},
     ): Promise<ClientResult<T>> {
-      return request<T>(path, {
-        method: options.method ?? "POST",
+      const method = options.method ?? "POST";
+      const scope = attemptScope(method, path, options.body);
+      const explicitKey = options.idempotencyKey;
+      // One intent = one key. A transport failure keeps the key so a retry is
+      // deduplicated; any server answer releases it so the *next* click is a
+      // new intent (e.g. "run again" after a rejection).
+      const idempotencyKey = explicitKey ?? beginAttempt(scope);
+
+      const result = await request<T>(path, {
+        method,
         body: options.body,
-        idempotencyKey: options.idempotencyKey,
+        idempotencyKey,
         signal: options.signal,
         schema: options.schema,
+        envelope: options.envelope ?? "flat",
       });
+
+      if (!explicitKey) {
+        settleAttempt(scope, result.ok === false && result.status === 0);
+      }
+      return result;
     },
   };
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;
-
-/**
- * Stable idempotency key for one *user intent*.
- *
- * Reusing a key across two different bodies makes the API answer 409 forever,
- * so the key is derived from the endpoint plus the payload actually sent.
- */
-export function idempotencyKey(endpoint: string, body?: unknown): string {
-  const seed = `${endpoint}:${body === undefined ? "" : JSON.stringify(body)}`;
-  let hash = 5381;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = ((hash << 5) + hash + seed.charCodeAt(index)) >>> 0;
-  }
-  return `${endpoint.replace(/[^a-z0-9]+/gi, "-")}-${hash.toString(36)}`;
-}

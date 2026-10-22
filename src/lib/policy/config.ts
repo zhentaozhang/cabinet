@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { policyConfig } from "@/lib/db/schema";
@@ -94,36 +95,43 @@ const policyConfigSchema = z.object({
 /**
  * Runtime loader. Fails closed when configuration is missing.
  * There is deliberately no code fallback here: seed data must provide it.
+ *
+ * Wrapped in React `cache` so a single render/route that asks for the policy
+ * several times (page payload + weekly metrics + a command) reads the table
+ * once. Outside a request scope `cache` simply calls through, so services and
+ * tests keep the per-call behaviour.
  */
-export async function getPolicyConfig(): Promise<PolicyConfig> {
-  const rows = await db.select().from(policyConfig);
-  const map = new Map(rows.map((row) => [row.key, row.valueJson]));
+export const getPolicyConfig = cache(
+  async (): Promise<PolicyConfig> => {
+    const rows = await db.select().from(policyConfig);
+    const map = new Map(rows.map((row) => [row.key, row.valueJson]));
 
-  const missing = REQUIRED_KEYS.filter((key) => !map.has(key));
-  if (missing.length > 0) {
-    throw new Error(`Missing policy_config keys: ${missing.join(", ")}`);
-  }
+    const missing = REQUIRED_KEYS.filter((key) => !map.has(key));
+    if (missing.length > 0) {
+      throw new Error(`Missing policy_config keys: ${missing.join(", ")}`);
+    }
 
-  const candidate = {
-    autonomy: map.get("autonomy"),
-    audit: map.get("audit"),
-    budget: map.get("budget"),
-    management: map.get("management"),
-    cost: map.get("cost"),
-    council: map.get("council"),
-    reflection: map.get("reflection"),
-    dissent: map.get("dissent"),
-  };
-  const parsed = policyConfigSchema.safeParse(candidate);
-  if (!parsed.success) {
-    const detail = parsed.error.issues
-      .slice(0, 5)
-      .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
-      .join("; ");
-    throw new Error(`Invalid policy_config: ${detail}`);
-  }
-  return parsed.data as PolicyConfig;
-}
+    const candidate = {
+      autonomy: map.get("autonomy"),
+      audit: map.get("audit"),
+      budget: map.get("budget"),
+      management: map.get("management"),
+      cost: map.get("cost"),
+      council: map.get("council"),
+      reflection: map.get("reflection"),
+      dissent: map.get("dissent"),
+    };
+    const parsed = policyConfigSchema.safeParse(candidate);
+    if (!parsed.success) {
+      const detail = parsed.error.issues
+        .slice(0, 5)
+        .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+        .join("; ");
+      throw new Error(`Invalid policy_config: ${detail}`);
+    }
+    return parsed.data as PolicyConfig;
+  },
+);
 
 /** Seed/test helper only. */
 export function policyConfigSeedRows() {

@@ -92,6 +92,13 @@
       "when": 1792650000000,
       "tag": "0012_cost_caps",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792654573865,
+      "tag": "0013_aberrant_ender_wiggin",
+      "breakpoints": true
     }
   ]
 }

@@ -37,17 +37,31 @@ export async function saveCheckin(
     .where(and(eq(agents.userId, userId), eq(agents.role, "coach")))
     .limit(1);
 
-  const checkinId = newId("chk");
   await db.transaction(async (tx) => {
-    await tx.insert(checkins).values({
-      id: checkinId,
-      userId,
-      date: today,
-      energy: input.energy,
-      mood: input.mood,
-      completed: input.completed,
-      note: input.note,
-    });
+    // One check-in per user per local day: re-submitting updates it instead of
+    // creating a duplicate row (the unique index enforces this at the DB).
+    const [saved] = await tx
+      .insert(checkins)
+      .values({
+        id: newId("chk"),
+        userId,
+        date: today,
+        energy: input.energy,
+        mood: input.mood,
+        completed: input.completed,
+        note: input.note,
+      })
+      .onConflictDoUpdate({
+        target: [checkins.userId, checkins.date],
+        set: {
+          energy: input.energy,
+          mood: input.mood,
+          completed: input.completed,
+          note: input.note,
+        },
+      })
+      .returning({ id: checkins.id });
+    const checkinId = saved.id;
 
     for (const item of input.completed) {
       if (!item.done) continue;
@@ -68,6 +82,13 @@ export async function saveCheckin(
           ),
         );
     }
+
+    // Replacing the note must not accumulate one memory per re-submit.
+    await tx
+      .delete(memories)
+      .where(
+        and(eq(memories.userId, userId), eq(memories.sourceEventId, checkinId)),
+      );
 
     if (input.note.trim()) {
       await tx.insert(memories).values({

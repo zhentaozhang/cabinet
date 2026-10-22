@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { envPositiveInt } from "@/lib/config/env-int";
 import * as schema from "./schema";
 
 const url =
@@ -11,10 +12,17 @@ const globalForDb = globalThis as unknown as {
   __cabinetDb?: ReturnType<typeof drizzle>;
 };
 
+/**
+ * `max: 1` serialised every query behind a single connection, which defeats
+ * the parallel reads in `src/server/services/queries/*`. Pages issue 8-12
+ * independent SELECTs, so the pool has to be wider than one.
+ */
+const poolMax = envPositiveInt("DATABASE_POOL_MAX", 10, 50);
+
 const client =
   globalForDb.__cabinetPg ??
   postgres(url, {
-    max: 1,
+    max: poolMax,
     prepare: false,
   });
 

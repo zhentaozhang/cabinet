@@ -25,16 +25,47 @@ import { loadLatestApproval, loadSpentCents } from "./execution";
 import { requestApproval } from "./approvals";
 
 export async function runTask(taskId: string, userId: string) {
-  const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
-  if (!task || task.userId !== userId) {
+  const [found] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+  if (!found || found.userId !== userId) {
     throw new NotFoundError("Task not found");
   }
+  let task = found;
   if (!task.assigneeId) throw new ConflictError("Task has no assignee");
+  const retrying = task.status === "failed" || task.status === "rejected";
+
+  // A failed/rejected run can be retried through the normal state machine.
+  if (retrying) {
+    assertTransition("task", task.status, "planned");
+    const [reset] = await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(tasks)
+        .set({ status: "planned", updatedAt: new Date() })
+        .where(
+          and(
+            eq(tasks.id, taskId),
+            eq(tasks.userId, userId),
+            eq(tasks.status, task.status),
+          ),
+        )
+        .returning();
+      if (!updated) throw new ConflictError("Task state changed; retry.");
+      await logAuditTx(tx, {
+        userId,
+        actor: "user",
+        action: "task.retry",
+        target: taskId,
+        before: { status: task.status },
+        after: { status: "planned" },
+      });
+      return [updated] as const;
+    });
+    task = reset;
+  }
 
   const [agent] = await db
     .select()
     .from(agents)
-    .where(eq(agents.id, task.assigneeId));
+    .where(eq(agents.id, task.assigneeId!));
   if (!agent || agent.userId !== userId) {
     throw new NotFoundError("Agent not found");
   }
@@ -51,7 +82,13 @@ export async function runTask(taskId: string, userId: string) {
     .where(eq(agentGrants.agentId, agent.id));
   const periodStart = startOfLocalWeek(new Date(), timezone);
   const spentCents = await loadSpentCents(agent.id, periodStart);
-  const approval = await loadLatestApproval(taskId);
+  let approval: Awaited<ReturnType<typeof loadLatestApproval>> =
+    await loadLatestApproval(taskId);
+  // A consumed approval is historical. A rejected task gets a fresh approval
+  // request instead of being locked out forever.
+  if (retrying && approval?.status === "approved" && approval.consumedAt) {
+    approval = null;
+  }
 
   const decision = decideRun({
     actor: {
@@ -160,6 +197,9 @@ export async function runTask(taskId: string, userId: string) {
         {
           userId: task.userId,
           taskId,
+          title: task.title,
+          resource: task.resource,
+          dueAt: task.dueAt,
           action: task.actionType,
           reason: decision.reason,
           estimatedCostCents: task.estimatedCostCents,
@@ -167,12 +207,23 @@ export async function runTask(taskId: string, userId: string) {
         tx,
       );
 
-      if (task.status !== "awaiting_approval") {
-        assertTransition("task", task.status, "awaiting_approval");
+      let status = task.status;
+      if (status === "planned") {
+        assertTransition("task", status, "assigned");
+        const [assigned] = await tx
+          .update(tasks)
+          .set({ status: "assigned", updatedAt: new Date() })
+          .where(and(eq(tasks.id, taskId), eq(tasks.status, "planned")))
+          .returning();
+        if (!assigned) throw new ConflictError("Task state changed; retry.");
+        status = "assigned";
+      }
+      if (status !== "awaiting_approval") {
+        assertTransition("task", status, "awaiting_approval");
         const [updated] = await tx
           .update(tasks)
           .set({ status: "awaiting_approval", updatedAt: new Date() })
-          .where(and(eq(tasks.id, taskId), eq(tasks.status, task.status)))
+          .where(and(eq(tasks.id, taskId), eq(tasks.status, status)))
           .returning();
         if (!updated) throw new ConflictError("Task state changed; retry.");
       }
