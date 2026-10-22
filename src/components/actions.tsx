@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button, Progress } from "@/components/ui";
 import { browserApi, idempotencyKey } from "@/lib/api/browser";
+import type { InsightDto } from "@/contracts";
 import { cn } from "@/lib/format";
 
 /**
@@ -179,24 +180,7 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
   );
 }
 
-type InsightDTO = {
-  id: string;
-  claim: string;
-  rationale: string;
-  confidence: number;
-  evidence: Array<{ label: string; ref?: string; quote?: string }>;
-  proposedChange: {
-    type: string;
-    taskId?: string;
-    from?: string;
-    to?: string;
-    minutes?: number;
-    rule?: string;
-  };
-  status: string;
-};
-
-function changeLabel(change: InsightDTO["proposedChange"]): string {
+function changeLabel(change: InsightDto["proposedChange"]): string {
   if (change.type === "reschedule") {
     return `把任务时间 ${change.from ?? "?"} → ${change.to ?? "?"}`;
   }
@@ -209,7 +193,7 @@ function changeLabel(change: InsightDTO["proposedChange"]): string {
   return "无变更";
 }
 
-export function InsightCard({ insight }: { insight: InsightDTO }) {
+export function InsightCard({ insight }: { insight: InsightDto }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -393,7 +377,7 @@ export function CheckinForm({
         onChange={(e) => setNote(e.target.value)}
         placeholder="30 秒备注：今天哪里卡住了？"
         rows={2}
-        className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink placeholder:text-faint focus:border-accent/50 focus:outline-none"
+        className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink placeholder:text-faint focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
 
       <div className="flex items-center gap-2">
@@ -499,7 +483,7 @@ export function CouncilActions({ councilId }: { councilId: string }) {
         value={note}
         onChange={(e) => setNote(e.target.value)}
         rows={2}
-        className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink focus:border-accent/50 focus:outline-none"
+        className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="primary" onClick={() => decide("approve")} disabled={busy !== null}>
@@ -661,7 +645,7 @@ export function AgentAdmin({
           value={draftCharter}
           onChange={(event) => setDraftCharter(event.target.value)}
           rows={4}
-          className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-[11px] leading-relaxed text-ink focus:border-accent/50 focus:outline-none"
+          className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-[11px] leading-relaxed text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         />
         <Button
           size="sm"
@@ -684,7 +668,7 @@ export function AgentAdmin({
             step={1}
             value={budgetYuan}
             onChange={(event) => setBudgetYuan(event.target.value)}
-            className="h-8 w-24 rounded-md border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+            className="h-8 w-24 rounded-md border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <Button
             size="sm"
@@ -740,19 +724,19 @@ export function QuickCreate({
           <input
             id="qc-task-title"
             placeholder="任务标题"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <textarea
             id="qc-task-desc"
             placeholder="描述"
             rows={2}
-            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <textarea
             id="qc-task-criteria"
             placeholder="验收标准"
             rows={2}
-            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <div className="grid grid-cols-2 gap-2">
             <select
@@ -861,23 +845,23 @@ export function QuickCreate({
           <input
             id="qc-goal-title"
             placeholder="目标标题"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
             id="qc-goal-why"
             placeholder="为什么（一句话）"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
             id="qc-goal-target"
             placeholder="可验收的目标"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <div className="grid grid-cols-2 gap-2">
             <input
               id="qc-goal-horizon"
               defaultValue="6 weeks"
-              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <select
               id="qc-goal-domain"
@@ -939,12 +923,12 @@ export function NewCouncilForm() {
       <input
         id="nc-topic"
         placeholder="议题"
-        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <input
         id="nc-trigger"
         placeholder="触发条件（如：单笔支出 > ¥200）"
-        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <Button size="sm" onClick={submit} disabled={busy}>
         {busy ? <Loader2 className="size-3 animate-spin" /> : null}

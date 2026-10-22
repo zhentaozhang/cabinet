@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -7,9 +8,8 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
-import { getCouncilData } from "@/lib/engine";
-import { getPageUserId } from "@/lib/auth/context";
-import { roleMeta } from "@/lib/agents";
+import { fetchCouncilPage } from "@/lib/api/pages";
+import { roleMeta, stanceLabel, stanceTone } from "@/lib/agents";
 import { dateTime } from "@/lib/format";
 import {
   Avatar,
@@ -21,23 +21,14 @@ import {
 import { CouncilActions, NewCouncilForm } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
 
+export const metadata: Metadata = {
+  title: "Council · Cabinet",
+};
+
 export const dynamic = "force-dynamic";
 
-function stanceTone(stance: string) {
-  if (stance === "support") return "teal" as const;
-  if (stance === "oppose") return "danger" as const;
-  return "accent" as const;
-}
-
-function stanceLabel(stance: string) {
-  if (stance === "support") return "支持";
-  if (stance === "oppose") return "反对";
-  return "中立";
-}
-
 export default async function CouncilPage() {
-  const userId = await getPageUserId();
-  const data = await getCouncilData(userId);
+  const data = await fetchCouncilPage();
   if (!data) {
     return (
       <div className="mx-auto max-w-xl py-12">

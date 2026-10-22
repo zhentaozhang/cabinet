@@ -12,6 +12,7 @@ import {
   Sun,
   Users,
 } from "lucide-react";
+import type { ShellContextDto } from "@/contracts";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/format";
 
@@ -22,6 +23,9 @@ const NAV = [
   { href: "/memory", label: "Memory", icon: Brain, hint: "记忆与证据" },
   { href: "/council", label: "Council", icon: Gavel, hint: "内阁会议" },
 ];
+
+const FOCUS_RING =
+  "outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
 
 function Mark() {
   return (
@@ -37,7 +41,10 @@ function Mark() {
 function NavLinks({ compact = false }: { compact?: boolean }) {
   const pathname = usePathname();
   return (
-    <nav className={cn("flex gap-1", compact ? "flex-row overflow-x-auto" : "flex-col")}>
+    <nav
+      aria-label="主导航"
+      className={cn("flex gap-1", compact ? "flex-row overflow-x-auto" : "flex-col")}
+    >
       {NAV.map((item) => {
         const active =
           item.href === "/"
@@ -48,8 +55,11 @@ function NavLinks({ compact = false }: { compact?: boolean }) {
           <Link
             key={item.href}
             href={item.href}
+            aria-current={active ? "page" : undefined}
+            aria-label={item.hint}
             className={cn(
               "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors",
+              FOCUS_RING,
               compact ? "shrink-0" : "",
               active
                 ? "bg-white/[0.06] text-ink"
@@ -57,6 +67,7 @@ function NavLinks({ compact = false }: { compact?: boolean }) {
             )}
           >
             <Icon
+              aria-hidden="true"
               className={cn(
                 "size-4 shrink-0",
                 active ? "text-accent" : "text-faint group-hover:text-muted",
@@ -64,7 +75,10 @@ function NavLinks({ compact = false }: { compact?: boolean }) {
             />
             <span className="font-medium">{item.label}</span>
             {!compact ? (
-              <span className="ml-auto hidden text-[10px] text-faint lg:block">
+              <span
+                aria-hidden="true"
+                className="ml-auto hidden text-[10px] text-faint lg:block"
+              >
                 {active ? "●" : ""}
               </span>
             ) : null}
@@ -77,38 +91,112 @@ function NavLinks({ compact = false }: { compact?: boolean }) {
 
 function ResetButton() {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const [state, setState] = useState<"idle" | "busy" | "error">("idle");
+
   async function reset() {
-    setBusy(true);
+    if (!window.confirm("重置会清空当前演示数据并重新播种，确认继续？")) return;
+    setState("busy");
     try {
-      await fetch("/api/demo/reset", { method: "POST" });
+      const response = await fetch("/api/demo/reset", { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       router.refresh();
-    } finally {
-      setBusy(false);
+      setState("idle");
+    } catch {
+      setState("error");
     }
   }
+
   return (
-    <button
-      onClick={reset}
-      disabled={busy}
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-faint transition-colors hover:bg-white/[0.04] hover:text-muted disabled:opacity-50"
-    >
-      <RefreshCw className={cn("size-3", busy && "animate-spin")} />
-      {busy ? "重置中…" : "重置演示数据"}
-    </button>
+    <div>
+      <button
+        type="button"
+        onClick={reset}
+        disabled={state === "busy"}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition-colors hover:bg-white/[0.04] disabled:opacity-50",
+          state === "error" ? "text-danger" : "text-faint hover:text-muted",
+          FOCUS_RING,
+        )}
+      >
+        <RefreshCw
+          aria-hidden="true"
+          className={cn("size-3", state === "busy" && "animate-spin")}
+        />
+        {state === "busy"
+          ? "重置中…"
+          : state === "error"
+            ? "重置失败，点此重试"
+            : "重置演示数据"}
+      </button>
+      <p aria-live="polite" className="sr-only">
+        {state === "error" ? "重置演示数据失败" : ""}
+      </p>
+    </div>
   );
 }
 
-export function Shell({ children }: { children: React.ReactNode }) {
+function AutonomyPanel({ context }: { context: ShellContextDto | null }) {
+  const autonomy = context?.autonomy ?? { l1: 0, l2: 0, l3: 0 };
+  const counts = [autonomy.l1, autonomy.l2, autonomy.l3];
+  const highest = counts.reduce((acc, count, index) => (count > 0 ? index + 1 : acc), 0);
+
+  return (
+    <div className="mb-3 rounded-lg border border-line bg-panel2/60 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-[0.16em] text-faint">
+          Autonomy
+        </span>
+        <span className="mono text-[10px] text-accent">L{highest}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        {[1, 2, 3].map((rung) => {
+          const reached = (counts[rung - 1] ?? 0) > 0;
+          return (
+            <div key={rung} className="flex-1">
+              <div
+                className={cn("h-1 rounded-full", reached ? "bg-accent" : "bg-line2")}
+              />
+              <div className="mt-1 text-[9px] text-faint">L{rung}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 text-[10px] leading-relaxed text-muted">
+        {context && context.agents > 0
+          ? `${context.agents} 位在岗，L2+ ${autonomy.l2} 位`
+          : "授权靠信用和审计，不靠信任。"}
+      </div>
+    </div>
+  );
+}
+
+export function Shell({
+  children,
+  context = null,
+}: {
+  children: React.ReactNode;
+  context?: ShellContextDto | null;
+}) {
   const router = useRouter();
   const { data: session } = authClient.useSession();
-  const user = session?.user;
-  const isDemo = !user || user.email === "demo@cabinet.local";
-  const displayName = user?.name ?? "Zhen";
-  const displayEmail = user?.email ?? "demo workspace";
+  const sessionUser = session?.user;
+  const displayName = sessionUser?.name ?? context?.name ?? "Zhen";
+  const displayEmail = sessionUser?.email ?? context?.email ?? "demo workspace";
+  const showSignOut = Boolean(sessionUser);
+  const showReset = !sessionUser || sessionUser.email === "demo@cabinet.local";
 
   return (
     <div className="relative z-10 min-h-screen">
+      <a
+        href="#main"
+        className={cn(
+          "sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-panel focus:px-3 focus:py-2 focus:text-xs focus:text-ink",
+          FOCUS_RING,
+        )}
+      >
+        跳到主内容
+      </a>
+
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[232px] flex-col border-r border-line bg-panel/70 backdrop-blur-xl md:flex">
         <div className="flex items-center gap-2.5 px-5 pb-5 pt-6">
           <Mark />
@@ -127,33 +215,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
 
         <div className="mt-auto border-t border-line p-3">
-          <div className="mb-3 rounded-lg border border-line bg-panel2/60 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-[0.16em] text-faint">
-                Autonomy
-              </span>
-              <span className="text-[10px] text-accent">L1 → L3</span>
-            </div>
-            <div className="flex items-center gap-1">
-              {[1, 2, 3].map((n) => (
-                <div key={n} className="flex-1">
-                  <div
-                    className={cn(
-                      "h-1 rounded-full",
-                      n <= 2 ? "bg-accent" : "bg-line2",
-                    )}
-                  />
-                  <div className="mt-1 text-[9px] text-faint">L{n}</div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-2 text-[10px] leading-relaxed text-muted">
-              授权靠信用和审计，不靠信任。
-            </div>
-          </div>
+          <AutonomyPanel context={context} />
 
           <div className="mb-2 flex items-center gap-2 px-1">
-            <div className="flex size-6 items-center justify-center rounded-md border border-line2 bg-panel2 text-[10px] text-muted">
+            <div
+              aria-hidden="true"
+              className="flex size-6 items-center justify-center rounded-md border border-line2 bg-panel2 text-[10px] text-muted"
+            >
               {displayName.slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
@@ -164,21 +232,25 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 {displayEmail}
               </div>
             </div>
-            {user ? (
+            {showSignOut ? (
               <button
+                type="button"
+                aria-label="退出登录"
                 onClick={async () => {
                   await authClient.signOut();
                   router.push("/login");
                   router.refresh();
                 }}
-                className="rounded p-1 text-faint hover:bg-white/[0.04] hover:text-muted"
-                title="退出"
+                className={cn(
+                  "rounded p-1 text-faint hover:bg-white/[0.04] hover:text-muted",
+                  FOCUS_RING,
+                )}
               >
-                <LogOut className="size-3" />
+                <LogOut aria-hidden="true" className="size-3" />
               </button>
             ) : null}
           </div>
-          {isDemo ? <ResetButton /> : null}
+          {showReset ? <ResetButton /> : null}
         </div>
       </aside>
 
@@ -192,7 +264,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="md:ml-[232px]">
+      <main id="main" className="md:ml-[232px]">
         <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 md:px-8 md:py-8">
           {children}
         </div>

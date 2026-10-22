@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -6,9 +7,8 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { getCabinetData } from "@/lib/engine";
-import { getPageUserId } from "@/lib/auth/context";
-import { AUTONOMY_LABELS, roleMeta } from "@/lib/agents";
+import { fetchCabinetPage } from "@/lib/api/pages";
+import { AUTONOMY_LABELS, roleMeta, statusLabel, statusTone } from "@/lib/agents";
 import { money } from "@/lib/format";
 import {
   Avatar,
@@ -19,25 +19,11 @@ import {
 } from "@/components/ui";
 import { DataControls } from "@/components/data-controls";
 
+export const metadata: Metadata = {
+  title: "Cabinet · Cabinet",
+};
+
 export const dynamic = "force-dynamic";
-
-function statusTone(status: string) {
-  if (status === "active") return "teal" as const;
-  if (status === "probation") return "accent" as const;
-  if (status === "paused") return "neutral" as const;
-  return "danger" as const;
-}
-
-function statusLabel(status: string) {
-  return (
-    {
-      active: "在岗",
-      probation: "试用期",
-      paused: "暂停",
-      retired: "已退休",
-    }[status] ?? status
-  );
-}
 
 function successRate(success: number, fail: number) {
   const total = success + fail;
@@ -172,12 +158,16 @@ function OrgNode({
 }
 
 export default async function CabinetPage() {
-  const userId = await getPageUserId();
-  const data = await getCabinetData(userId);
+  const data = await fetchCabinetPage();
   const byRole = (role: string) => data.agents.filter((a) => a.role === role);
   const chief = byRole("chief")[0];
-  const taskCount = (id: string) =>
-    data.tasks.filter((t) => t.assigneeId === id && t.status !== "done").length;
+  // One pass over tasks instead of one scan per agent card.
+  const openTasksByAgent = new Map<string, number>();
+  for (const task of data.tasks) {
+    if (task.status === "done" || !task.assigneeId) continue;
+    openTasksByAgent.set(task.assigneeId, (openTasksByAgent.get(task.assigneeId) ?? 0) + 1);
+  }
+  const taskCount = (id: string) => openTasksByAgent.get(id) ?? 0;
 
   return (
     <div>

@@ -101,6 +101,7 @@ export function Button({
   variant = "outline",
   size = "md",
   className,
+  type = "button",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
@@ -108,8 +109,10 @@ export function Button({
 }) {
   return (
     <button
+      type={type}
       className={cn(
         "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+        "outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
         size === "sm" ? "h-7 px-2.5 text-[11px]" : "h-9 px-3.5 text-xs",
         buttonVariants[variant],
         className,
@@ -136,13 +139,18 @@ export function Progress({
     danger: "bg-danger",
     blue: "bg-blue",
   };
+  const clamped = Math.max(0, Math.min(100, Math.round(value)));
   return (
     <div
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={clamped}
       className={cn("h-1.5 w-full overflow-hidden rounded-full bg-line", className)}
     >
       <div
         className={cn("h-full rounded-full transition-all", tones[tone])}
-        style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+        style={{ width: `${clamped}%` }}
       />
     </div>
   );

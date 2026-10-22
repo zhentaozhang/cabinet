@@ -9,7 +9,7 @@ import {
   profiles,
   users,
 } from "@/lib/db/schema";
-import { AGENT_TEMPLATES, ROLE_GRANTS } from "@/lib/templates";
+import { AGENT_TEMPLATES, ROLE_GRANTS } from "@/contracts/templates";
 import { SEED_POLICY_CONFIG } from "@/lib/domain/policy";
 import { newId } from "@/lib/ids";
 import { startOfLocalWeek } from "@/lib/domain/time";

@@ -28,7 +28,7 @@ import { canonicalJson, sha256 } from "../ids";
 import { weekLabel } from "../format";
 import { SEED_POLICY_CONFIG } from "../domain/policy";
 import { startOfLocalWeek } from "../domain/time";
-import { AGENT_TEMPLATES } from "../templates";
+import { AGENT_TEMPLATES } from "@/contracts/templates";
 import { hashPassword } from "better-auth/crypto";
 
 const USER_ID = "usr_zhen";

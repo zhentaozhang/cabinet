@@ -1,15 +1,19 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, ShieldCheck } from "lucide-react";
-import { getPageUserId, hasWorkspace } from "@/lib/auth/context";
-import { AGENT_TEMPLATES } from "@/lib/templates";
+import { AGENT_TEMPLATES } from "@/contracts/templates";
+import { fetchWorkspaceReady } from "@/lib/api/pages";
 import { SetupForm } from "@/components/setup-form";
 import { Badge, Card, CardHeader } from "@/components/ui";
+
+export const metadata: Metadata = {
+  title: "初始化 · Cabinet",
+};
 
 export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {
-  const userId = await getPageUserId({ allowMissingWorkspace: true });
-  const ready = await hasWorkspace(userId);
+  const ready = await fetchWorkspaceReady();
 
   if (ready) {
     return (

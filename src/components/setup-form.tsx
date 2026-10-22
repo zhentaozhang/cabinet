@@ -85,19 +85,19 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="目标标题（可跳过）"
-              className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 focus:outline-none"
+              className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <input
               value={why}
               onChange={(event) => setWhy(event.target.value)}
               placeholder="为什么"
-              className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 focus:outline-none"
+              className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <input
               value={target}
               onChange={(event) => setTarget(event.target.value)}
               placeholder="可验收的目标"
-              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 focus:outline-none"
+              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
           </div>
 

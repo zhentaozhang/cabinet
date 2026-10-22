@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Brain,
@@ -7,8 +8,7 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
-import { getMemoryData } from "@/lib/engine";
-import { getPageUserId } from "@/lib/auth/context";
+import { fetchMemoryPage } from "@/lib/api/pages";
 import { dateTime, pct } from "@/lib/format";
 import {
   Badge,
@@ -19,6 +19,10 @@ import {
   Stat,
 } from "@/components/ui";
 import { MemoryActions } from "@/components/memory-actions";
+
+export const metadata: Metadata = {
+  title: "Memory · Cabinet",
+};
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +45,7 @@ export default async function MemoryPage({
   searchParams: Promise<{ type?: string }>;
 }) {
   const { type } = await searchParams;
-  const userId = await getPageUserId();
-  const data = await getMemoryData(userId, type);
+  const data = await fetchMemoryPage(type);
   const avgConfidence =
     data.memories.length > 0
       ? data.memories.reduce((sum, m) => sum + m.confidence, 0) / data.memories.length

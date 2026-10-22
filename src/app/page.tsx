@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -10,9 +11,8 @@ import {
   Sparkles,
   Sun,
 } from "lucide-react";
-import { getTodayData } from "@/lib/engine";
-import { getPageUserId } from "@/lib/auth/context";
-import { roleMeta } from "@/lib/agents";
+import { fetchTodayPage } from "@/lib/api/pages";
+import { roleMeta, statusLabel, statusTone } from "@/lib/agents";
 import { dateTime, pct, timeOnly } from "@/lib/format";
 import { Badge, Card, CardHeader, Dot, Progress, Stat } from "@/components/ui";
 import {
@@ -23,38 +23,14 @@ import {
 } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
 
+export const metadata: Metadata = {
+  title: "Today · Cabinet",
+};
+
 export const dynamic = "force-dynamic";
 
-function statusTone(status: string) {
-  if (["accepted", "done"].includes(status)) return "teal" as const;
-  if (["submitted", "auditing", "awaiting_approval", "suggested"].includes(status))
-    return "accent" as const;
-  if (["rejected", "failed"].includes(status)) return "danger" as const;
-  if (["running"].includes(status)) return "blue" as const;
-  return "neutral" as const;
-}
-
-function statusLabel(status: string) {
-  const map: Record<string, string> = {
-    planned: "待执行",
-    assigned: "已指派",
-    awaiting_approval: "待审批",
-    approved: "已批准",
-    suggested: "建议",
-    running: "执行中",
-    submitted: "待验收",
-    auditing: "验收中",
-    accepted: "已通过",
-    rejected: "已驳回",
-    done: "完成",
-    failed: "失败",
-  };
-  return map[status] ?? status;
-}
-
 export default async function TodayPage() {
-  const userId = await getPageUserId();
-  const data = await getTodayData(userId);
+  const data = await fetchTodayPage();
   const primaryGoal = data.goals[0];
   const agentById = new Map(data.agents.map((a) => [a.id, a]));
   const today = new Intl.DateTimeFormat("zh-CN", {
@@ -79,7 +55,7 @@ export default async function TodayPage() {
             早上好，{data.user.name}
           </h1>
           <p className="mt-1.5 text-xs text-muted">
-            第 2 周 · {primaryGoal ? `${primaryGoal.title} ${pct(primaryGoal.progress)}` : "尚未设定目标"} ·{" "}
+            {data.weeklyMetrics.weekKey} · {primaryGoal ? `${primaryGoal.title} ${pct(primaryGoal.progress)}` : "尚未设定目标"} ·{" "}
             {data.tasks.length} 件事在推进
           </p>
         </div>
@@ -113,10 +89,10 @@ export default async function TodayPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3">
               <Badge tone="teal">
-                <ShieldCheck className="size-2.5" /> 3 条证据已挂载
+                <ShieldCheck className="size-2.5" /> 基于 {data.tasks.length} 个进行中的任务
               </Badge>
               <Badge tone="accent">
-                <Sparkles className="size-2.5" /> 1 条洞察待采纳
+                <Sparkles className="size-2.5" /> {data.counts.proposedInsights} 条洞察待采纳
               </Badge>
               <span className="ml-auto text-[10px] text-faint">
                 生成于 {dateTime(data.brief?.createdAt)}
@@ -231,7 +207,7 @@ export default async function TodayPage() {
                       内阁会议：{data.council.topic}
                     </div>
                     <div className="mt-1 text-[10px] text-faint">
-                      触发：{data.council.trigger} · 5 位 Agent 已提交立场
+                      触发：{data.council.trigger}
                     </div>
                   </div>
                   <ArrowRight className="size-3.5 text-faint" />

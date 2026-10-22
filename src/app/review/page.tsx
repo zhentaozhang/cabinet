@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -6,10 +7,9 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import { getReviewData } from "@/lib/engine";
-import { getPageUserId } from "@/lib/auth/context";
-import { roleMeta } from "@/lib/agents";
-import { dateTime, money } from "@/lib/format";
+import { fetchReviewPage } from "@/lib/api/pages";
+import { passRate, roleMeta } from "@/lib/agents";
+import { dateTime, money, shortDate } from "@/lib/format";
 import {
   Avatar,
   Badge,
@@ -23,16 +23,14 @@ import {
   ReflectButton,
   VerifyAuditButton,
 } from "@/components/actions";
-import type { PolicyConfig } from "@/lib/domain/policy";
+import type { PolicyConfigDto } from "@/contracts";
 import { Markdown } from "@/components/markdown";
 
-export const dynamic = "force-dynamic";
+export const metadata: Metadata = {
+  title: "Review · Cabinet",
+};
 
-function successRate(success: number, fail: number) {
-  const total = success + fail;
-  if (total === 0) return 0;
-  return Math.round((success / total) * 100);
-}
+export const dynamic = "force-dynamic";
 
 type AuditStat = { accepts: number; total: number; passRate: number };
 
@@ -45,7 +43,7 @@ function recommendation(
     failCount: number;
   },
   stats: AuditStat,
-  config: PolicyConfig,
+  config: PolicyConfigDto,
 ) {
   if (agent.role === "apprentice" && agent.lifecycleStage !== "active") {
     return { label: "待转正", tone: "accent" as const };
@@ -69,12 +67,29 @@ function recommendation(
   return { label: "保持", tone: "neutral" as const };
 }
 
+const OPEN_TASK_STATUS = new Set([
+  "planned",
+  "assigned",
+  "awaiting_approval",
+  "approved",
+  "suggested",
+  "running",
+  "submitted",
+  "auditing",
+  "rejected",
+]);
+
 export default async function ReviewPage() {
-  const userId = await getPageUserId();
-  const data = await getReviewData(userId);
+  const data = await fetchReviewPage();
   const metrics = data.weeklyMetrics;
   const applied = data.insights.filter((i) => i.status === "applied");
   const proposed = data.insights.filter((i) => i.status === "proposed");
+  const focus = data.tasks
+    .filter((task) => OPEN_TASK_STATUS.has(task.status))
+    .sort(
+      (a, b) =>
+        b.priority - a.priority || (a.dueAt ?? "").localeCompare(b.dueAt ?? ""),
+    )[0];
 
   return (
     <div>
@@ -136,18 +151,7 @@ export default async function ReviewPage() {
             />
             <div className="space-y-3">
               {data.insights.map((insight) => (
-                <InsightCard
-                  key={insight.id}
-                  insight={{
-                    id: insight.id,
-                    claim: insight.claim,
-                    rationale: insight.rationale,
-                    confidence: insight.confidence,
-                    evidence: insight.evidence,
-                    proposedChange: insight.proposedChange,
-                    status: insight.status,
-                  }}
-                />
+                <InsightCard key={insight.id} insight={insight} />
               ))}
             </div>
           </div>
@@ -179,7 +183,7 @@ export default async function ReviewPage() {
             <CardHeader eyebrow="Agent performance" title="内阁绩效" />
             <div className="divide-y divide-line">
               {data.agents.map((agent) => {
-                const rate = successRate(agent.successCount, agent.failCount);
+                const rate = passRate(agent.successCount, agent.failCount);
                 const rec = recommendation(
                   agent,
                   data.auditStats[agent.id] ?? {
@@ -239,9 +243,19 @@ export default async function ReviewPage() {
               <TrendingUp className="mt-0.5 size-4 text-teal" />
               <div>
                 <div className="text-xs font-medium text-ink">下一周的唯一目标</div>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted">
-                  把 rerank 补成一个可运行的对比实验；其他任务都为它让路。
-                </p>
+                {focus ? (
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                    <Link href={`/tasks/${focus.id}`} className="text-ink hover:underline">
+                      {focus.title}
+                    </Link>
+                    {` · 优先级 ${focus.priority}`}
+                    {focus.dueAt ? ` · 截止 ${shortDate(focus.dueAt)}` : ""}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                    本周没有未收尾的任务。
+                  </p>
+                )}
                 <Link
                   href="/cabinet"
                   className="mt-2 inline-flex items-center gap-1 text-[10px] text-teal hover:underline"

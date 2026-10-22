@@ -1,42 +1,36 @@
-import "server-only";
+import { headers } from "next/headers";
 
-import { cookies } from "next/headers";
-
-import { createApiClient } from "./client";
+import { createApiClient, type ApiClient } from "./client";
 
 /**
- * Absolute origin of the backend.
+ * Server-side API client used by React Server Components.
  *
- * Today the route handlers live next to the pages, so the default resolves to
- * the current Next server. After the physical split, `API_BASE_URL` points at
- * `apps/api` and this is the only line that has to change.
+ * The pages never import the engine: they talk to the HTTP surface exactly like
+ * a browser would. When the backend moves to its own deployment this file only
+ * needs `API_BASE_URL`, and the pages stay untouched.
  */
-export function resolveApiBaseUrl(): string {
-  const explicit = process.env.API_BASE_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
+async function resolveBaseUrl(): Promise<string> {
+  const configured = process.env.API_BASE_URL;
+  if (configured) return configured;
 
-  const candidate = process.env.BETTER_AUTH_URL?.trim();
-  if (candidate) return candidate.replace(/\/$/, "");
-
-  return `http://127.0.0.1:${process.env.PORT ?? "3000"}`;
+  const incoming = await headers();
+  const host =
+    incoming.get("x-forwarded-host") ?? incoming.get("host") ?? "localhost:3000";
+  const explicitProto = incoming.get("x-forwarded-proto");
+  const proto =
+    explicitProto ?? (/^(localhost|127\.)/.test(host) ? "http" : "https");
+  return `${proto}://${host}`;
 }
 
-/**
- * Server-component client. Forwards the session cookie so the API keeps
- * enforcing the same tenancy rules whether the call comes from the browser or
- * from a server render.
- */
-export const serverApi = createApiClient({
-  baseUrl: resolveApiBaseUrl(),
-  credentials: "omit",
-  async headers() {
-    const jar = await cookies();
-    const cookie = jar
-      .getAll()
-      .map((entry) => `${entry.name}=${entry.value}`)
-      .join("; ");
-    const headers: Record<string, string> = {};
-    if (cookie) headers.cookie = cookie;
-    return headers;
-  },
-});
+export async function serverApi(): Promise<ApiClient> {
+  const baseUrl = await resolveBaseUrl();
+  const incoming = await headers();
+  const cookie = incoming.get("cookie");
+
+  return createApiClient({
+    baseUrl,
+    credentials: "omit",
+    headers: async (): Promise<Record<string, string>> =>
+      cookie ? { cookie } : {},
+  });
+}

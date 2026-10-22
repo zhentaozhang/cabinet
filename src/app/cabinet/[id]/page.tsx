@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -10,9 +11,8 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { getAgentData } from "@/lib/engine";
-import { getPageUserId } from "@/lib/auth/context";
-import { AUTONOMY_LABELS, roleMeta } from "@/lib/agents";
+import { fetchAgentPage } from "@/lib/api/pages";
+import { AUTONOMY_LABELS, passRate, roleMeta, statusTone } from "@/lib/agents";
 import { money, pct, relative, timeOnly } from "@/lib/format";
 import {
   Avatar,
@@ -24,20 +24,11 @@ import {
 } from "@/components/ui";
 import { AgentAdmin, AutonomyControl, ExamButton } from "@/components/actions";
 
+export const metadata: Metadata = {
+  title: "Agent · Cabinet",
+};
+
 export const dynamic = "force-dynamic";
-
-function statusTone(status: string) {
-  if (status === "active") return "teal" as const;
-  if (status === "probation") return "accent" as const;
-  if (status === "paused") return "neutral" as const;
-  return "danger" as const;
-}
-
-function successRate(success: number, fail: number) {
-  const total = success + fail;
-  if (total === 0) return 0;
-  return Math.round((success / total) * 100);
-}
 
 export default async function AgentPage({
   params,
@@ -45,12 +36,11 @@ export default async function AgentPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const userId = await getPageUserId();
-  const data = await getAgentData(id, userId);
+  const data = await fetchAgentPage(id);
   if (!data) notFound();
   const { agent, runs, memories, skills, tasks } = data;
   const meta = roleMeta(agent.role);
-  const rate = successRate(agent.successCount, agent.failCount);
+  const rate = passRate(agent.successCount, agent.failCount);
 
   return (
     <div>

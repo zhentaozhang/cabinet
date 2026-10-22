@@ -1,0 +1,326 @@
+import { z } from "zod";
+
+import {
+  evidenceSchema,
+  insightChangeSchema,
+  isoDateTime,
+  jsonObject,
+} from "./common";
+
+/**
+ * Entity DTOs: the serialisable projection of every table the UI reads.
+ *
+ * They are intentionally complete (same field set as the row) so that moving a
+ * page from an in-process engine call to HTTP cannot silently drop a field the
+ * page renders. Narrowing can happen later, per screen, with the type checker as
+ * the guard.
+ */
+
+export const TASK_STATUSES = [
+  "planned",
+  "assigned",
+  "awaiting_approval",
+  "approved",
+  "suggested",
+  "running",
+  "submitted",
+  "auditing",
+  "accepted",
+  "rejected",
+  "done",
+  "failed",
+  "cancelled",
+] as const;
+
+export const taskStatusSchema = z.enum(TASK_STATUSES);
+export type TaskStatus = z.infer<typeof taskStatusSchema>;
+
+export const userDtoSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  name: z.string(),
+  emailVerified: z.boolean(),
+  image: z.string().nullable(),
+  timezone: z.string(),
+  createdAt: isoDateTime,
+  updatedAt: isoDateTime,
+});
+export type UserDto = z.infer<typeof userDtoSchema>;
+
+export const profileDtoSchema = z.object({
+  userId: z.string(),
+  constraints: jsonObject,
+  preferences: jsonObject,
+  energyPattern: jsonObject,
+  managementBudgetMin: z.number(),
+  updatedAt: isoDateTime,
+});
+export type ProfileDto = z.infer<typeof profileDtoSchema>;
+
+export const agentDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  role: z.string(),
+  name: z.string(),
+  title: z.string(),
+  avatar: z.string(),
+  charter: z.string(),
+  objective: z.string(),
+  model: z.string(),
+  status: z.string(),
+  autonomyLevel: z.number(),
+  trustScore: z.number(),
+  lifecycleStage: z.string(),
+  mentorId: z.string().nullable(),
+  tools: z.array(z.string()),
+  memoryScope: z.array(z.string()),
+  budgetCents: z.number(),
+  spentCents: z.number(),
+  budgetPeriodStart: isoDateTime.nullable(),
+  policyJson: jsonObject.nullable(),
+  successCount: z.number(),
+  failCount: z.number(),
+  rejectStreak: z.number(),
+  createdAt: isoDateTime,
+  retiredAt: isoDateTime.nullable(),
+});
+export type AgentDto = z.infer<typeof agentDtoSchema>;
+
+export const goalDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  domain: z.string(),
+  title: z.string(),
+  why: z.string(),
+  target: z.string(),
+  horizon: z.string(),
+  status: z.string(),
+  progress: z.number(),
+  createdAt: isoDateTime,
+});
+export type GoalDto = z.infer<typeof goalDtoSchema>;
+
+export const taskDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  goalId: z.string().nullable(),
+  parentId: z.string().nullable(),
+  title: z.string(),
+  description: z.string(),
+  assigneeId: z.string().nullable(),
+  auditorId: z.string().nullable(),
+  status: taskStatusSchema,
+  priority: z.number(),
+  dueAt: isoDateTime.nullable(),
+  acceptanceCriteria: z.string(),
+  estimateMin: z.number(),
+  actionType: z.string(),
+  resource: z.string(),
+  riskLevel: z.string(),
+  requiresApproval: z.boolean(),
+  approvalThresholdCents: z.number().nullable(),
+  estimatedCostCents: z.number(),
+  qualityGate: z.string().nullable(),
+  template: z.string().nullable(),
+  acceptedAt: isoDateTime.nullable(),
+  acceptedAutonomyLevel: z.number().nullable(),
+  createdBy: z.string(),
+  createdAt: isoDateTime,
+  updatedAt: isoDateTime,
+});
+export type TaskDto = z.infer<typeof taskDtoSchema>;
+
+export const runDtoSchema = z.object({
+  id: z.string(),
+  taskId: z.string(),
+  agentId: z.string(),
+  status: z.string(),
+  mode: z.string(),
+  startedAt: isoDateTime.nullable(),
+  endedAt: isoDateTime.nullable(),
+  costCents: z.number(),
+  tokensIn: z.number(),
+  tokensOut: z.number(),
+  error: z.string().nullable(),
+  replayKey: z.string().nullable(),
+  createdAt: isoDateTime,
+});
+export type RunDto = z.infer<typeof runDtoSchema>;
+
+export const stepDtoSchema = z.object({
+  id: z.string(),
+  runId: z.string(),
+  idx: z.number(),
+  type: z.string(),
+  tool: z.string().nullable(),
+  input: jsonObject,
+  output: jsonObject,
+  tokensIn: z.number(),
+  tokensOut: z.number(),
+  latencyMs: z.number(),
+  createdAt: isoDateTime,
+});
+export type StepDto = z.infer<typeof stepDtoSchema>;
+
+export const artifactDtoSchema = z.object({
+  id: z.string(),
+  runId: z.string(),
+  taskId: z.string(),
+  type: z.string(),
+  title: z.string(),
+  content: z.string(),
+  createdAt: isoDateTime,
+});
+export type ArtifactDto = z.infer<typeof artifactDtoSchema>;
+
+export const memoryDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  agentId: z.string().nullable(),
+  type: z.string(),
+  domain: z.string(),
+  content: z.string(),
+  confidence: z.number(),
+  salience: z.number(),
+  evidence: z.array(evidenceSchema),
+  sourceEventId: z.string().nullable(),
+  lastConfirmedAt: isoDateTime.nullable(),
+  expiresAt: isoDateTime.nullable(),
+  status: z.string(),
+  createdAt: isoDateTime,
+});
+export type MemoryDto = z.infer<typeof memoryDtoSchema>;
+
+export const insightDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  claim: z.string(),
+  rationale: z.string(),
+  confidence: z.number(),
+  evidence: z.array(evidenceSchema),
+  proposedChange: insightChangeSchema,
+  beforeState: jsonObject.nullable(),
+  afterState: jsonObject.nullable(),
+  status: z.string(),
+  createdAt: isoDateTime,
+  decidedAt: isoDateTime.nullable(),
+});
+export type InsightDto = z.infer<typeof insightDtoSchema>;
+
+export const reviewDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  period: z.string(),
+  type: z.string(),
+  narrative: z.string(),
+  metrics: z.record(z.string(), z.union([z.number(), z.string()])),
+  decisions: z.array(jsonObject),
+  createdAt: isoDateTime,
+});
+export type ReviewDto = z.infer<typeof reviewDtoSchema>;
+
+export const approvalDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  taskId: z.string().nullable(),
+  runId: z.string().nullable(),
+  action: z.string(),
+  payload: jsonObject,
+  status: z.string(),
+  reason: z.string().nullable(),
+  expiresAt: isoDateTime.nullable(),
+  decidedAt: isoDateTime.nullable(),
+  consumedAt: isoDateTime.nullable(),
+  createdAt: isoDateTime,
+});
+export type ApprovalDto = z.infer<typeof approvalDtoSchema>;
+
+export const auditEventDtoSchema = z.object({
+  id: z.string(),
+  seq: z.number(),
+  userId: z.string(),
+  actor: z.string(),
+  action: z.string(),
+  target: z.string(),
+  before: jsonObject.nullable(),
+  after: jsonObject.nullable(),
+  hash: z.string(),
+  prevHash: z.string().nullable(),
+  createdAt: isoDateTime,
+});
+export type AuditEventDto = z.infer<typeof auditEventDtoSchema>;
+
+export const skillDtoSchema = z.object({
+  id: z.string(),
+  agentId: z.string(),
+  name: z.string(),
+  version: z.number(),
+  steps: z.array(z.string()),
+  tools: z.array(z.string()),
+  status: z.string(),
+  successCount: z.number(),
+  failCount: z.number(),
+  eval: jsonObject.nullable(),
+  createdAt: isoDateTime,
+});
+export type SkillDto = z.infer<typeof skillDtoSchema>;
+
+export const councilDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  topic: z.string(),
+  trigger: z.string(),
+  status: z.string(),
+  memo: z.string(),
+  createdAt: isoDateTime,
+  decidedAt: isoDateTime.nullable(),
+});
+export type CouncilDto = z.infer<typeof councilDtoSchema>;
+
+export const councilPositionDtoSchema = z.object({
+  id: z.string(),
+  councilId: z.string(),
+  agentId: z.string(),
+  stance: z.string(),
+  claim: z.string(),
+  evidence: z.array(evidenceSchema),
+  risk: z.string(),
+  recommendation: z.string(),
+  createdAt: isoDateTime,
+});
+export type CouncilPositionDto = z.infer<typeof councilPositionDtoSchema>;
+
+export const checkinDtoSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  /** `checkins.date` is a calendar key (YYYY-MM-DD), not a timestamp. */
+  date: z.string(),
+  energy: z.number(),
+  mood: z.number(),
+  completed: z.array(z.object({ taskId: z.string(), done: z.boolean() })),
+  note: z.string(),
+  createdAt: isoDateTime,
+});
+export type CheckinDto = z.infer<typeof checkinDtoSchema>;
+
+export const policyConfigDtoSchema = z.object({
+  autonomy: z.object({
+    minTrust: z.number(),
+    minSuccesses: z.number(),
+    minAuditPassRate: z.number(),
+  }),
+  audit: z.object({
+    rejectStreakLimit: z.number(),
+    passRateWindow: z.number(),
+  }),
+  budget: z.object({
+    weeklyLimitCents: z.number(),
+    approvalThresholdCents: z.number(),
+  }),
+  management: z.object({ minutesPerDecision: z.number() }),
+  cost: z.object({
+    perMinuteCents: z.number(),
+    centsPer1kTokens: z.number(),
+  }),
+});
+export type PolicyConfigDto = z.infer<typeof policyConfigDtoSchema>;

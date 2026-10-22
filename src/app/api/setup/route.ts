@@ -1,8 +1,16 @@
 import { revalidatePath } from "next/cache";
 import { setupWorkspace } from "@/lib/setup";
 import { handleMutation } from "@/lib/api/mutation";
+import { handleQuery } from "@/lib/api/read";
+import { hasWorkspace } from "@/lib/auth/context";
 import { setupSchema } from "@/lib/validation/schemas";
 import { parseBody } from "@/lib/validation/parse";
+
+export async function GET() {
+  return handleQuery(async (userId) => ({
+    hasWorkspace: await hasWorkspace(userId),
+  }));
+}
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);

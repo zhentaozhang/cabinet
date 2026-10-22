@@ -142,3 +142,21 @@ body::before {
 .pulse-dot {
   animation: cabinet-pulse 2.4s ease-in-out infinite;
 }
+
+/* Everyone gets a visible focus ring; components may add their own on top. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Respect the OS motion setting: no looping pulse, no long transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

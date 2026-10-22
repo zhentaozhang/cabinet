@@ -24,7 +24,7 @@ function replay(stored: StoredKey, requestHash: string): Response {
   }
   if (stored.status !== "completed") {
     throw new ConflictError(
-      "A request with this Idempotency-Key is already in progress.",
+      "A request with this Idempotency-Key is still in progress; retry shortly.",
     );
   }
   return Response.json(stored.responseJson ?? { ok: true }, {
@@ -75,7 +75,20 @@ export async function withIdempotency(input: {
     .limit(1);
 
   if (existing) {
-    return replay(existing, requestHash);
+    if (existing.status === "failed") {
+      // The previous attempt blew up mid-flight. Free the key so the same
+      // request can be retried instead of being blocked for 24 hours.
+      await db
+        .delete(idempotencyKeys)
+        .where(
+          and(
+            eq(idempotencyKeys.userId, input.userId),
+            eq(idempotencyKeys.key, key),
+          ),
+        );
+    } else {
+      return replay(existing, requestHash);
+    }
   }
 
   let insertError: unknown = null;

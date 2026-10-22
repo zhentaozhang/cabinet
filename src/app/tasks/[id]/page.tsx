@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -10,9 +11,8 @@ import {
   ShieldCheck,
   XCircle,
 } from "lucide-react";
-import { getTaskData } from "@/lib/engine";
-import { getPageUserId } from "@/lib/auth/context";
-import { roleMeta } from "@/lib/agents";
+import { fetchTaskPage } from "@/lib/api/pages";
+import { roleMeta, statusLabel, statusTone } from "@/lib/agents";
 import { dateTime, money, timeOnly } from "@/lib/format";
 import {
   Avatar,
@@ -24,35 +24,11 @@ import {
 import { TaskActions } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
 
+export const metadata: Metadata = {
+  title: "Task · Cabinet",
+};
+
 export const dynamic = "force-dynamic";
-
-function statusTone(status: string) {
-  if (["accepted", "done"].includes(status)) return "teal" as const;
-  if (["submitted", "auditing", "awaiting_approval", "suggested"].includes(status))
-    return "accent" as const;
-  if (["rejected", "failed"].includes(status)) return "danger" as const;
-  if (status === "running") return "blue" as const;
-  return "neutral" as const;
-}
-
-function statusLabel(status: string) {
-  return (
-    {
-      planned: "待执行",
-      assigned: "已指派",
-      awaiting_approval: "待审批",
-      approved: "已批准",
-      suggested: "建议",
-      running: "执行中",
-      submitted: "待验收",
-      auditing: "验收中",
-      accepted: "已通过",
-      rejected: "已驳回",
-      done: "完成",
-      failed: "失败",
-    }[status] ?? status
-  );
-}
 
 const STEP_TONE: Record<string, string> = {
   context: "text-blue",
@@ -69,8 +45,7 @@ export default async function TaskPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const userId = await getPageUserId();
-  const data = await getTaskData(id, userId);
+  const data = await fetchTaskPage(id);
   if (!data) notFound();
   const { task, goal, assignee, auditor, runs, steps, artifacts, approvals, audit } = data;
 

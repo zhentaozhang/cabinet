@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Button, Card } from "@/components/ui";
-
 type Mode = "signin" | "signup";
 
 export default function LoginPage() {
@@ -105,7 +104,7 @@ export default function LoginPage() {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="你的名字"
-                className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 focus:outline-none"
+                className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               />
             </div>
           ) : null}
@@ -118,7 +117,7 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 focus:outline-none"
+              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
           </div>
           <div>
@@ -129,7 +128,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 focus:outline-none"
+              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
           </div>
 

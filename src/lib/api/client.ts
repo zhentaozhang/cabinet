@@ -98,7 +98,7 @@ export function createApiClient(config: ApiClientConfig) {
         credentials: config.credentials ?? "same-origin",
         signal: controller.signal,
       });
-    } catch (error) {
+    } catch {
       const aborted = controller.signal.aborted;
       return failure(
         "internal_error",
