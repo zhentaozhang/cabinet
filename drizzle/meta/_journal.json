@@ -36,6 +36,13 @@
       "when": 1792645086922,
       "tag": "0004_setup_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792648640591,
+      "tag": "0005_numerous_lightspeed",
+      "breakpoints": true
     }
   ]
 }

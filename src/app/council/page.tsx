@@ -65,8 +65,22 @@ export default async function CouncilPage() {
             <Badge tone="violet">
               <Gavel className="size-2.5" /> Council
             </Badge>
-            <Badge tone={council.status === "open" ? "accent" : "teal"}>
-              {council.status === "open" ? "进行中" : "已决议"}
+            <Badge
+              tone={
+                council.status === "open"
+                  ? "accent"
+                  : council.status === "degraded"
+                    ? "danger"
+                    : "teal"
+              }
+            >
+              {council.status === "open"
+                ? "进行中"
+                : council.status === "deliberating"
+                  ? "生成立场中"
+                  : council.status === "degraded"
+                    ? "立场生成失败"
+                    : "已决议"}
             </Badge>
             <span className="text-[10px] text-faint">触发：{council.trigger}</span>
           </div>
@@ -86,6 +100,61 @@ export default async function CouncilPage() {
           <Badge tone="neutral">{positions.length - support - oppose} 中立</Badge>
         </div>
       </div>
+
+      {council.matrix ? (
+        <Card className="mb-5">
+          <CardHeader
+            eyebrow="Matrix"
+            title="内阁矩阵"
+            right={
+              <span className="text-[10px] text-faint">
+                综合健康度 {council.matrix.overall} / 100
+              </span>
+            }
+          />
+          <div className="grid gap-3 px-5 py-4 sm:grid-cols-4">
+            {(
+              [
+                ["feasibility", "可行性"],
+                ["costEfficiency", "成本效率"],
+                ["evidenceQuality", "证据质量"],
+                ["robustness", "抗风险"],
+              ] as const
+            ).map(([key, label]) => {
+              const value = council.matrix!.dimensions[key];
+              return (
+                <div
+                  key={key}
+                  className="rounded-md border border-line bg-panel2/40 px-3 py-2"
+                >
+                  <div className="text-[9px] uppercase tracking-wider text-faint">
+                    {label}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
+                      <div
+                        className="h-full rounded-full bg-accent"
+                        style={{ width: `${value}%` }}
+                      />
+                    </div>
+                    <span className="w-7 text-right text-[10px] text-muted">
+                      {value}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-2 border-t border-line px-5 py-3">
+            <Badge tone="teal">{council.matrix.support} 支持</Badge>
+            <Badge tone="danger">{council.matrix.oppose} 反对</Badge>
+            <Badge tone="neutral">{council.matrix.neutral} 中立</Badge>
+            {council.matrix.consensus === "split" ? (
+              <Badge tone="violet">内阁分裂，需要你裁决</Badge>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
         <div className="space-y-5">
@@ -115,6 +184,9 @@ export default async function CouncilPage() {
                           <Badge tone={stanceTone(position.stance)}>
                             {stanceLabel(position.stance)}
                           </Badge>
+                          {position.isDissent ? (
+                            <Badge tone="danger">正式异议</Badge>
+                          ) : null}
                           <span className="text-[9px] text-faint">
                             {agent?.title ?? ""}
                           </span>
@@ -133,6 +205,14 @@ export default async function CouncilPage() {
                             </span>
                           ))}
                         </div>
+                        {position.scores ? (
+                          <div className="mt-2 flex flex-wrap gap-2 text-[9px] text-faint">
+                            <span>可行性 {position.scores.feasibility}</span>
+                            <span>成本 {position.scores.costEfficiency}</span>
+                            <span>证据 {position.scores.evidenceQuality}</span>
+                            <span>抗风险 {position.scores.robustness}</span>
+                          </div>
+                        ) : null}
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">
                           <div className="rounded-md border border-line bg-panel2/40 px-2.5 py-2">
                             <div className="text-[9px] uppercase tracking-wider text-faint">Risk</div>
@@ -168,6 +248,33 @@ export default async function CouncilPage() {
             <div className="px-5 py-4">
               {council.status === "open" ? (
                 <CouncilActions councilId={council.id} />
+              ) : council.resolution ? (
+                <div className="space-y-2 text-[11px] leading-relaxed text-muted">
+                  <div className="text-ink">
+                    {council.resolution.decision === "approve"
+                      ? "批准"
+                      : council.resolution.decision === "reject"
+                        ? "否决"
+                        : "有条件批准"}
+                    {council.resolution.note
+                      ? `：${council.resolution.note}`
+                      : ""}
+                  </div>
+                  <div>
+                    {council.resolution.taskId
+                      ? "已生成跟进任务；"
+                      : "未生成跟进任务；"}
+                    已写入程序记忆。
+                  </div>
+                  {council.resolution.dissents.length > 0 ? (
+                    <div className="text-danger">
+                      {council.resolution.dissents.length} 条正式异议已归档。
+                    </div>
+                  ) : null}
+                  <div className="text-[10px] text-faint">
+                    决定已记录在审计日志；下次遇到类似议题会作为判例。
+                  </div>
+                </div>
               ) : (
                 <div className="text-[11px] text-muted">
                   决定已记录在审计日志；下次遇到类似议题会作为判例。

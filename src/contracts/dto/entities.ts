@@ -265,6 +265,57 @@ export const skillDtoSchema = z.object({
 });
 export type SkillDto = z.infer<typeof skillDtoSchema>;
 
+export const councilScoreSchema = z.object({
+  feasibility: z.number(),
+  costEfficiency: z.number(),
+  evidenceQuality: z.number(),
+  robustness: z.number(),
+});
+export type CouncilScoreDto = z.infer<typeof councilScoreSchema>;
+
+export const councilMatrixSchema = z.object({
+  dimensions: councilScoreSchema,
+  overall: z.number(),
+  support: z.number(),
+  oppose: z.number(),
+  neutral: z.number(),
+  consensus: z.enum(["support", "oppose", "split"]),
+  dissentAgentIds: z.array(z.string()),
+});
+export type CouncilMatrixDto = z.infer<typeof councilMatrixSchema>;
+
+export const falsificationConditionSchema = z.object({
+  metric: z.enum([
+    "audit_reject_count",
+    "budget_spend_cents",
+    "task_failure_count",
+    "agent_paused",
+  ]),
+  operator: z.enum([">=", ">", "=="]),
+  threshold: z.number(),
+  windowDays: z.number(),
+});
+export type FalsificationConditionDto = z.infer<
+  typeof falsificationConditionSchema
+>;
+
+export const councilResolutionSchema = z.object({
+  decision: z.enum(["approve", "reject", "conditions"]),
+  note: z.string(),
+  taskId: z.string().nullable(),
+  memoryId: z.string().nullable(),
+  dissents: z.array(
+    z.object({
+      agentId: z.string(),
+      claim: z.string(),
+      risk: z.string(),
+      recommendation: z.string(),
+    }),
+  ),
+  decidedAt: isoDateTime,
+});
+export type CouncilResolutionDto = z.infer<typeof councilResolutionSchema>;
+
 export const councilDtoSchema = z.object({
   id: z.string(),
   userId: z.string(),
@@ -272,6 +323,9 @@ export const councilDtoSchema = z.object({
   trigger: z.string(),
   status: z.string(),
   memo: z.string(),
+  matrix: councilMatrixSchema.nullable(),
+  resolution: councilResolutionSchema.nullable(),
+  resolutionAppliedAt: isoDateTime.nullable(),
   createdAt: isoDateTime,
   decidedAt: isoDateTime.nullable(),
 });
@@ -286,6 +340,9 @@ export const councilPositionDtoSchema = z.object({
   evidence: z.array(evidenceSchema),
   risk: z.string(),
   recommendation: z.string(),
+  scores: councilScoreSchema.nullable(),
+  isDissent: z.boolean(),
+  falsificationCondition: falsificationConditionSchema.nullable(),
   createdAt: isoDateTime,
 });
 export type CouncilPositionDto = z.infer<typeof councilPositionDtoSchema>;

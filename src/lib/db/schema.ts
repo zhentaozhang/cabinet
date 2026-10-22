@@ -27,6 +27,52 @@ export type ProposedChange =
 
 export type Metrics = Record<string, number | string>;
 
+export type CouncilScore = {
+  feasibility: number;
+  costEfficiency: number;
+  evidenceQuality: number;
+  robustness: number;
+};
+
+export type CouncilMatrix = {
+  dimensions: CouncilScore;
+  overall: number;
+  support: number;
+  oppose: number;
+  neutral: number;
+  consensus: "support" | "oppose" | "split";
+  dissentAgentIds: string[];
+};
+
+export type CouncilResolution = {
+  decision: "approve" | "reject" | "conditions";
+  note: string;
+  taskId: string | null;
+  memoryId: string | null;
+  dissents: Array<{
+    agentId: string;
+    claim: string;
+    risk: string;
+    recommendation: string;
+  }>;
+  decidedAt: string;
+};
+
+/**
+ * Machine-checkable dissent condition. The weekly review evaluates it against
+ * audit events and run costs; it is deliberately not free-form prose.
+ */
+export type FalsificationCondition = {
+  metric:
+    | "audit_reject_count"
+    | "budget_spend_cents"
+    | "task_failure_count"
+    | "agent_paused";
+  operator: ">=" | ">" | "==";
+  threshold: number;
+  windowDays: number;
+};
+
 export const users = pgTable(
   "users",
   {
@@ -410,6 +456,11 @@ export const councils = pgTable("councils", {
   trigger: text("trigger").notNull(),
   status: text("status").notNull().default("open"),
   memo: text("memo").notNull(),
+  matrix: jsonb("matrix").$type<CouncilMatrix>(),
+  resolution: jsonb("resolution").$type<CouncilResolution>(),
+  resolutionAppliedAt: timestamp("resolution_applied_at", {
+    withTimezone: true,
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -425,6 +476,9 @@ export const councilPositions = pgTable("council_positions", {
   evidence: jsonb("evidence").$type<Evidence[]>().notNull(),
   risk: text("risk").notNull(),
   recommendation: text("recommendation").notNull(),
+  scores: jsonb("scores").$type<CouncilScore>(),
+  isDissent: boolean("is_dissent").notNull().default(false),
+  falsificationCondition: jsonb("falsification_condition").$type<FalsificationCondition>(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

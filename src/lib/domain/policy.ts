@@ -36,6 +36,29 @@ export type ApprovalState = {
   consumedAt: Date | null;
 } | null;
 
+export type CouncilConfig = {
+  roleWeights: Record<string, number>;
+  dimensionWeights: {
+    feasibility: number;
+    costEfficiency: number;
+    evidenceQuality: number;
+    robustness: number;
+  };
+  score: {
+    base: number;
+    goalWeight: number;
+    trustWeight: number;
+    evidencePoints: number;
+    rejectPenalty: number;
+    pausePenalty: number;
+    budgetPressureWeight: number;
+  };
+  minPositions: number;
+  minEnergy: number;
+  dissentWindowDays: number;
+  dissentBudgetRatio: number;
+};
+
 export type PolicyConfig = {
   autonomy: {
     minTrust: number;
@@ -57,6 +80,7 @@ export type PolicyConfig = {
     perMinuteCents: number;
     centsPer1kTokens: number;
   };
+  council: CouncilConfig;
 };
 
 /**
@@ -83,6 +107,35 @@ export const SEED_POLICY_CONFIG: PolicyConfig = {
   cost: {
     perMinuteCents: 2,
     centsPer1kTokens: 0.8,
+  },
+  council: {
+    roleWeights: {
+      chief: 1.1,
+      researcher: 1,
+      coach: 1,
+      treasurer: 1.1,
+      critic: 1.2,
+      auditor: 0.8,
+    },
+    dimensionWeights: {
+      feasibility: 0.3,
+      costEfficiency: 0.25,
+      evidenceQuality: 0.25,
+      robustness: 0.2,
+    },
+    score: {
+      base: 50,
+      goalWeight: 0.3,
+      trustWeight: 0.2,
+      evidencePoints: 20,
+      rejectPenalty: 15,
+      pausePenalty: 30,
+      budgetPressureWeight: 100,
+    },
+    minPositions: 3,
+    minEnergy: 3,
+    dissentWindowDays: 7,
+    dissentBudgetRatio: 0.8,
   },
 };
 

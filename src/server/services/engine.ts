@@ -21,12 +21,25 @@ import {
   userActions,
   users,
 } from "@/lib/db/schema";
+import type {
+  CouncilMatrix,
+  CouncilResolution,
+  Evidence,
+  FalsificationCondition,
+} from "@/lib/db/schema";
 import { logAudit } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { weekLabel } from "@/lib/format";
 import { generateArtifact } from "@/lib/llm";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
+import {
+  buildCouncilMatrix,
+  buildCouncilMemo,
+  computePositionScores,
+  type CouncilPositionDraft,
+  type CouncilStance,
+} from "@/lib/domain/council";
 import { decideAudit, decideRun, decideUpgrade } from "@/lib/domain/policy";
 import { assertTransition } from "@/lib/domain/state";
 import {
@@ -1422,13 +1435,26 @@ export async function decideCouncil(
   const [council] = await db
     .select()
     .from(councils)
-    .where(eq(councils.id, councilId));
-  if (!council || council.userId !== userId) {
+    .where(and(eq(councils.id, councilId), eq(councils.userId, userId)));
+  if (!council) {
     throw new NotFoundError("Council not found");
   }
   if (council.status !== "open") {
     throw new ConflictError(`Council is already ${council.status}.`);
   }
+
+  const positions = await db
+    .select()
+    .from(councilPositions)
+    .where(eq(councilPositions.councilId, councilId))
+    .orderBy(asc(councilPositions.createdAt));
+
+  const allAgents = await db
+    .select()
+    .from(agents)
+    .where(eq(agents.userId, userId));
+  const chief = allAgents.find((agent) => agent.role === "chief");
+  const auditor = allAgents.find((agent) => agent.role === "auditor");
 
   const label =
     decision === "approve"
@@ -1436,17 +1462,102 @@ export async function decideCouncil(
       : decision === "reject"
         ? "否决"
         : "有条件批准";
+  const trimmedNote = note.trim();
 
-  const [updated] = await db
-    .update(councils)
-    .set({
-      status: "decided",
-      memo: `${council.memo}\n\n## 决定\n${label}：${note}`,
-      decidedAt: new Date(),
-    })
-    .where(and(eq(councils.id, councilId), eq(councils.status, "open")))
-    .returning();
-  if (!updated) throw new ConflictError("Council state changed; retry.");
+  const dissents = positions
+    .filter((position) => position.isDissent || position.stance === "oppose")
+    .map((position) => ({
+      agentId: position.agentId,
+      claim: position.claim,
+      risk: position.risk,
+      recommendation: position.recommendation,
+    }));
+
+  let taskId: string | null = null;
+  let memoryId: string | null = null;
+  let updated: typeof council;
+
+  await db.transaction(async (tx) => {
+    const [locked] = await tx
+      .update(councils)
+      .set({ status: "decided", decidedAt: new Date() })
+      .where(and(eq(councils.id, councilId), eq(councils.status, "open")))
+      .returning();
+    if (!locked) throw new ConflictError("Council state changed; retry.");
+
+    if (decision !== "reject") {
+      if (!chief || !auditor) {
+        throw new ValidationError(
+          "Approved councils need both a Chief and an Auditor.",
+        );
+      }
+      taskId = newId("tsk");
+      const acceptance =
+        decision === "conditions" && trimmedNote
+          ? `按内阁条件执行：${trimmedNote}`
+          : `完成内阁决议并附执行证据：${council.topic}`;
+      await tx.insert(tasks).values({
+        id: taskId,
+        userId,
+        title: `执行内阁决议：${council.topic}`,
+        description: `内阁于 ${new Date().toISOString()} ${label}：${trimmedNote || "无附加说明"}`,
+        assigneeId: chief.id,
+        auditorId: auditor.id,
+        status: "planned",
+        priority: 1,
+        acceptanceCriteria: acceptance,
+        estimateMin: 25,
+        actionType: "internal_write",
+        resource: "task",
+        estimatedCostCents: 0,
+        createdBy: "user",
+      });
+    }
+
+    memoryId = newId("mem");
+    await tx.insert(memories).values({
+      id: memoryId,
+      userId,
+      type: "procedural",
+      domain: "council",
+      content: `内阁决议（${label}）：${council.topic}。${trimmedNote || "无附加说明"}`,
+      confidence: 0.8,
+      salience: 0.8,
+      evidence: [
+        {
+          label: "内阁决议",
+          ref: `council:${councilId}`,
+          quote: trimmedNote || label,
+        },
+      ],
+      sourceEventId: councilId,
+      lastConfirmedAt: new Date(),
+      status: "active",
+    });
+
+    const resolution: CouncilResolution = {
+      decision,
+      note: trimmedNote,
+      taskId,
+      memoryId,
+      dissents,
+      decidedAt: new Date().toISOString(),
+    };
+
+    const [withResolution] = await tx
+      .update(councils)
+      .set({
+        memo: `${locked.memo}\n\n## 决定\n${label}：${trimmedNote || "无附加说明"}\n\n## 落地\n${
+          taskId ? `已生成跟进任务 ${taskId}` : "未生成任务"
+        }；已写入程序记忆 ${memoryId}。`,
+        resolution,
+        resolutionAppliedAt: new Date(),
+      })
+      .where(eq(councils.id, councilId))
+      .returning();
+
+    updated = withResolution;
+  });
 
   await logAudit({
     userId: council.userId,
@@ -1454,8 +1565,17 @@ export async function decideCouncil(
     action: "council.decide",
     target: councilId,
     before: { status: "open" },
-    after: { status: "decided", decision, note },
+    after: {
+      status: "decided",
+      decision,
+      note: trimmedNote,
+      taskId,
+      memoryId,
+      dissents,
+    },
   });
+
+  return updated!;
 }
 
 export async function setAutonomy(agentId: string, level: number, userId: string) {
@@ -1903,6 +2023,340 @@ export async function createTask(
   return created;
 }
 
+type CouncilContext = {
+  agents: Array<typeof agents.$inferSelect>;
+  profile: typeof profiles.$inferSelect | undefined;
+  goals: Array<typeof goals.$inferSelect>;
+  tasks: Array<typeof tasks.$inferSelect>;
+  checkins: Array<typeof checkins.$inferSelect>;
+  memories: Array<typeof memories.$inferSelect>;
+  rejects: Array<typeof auditEvents.$inferSelect>;
+  budget: { limitCents: number; spentCents: number; ratio: number };
+};
+
+async function loadCouncilContext(
+  userId: string,
+  budgetLimitCents: number,
+): Promise<CouncilContext> {
+  const allAgents = await db
+    .select()
+    .from(agents)
+    .where(eq(agents.userId, userId));
+  const [profile] = await db
+    .select()
+    .from(profiles)
+    .where(eq(profiles.userId, userId));
+  const allGoals = await db
+    .select()
+    .from(goals)
+    .where(eq(goals.userId, userId))
+    .orderBy(desc(goals.createdAt));
+  const recentTasks = await db
+    .select()
+    .from(tasks)
+    .where(eq(tasks.userId, userId))
+    .orderBy(desc(tasks.createdAt))
+    .limit(12);
+  const recentCheckins = await db
+    .select()
+    .from(checkins)
+    .where(eq(checkins.userId, userId))
+    .orderBy(desc(checkins.date))
+    .limit(7);
+  const activeMemories = await db
+    .select()
+    .from(memories)
+    .where(and(eq(memories.userId, userId), eq(memories.status, "active")))
+    .orderBy(desc(memories.salience))
+    .limit(8);
+  const recentRejects = await db
+    .select()
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.userId, userId),
+        eq(auditEvents.action, "audit.reject"),
+      ),
+    )
+    .orderBy(desc(auditEvents.seq))
+    .limit(10);
+
+  const spentCents = allAgents.reduce(
+    (sum, agent) => sum + Number(agent.spentCents ?? 0),
+    0,
+  );
+
+  return {
+    agents: allAgents,
+    profile,
+    goals: allGoals,
+    tasks: recentTasks,
+    checkins: recentCheckins,
+    memories: activeMemories,
+    rejects: recentRejects,
+    budget: {
+      limitCents: budgetLimitCents,
+      spentCents,
+      ratio:
+        budgetLimitCents > 0
+          ? Math.min(1, spentCents / budgetLimitCents)
+          : 0,
+    },
+  };
+}
+
+async function assertEvidenceRefs(
+  userId: string,
+  positions: CouncilPositionDraft[],
+): Promise<void> {
+  for (const position of positions) {
+    const refs = position.evidence
+      .map((item) => item.ref)
+      .filter((ref): ref is string => Boolean(ref));
+    if (refs.length === 0) {
+      throw new ValidationError(
+        `${position.agentName} must cite at least one evidence ref.`,
+      );
+    }
+
+    for (const ref of refs) {
+      const [kind, ...rest] = ref.split(":");
+      const id = rest.join(":");
+      if (!kind || !id) {
+        throw new ValidationError(`Invalid evidence ref: ${ref}`);
+      }
+
+      let found = false;
+      if (kind === "goal") {
+        const [row] = await db
+          .select({ id: goals.id })
+          .from(goals)
+          .where(and(eq(goals.id, id), eq(goals.userId, userId)))
+          .limit(1);
+        found = Boolean(row);
+      } else if (kind === "task") {
+        const [row] = await db
+          .select({ id: tasks.id })
+          .from(tasks)
+          .where(and(eq(tasks.id, id), eq(tasks.userId, userId)))
+          .limit(1);
+        found = Boolean(row);
+      } else if (kind === "memory") {
+        const [row] = await db
+          .select({ id: memories.id })
+          .from(memories)
+          .where(and(eq(memories.id, id), eq(memories.userId, userId)))
+          .limit(1);
+        found = Boolean(row);
+      } else if (kind === "checkin") {
+        const [row] = await db
+          .select({ id: checkins.id })
+          .from(checkins)
+          .where(and(eq(checkins.id, id), eq(checkins.userId, userId)))
+          .limit(1);
+        found = Boolean(row);
+      } else if (kind === "agent") {
+        const [row] = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(and(eq(agents.id, id), eq(agents.userId, userId)))
+          .limit(1);
+        found = Boolean(row);
+      } else if (kind === "audit") {
+        const [row] = await db
+          .select({ id: auditEvents.id })
+          .from(auditEvents)
+          .where(and(eq(auditEvents.id, id), eq(auditEvents.userId, userId)))
+          .limit(1);
+        found = Boolean(row);
+      } else if (kind === "council") {
+        const [row] = await db
+          .select({ id: councils.id })
+          .from(councils)
+          .where(and(eq(councils.id, id), eq(councils.userId, userId)))
+          .limit(1);
+        found = Boolean(row);
+      } else {
+        throw new ValidationError(`Unsupported evidence kind: ${kind}`);
+      }
+
+      if (!found) {
+        throw new ValidationError(`Evidence ref not found: ${ref}`);
+      }
+    }
+  }
+}
+
+function councilConditionForRole(
+  role: string,
+  config: Awaited<ReturnType<typeof getPolicyConfig>>,
+): FalsificationCondition | null {
+  if (role === "treasurer") {
+    return {
+      metric: "budget_spend_cents",
+      operator: ">=",
+      threshold: Math.round(
+        config.budget.weeklyLimitCents * config.council.dissentBudgetRatio,
+      ),
+      windowDays: config.council.dissentWindowDays,
+    };
+  }
+  if (role === "critic") {
+    return {
+      metric: "audit_reject_count",
+      operator: ">=",
+      threshold: Math.max(1, config.audit.rejectStreakLimit),
+      windowDays: config.council.dissentWindowDays,
+    };
+  }
+  return null;
+}
+
+function short(value: string, max = 80): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value;
+}
+
+function buildCouncilPosition(input: {
+  role: "chief" | "researcher" | "coach" | "treasurer" | "critic";
+  context: CouncilContext;
+  config: Awaited<ReturnType<typeof getPolicyConfig>>;
+}): CouncilPositionDraft | null {
+  const { role, context, config } = input;
+  const agent = context.agents.find((candidate) => candidate.role === role);
+  if (!agent) return null;
+
+  const goal =
+    context.goals.find((candidate) => candidate.status === "active") ??
+    context.goals[0];
+  const latestTask = context.tasks[0];
+  const latestCheckin = context.checkins[0];
+  const latestMemory = context.memories[0];
+  const latestReject = context.rejects[0];
+  const goalProgress = goal?.progress ?? 0;
+  const energy = latestCheckin?.energy ?? config.council.minEnergy;
+  const pausedCount = context.agents.filter(
+    (candidate) => candidate.status === "paused",
+  ).length;
+  const acceptedCount = context.tasks.filter((task) =>
+    ["accepted", "done"].includes(task.status),
+  ).length;
+
+  let stance: CouncilStance = "neutral";
+  let claim: string;
+  let risk: string;
+  let recommendation: string;
+  let evidence: Evidence[];
+
+  if (role === "chief") {
+    stance = goal ? "support" : "neutral";
+    claim = goal
+      ? `目标「${goal.title}」当前进度 ${Math.round(goalProgress)}%；近 7 天有 ${context.tasks.length} 个任务，${acceptedCount} 个已验收。`
+      : "当前没有进行中的目标；如果推进，需要先明确成功标准。";
+    risk = `执行资源会被新议题占用；当前有 ${pausedCount} 个 Agent 暂停。`;
+    recommendation = "批准，但限定本周预算和验收标准。";
+    evidence = goal
+      ? [{ label: "目标进度", ref: `goal:${goal.id}`, quote: `${Math.round(goalProgress)}%` }]
+      : [{ label: "Chief 状态", ref: `agent:${agent.id}`, quote: agent.title }];
+  } else if (role === "researcher") {
+    stance = "neutral";
+    claim = latestMemory
+      ? `找到 ${context.memories.length} 条相关记忆，最高显著性来自「${short(latestMemory.content)}」。`
+      : "没有可引用的历史记忆；当前只能基于议题本身判断。";
+    risk = "证据不足时，结论可能只是叙事。";
+    recommendation = "先补 1 条可核验来源，再进入执行。";
+    evidence = latestMemory
+      ? [{ label: "记忆", ref: `memory:${latestMemory.id}`, quote: short(latestMemory.content) }]
+      : latestTask
+        ? [{ label: "最近任务", ref: `task:${latestTask.id}`, quote: latestTask.title }]
+        : [{ label: "Researcher 状态", ref: `agent:${agent.id}`, quote: agent.title }];
+  } else if (role === "coach") {
+    const peak =
+      (context.profile?.energyPattern as { peak?: string } | undefined)?.peak ??
+      "未知";
+    stance =
+      latestCheckin && energy >= config.council.minEnergy
+        ? "support"
+        : "neutral";
+    claim = latestCheckin
+      ? `最近一次 Check-in 精力 ${energy}/5；能量高峰 ${peak}。`
+      : `还没有 Check-in 数据；当前精力阈值设为 ${config.council.minEnergy}/5。`;
+    risk = "低精力时段执行会拉长周期。";
+    recommendation = "把执行放到高能量时段，单次不超过 25 分钟。";
+    evidence = latestCheckin
+      ? [{ label: "Check-in", ref: `checkin:${latestCheckin.id}`, quote: `energy ${energy}/5` }]
+      : goal
+        ? [{ label: "目标进度", ref: `goal:${goal.id}`, quote: `${Math.round(goalProgress)}%` }]
+        : [{ label: "Coach 状态", ref: `agent:${agent.id}`, quote: agent.title }];
+  } else if (role === "treasurer") {
+    const percent = Math.round(context.budget.ratio * 100);
+    const remaining = context.budget.limitCents - context.budget.spentCents;
+    const costEfficiency = Math.max(
+      0,
+      Math.min(
+        100,
+        100 - context.budget.ratio * config.council.score.budgetPressureWeight,
+      ),
+    );
+    stance = costEfficiency < config.council.score.base ? "oppose" : "support";
+    claim = `本周预算已用 ${percent}%（${context.budget.spentCents}/${context.budget.limitCents} 分），剩余 ${remaining} 分。`;
+    risk = "超支会挤压后续实验和资料预算。";
+    recommendation = "设硬上限；超过上限需二次审批。";
+    evidence = [
+      {
+        label: "预算执行",
+        ref: `agent:${agent.id}`,
+        quote: `${context.budget.spentCents}/${context.budget.limitCents}`,
+      },
+    ];
+  } else {
+    stance = "neutral";
+    const rejectReason = latestReject?.after
+      ? String(latestReject.after.reason ?? "未记录")
+      : "无记录";
+    claim = `过去 7 天有 ${context.rejects.length} 次审计驳回，${pausedCount} 个 Agent 处于暂停。`;
+    risk = `最近一次驳回原因：${short(rejectReason)}。`;
+    recommendation = "先验证证伪条件，再批准。";
+    evidence = latestReject
+      ? [{ label: "审计驳回", ref: `audit:${latestReject.id}`, quote: short(rejectReason) }]
+      : latestTask
+        ? [{ label: "最近任务", ref: `task:${latestTask.id}`, quote: latestTask.title }]
+        : [{ label: "Critic 状态", ref: `agent:${agent.id}`, quote: agent.title }];
+  }
+
+  const scores = computePositionScores(
+    {
+      goalProgress,
+      trustScore: agent.trustScore,
+      budgetSpentRatio: context.budget.ratio,
+      evidenceCount: evidence.filter((item) => item.ref).length,
+      rejectStreak: agent.rejectStreak,
+      paused: agent.status === "paused",
+    },
+    config.council,
+  );
+
+  if (role === "critic") {
+    stance =
+      scores.robustness < config.council.score.base ||
+      scores.evidenceQuality < config.council.score.base
+        ? "oppose"
+        : "neutral";
+  }
+
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    agentTitle: agent.title,
+    role,
+    stance,
+    claim,
+    evidence,
+    risk,
+    recommendation,
+    scores,
+  };
+}
+
 export async function createCouncil(
   input: {
     topic: string;
@@ -1916,33 +2370,110 @@ export async function createCouncil(
     throw new ValidationError("Topic and trigger are required.");
   }
 
+  const config = await getPolicyConfig();
+  const context = await loadCouncilContext(userId, config.budget.weeklyLimitCents);
   const id = newId("ccl");
+
+  await db.insert(councils).values({
+    id,
+    userId,
+    topic,
+    trigger,
+    status: "deliberating",
+    memo: `## 议题\n${topic}\n\n## 触发\n${trigger}\n\n## 状态\n各方正在独立提交立场。`,
+  });
+
+  let positions: CouncilPositionDraft[];
+  let matrix: CouncilMatrix;
+  let memo: string;
+
+  try {
+    const roles = [
+      "chief",
+      "researcher",
+      "coach",
+      "treasurer",
+      "critic",
+    ] as const;
+    const drafts = await Promise.all(
+      roles.map(async (role) =>
+        buildCouncilPosition({ role, context, config }),
+      ),
+    );
+    positions = drafts.filter(
+      (draft): draft is CouncilPositionDraft => draft !== null,
+    );
+    if (positions.length < config.council.minPositions) {
+      throw new ValidationError(
+        `Council needs at least ${config.council.minPositions} agents; found ${positions.length}.`,
+      );
+    }
+    await assertEvidenceRefs(userId, positions);
+    matrix = buildCouncilMatrix(
+      positions.map((position) => ({
+        agentId: position.agentId,
+        role: position.role,
+        stance: position.stance,
+        scores: position.scores,
+      })),
+      config.council,
+    );
+    memo = buildCouncilMemo({ topic, trigger, positions, matrix });
+  } catch (error) {
+    await db
+      .update(councils)
+      .set({
+        status: "degraded",
+        memo: `## 议题\n${topic}\n\n## 触发\n${trigger}\n\n## 状态\n立场生成失败：${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      })
+      .where(eq(councils.id, id));
+    throw error;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.insert(councilPositions).values(
+      positions.map((position) => ({
+        id: newId("cps"),
+        councilId: id,
+        agentId: position.agentId,
+        stance: position.stance,
+        claim: position.claim,
+        evidence: position.evidence,
+        risk: position.risk,
+        recommendation: position.recommendation,
+        scores: position.scores,
+        isDissent: position.stance === "oppose",
+        falsificationCondition:
+          position.stance === "oppose"
+            ? councilConditionForRole(position.role, config)
+            : null,
+      })),
+    );
+    await tx
+      .update(councils)
+      .set({ status: "open", matrix, memo })
+      .where(eq(councils.id, id));
+  });
+
   const [created] = await db
-    .insert(councils)
-    .values({
-      id,
-      userId: userId,
-      topic,
-      trigger,
-      status: "open",
-      memo: `## 议题
-${topic}
-
-## 触发
-${trigger}
-
-## 状态
-等待各方提交立场。`,
-    })
-    .returning();
+    .select()
+    .from(councils)
+    .where(eq(councils.id, id));
 
   await logAudit({
-    userId: userId,
+    userId,
     actor: "user",
     action: "council.create",
     target: id,
     before: null,
-    after: { topic, trigger },
+    after: {
+      topic,
+      trigger,
+      positions: positions.length,
+      matrix,
+    },
   });
 
   return created;

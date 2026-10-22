@@ -181,6 +181,7 @@ export function toSkillDto(row: typeof skills.$inferSelect): SkillDto {
 export function toCouncilDto(row: typeof councils.$inferSelect): CouncilDto {
   return {
     ...row,
+    resolutionAppliedAt: toIsoOrNull(row.resolutionAppliedAt),
     createdAt: toIso(row.createdAt),
     decidedAt: toIsoOrNull(row.decidedAt),
   };

@@ -22,6 +22,7 @@ const POLICY_KEYS = [
   "budget",
   "management",
   "cost",
+  "council",
 ] as const;
 
 export type SetupInput = {

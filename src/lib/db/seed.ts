@@ -103,7 +103,7 @@ export async function seedDemo(): Promise<void> {
   });
 
   await db.insert(policyConfig).values(
-    (["autonomy", "audit", "budget", "management", "cost"] as const).map(
+    (["autonomy", "audit", "budget", "management", "cost", "council"] as const).map(
       (key) => ({
         key,
         valueJson: SEED_POLICY_CONFIG[key],
@@ -1295,6 +1295,20 @@ Critic 认为免费资料已足够，建议先完成现有材料。
 
 ## 需要你决定
 批准 ¥199 试学 / 否决 / 改条件。`,
+      matrix: {
+        dimensions: {
+          feasibility: 55,
+          costEfficiency: 35,
+          evidenceQuality: 60,
+          robustness: 40,
+        },
+        overall: 48,
+        support: 1,
+        oppose: 2,
+        neutral: 2,
+        consensus: "oppose",
+        dissentAgentIds: ["ag_treasurer", "ag_critic"],
+      },
       createdAt: at(0, 9, 10),
     },
   ]);
@@ -1312,6 +1326,13 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       ],
       risk: "评价高不代表适合你；完课率低是信号。",
       recommendation: "先买 1 个月试学。",
+      scores: {
+        feasibility: 60,
+        costEfficiency: 55,
+        evidenceQuality: 80,
+        robustness: 55,
+      },
+      isDissent: false,
     },
     {
       id: "cps_coach",
@@ -1324,6 +1345,13 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       ],
       risk: "直接上年包可能跟不上，反而打击信心。",
       recommendation: "试学 + 每周 2 次 25 分钟。",
+      scores: {
+        feasibility: 72,
+        costEfficiency: 55,
+        evidenceQuality: 55,
+        robustness: 68,
+      },
+      isDissent: false,
     },
     {
       id: "cps_treasurer",
@@ -1337,6 +1365,19 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       ],
       risk: "超支会挤压下个月的资料和工具预算。",
       recommendation: "只批准 ¥199 试学。",
+      scores: {
+        feasibility: 55,
+        costEfficiency: 20,
+        evidenceQuality: 70,
+        robustness: 45,
+      },
+      isDissent: true,
+      falsificationCondition: {
+        metric: "budget_spend_cents",
+        operator: ">=",
+        threshold: 48000,
+        windowDays: 7,
+      },
     },
     {
       id: "cps_critic",
@@ -1349,6 +1390,19 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       ],
       risk: "买课是缓解焦虑，不是解决问题。",
       recommendation: "先完成现有材料 2 周，再决定。",
+      scores: {
+        feasibility: 38,
+        costEfficiency: 45,
+        evidenceQuality: 60,
+        robustness: 35,
+      },
+      isDissent: true,
+      falsificationCondition: {
+        metric: "audit_reject_count",
+        operator: ">=",
+        threshold: 2,
+        windowDays: 7,
+      },
     },
     {
       id: "cps_auditor",
@@ -1361,6 +1415,13 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       ],
       risk: "超过 7 天无法退款。",
       recommendation: "若购买，设置第 6 天提醒。",
+      scores: {
+        feasibility: 60,
+        costEfficiency: 60,
+        evidenceQuality: 50,
+        robustness: 50,
+      },
+      isDissent: false,
     },
   ]);
 
