@@ -69,13 +69,18 @@ export function budgetWeek(timezone: string, now: Date = new Date()): BudgetWeek
 /**
  * The single read seam for "how much of this week's Agent budget is used".
  * Creates the current period row on read (unbilled) and never writes a charge.
+ *
+ * Pass `provision: false` from read-only surfaces (page loads) so a GET never
+ * inserts a bucket: an unbilled bucket still reads as null periodId with zeros.
  */
 export async function loadWeeklyUsage(
   agentId: string,
   timezone: string,
   now: Date = new Date(),
   tx?: Tx,
+  options: { provision?: boolean } = {},
 ): Promise<WeeklyUsage> {
+  const provision = options.provision ?? true;
   const client = tx ?? db;
   const { periodStart, periodEnd } = budgetWeek(timezone, now);
   const [agent] = await client
@@ -109,20 +114,22 @@ export async function loadWeeklyUsage(
       )
       .limit(1);
     legacyUnclassified = Boolean(preLedger);
-    await client
-      .insert(agentBudgetPeriods)
-      .values({
-        id: `bpd_${agentId}_${periodStart.getTime()}`,
-        userId: agent.userId,
-        agentId,
-        timezone,
-        periodStart,
-        periodEnd,
-        limitCents,
-      })
-      .onConflictDoNothing({
-        target: [agentBudgetPeriods.agentId, agentBudgetPeriods.periodStart],
-      });
+    if (provision) {
+      await client
+        .insert(agentBudgetPeriods)
+        .values({
+          id: `bpd_${agentId}_${periodStart.getTime()}`,
+          userId: agent.userId,
+          agentId,
+          timezone,
+          periodStart,
+          periodEnd,
+          limitCents,
+        })
+        .onConflictDoNothing({
+          target: [agentBudgetPeriods.agentId, agentBudgetPeriods.periodStart],
+        });
+    }
   }
 
   const period =

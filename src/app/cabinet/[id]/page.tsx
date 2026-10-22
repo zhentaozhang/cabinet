@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { fetchAgentPage } from "@/lib/api/pages";
 import { AUTONOMY_LABELS, passRate, roleMeta, statusTone } from "@/lib/agents";
-import { money, pct, relative, timeOnly } from "@/lib/format";
+import { money, pct, relative, shortDate, timeOnly } from "@/lib/format";
 import {
   Avatar,
   Badge,
@@ -39,9 +39,14 @@ export default async function AgentPage({
   const data = await fetchAgentPage(id);
   if (!data) notFound();
   const tz = data.timezone;
-  const { agent, runs, memories, skills, tasks } = data;
+  const { agent, budget, runs, memories, skills, tasks } = data;
   const meta = roleMeta(agent.role);
   const rate = passRate(agent.successCount, agent.failCount);
+  // Week usage comes from the ledger, never from the frozen agents.spent_cents
+  // snapshot: settled is measured-token cost, unknown is unreported exposure.
+  const weekUsedCents = budget.settledCents + budget.unknownCents;
+  const weekUsedPct =
+    budget.limitCents > 0 ? (weekUsedCents / budget.limitCents) * 100 : 0;
 
   return (
     <div>
@@ -108,7 +113,11 @@ export default async function AgentPage({
             <div className="grid grid-cols-2 gap-5 px-5 py-4 sm:grid-cols-4">
               <Stat label="Trust" value={Math.round(agent.trustScore)} hint="0–100" />
               <Stat label="Pass rate" value={`${rate}%`} hint="验收通过率" />
-              <Stat label="Spend" value={money(agent.spentCents)} hint={`预算 ${money(agent.budgetCents)}`} />
+              <Stat
+                label="本周用量"
+                value={money(weekUsedCents)}
+                hint={`上限 ${money(budget.limitCents)}`}
+              />
               <Stat label="Tasks" value={tasks.length} hint="最近任务" />
             </div>
             <div className="space-y-3 border-t border-line px-5 py-4">
@@ -121,15 +130,26 @@ export default async function AgentPage({
               </div>
               <div>
                 <div className="mb-1 flex items-center justify-between text-label text-faint">
-                  <span>预算使用</span>
-                  <span className="mono">
-                    {agent.budgetCents > 0 ? pct((agent.spentCents / agent.budgetCents) * 100) : "—"}
-                  </span>
+                  <span>本周模型用量（{money(budget.settledCents)} 已结算 + {money(budget.unknownCents)} 未知）</span>
+                  <span className="mono">{budget.limitCents > 0 ? pct(weekUsedPct) : "—"}</span>
                 </div>
-                <Progress
-                  value={agent.budgetCents > 0 ? (agent.spentCents / agent.budgetCents) * 100 : 0}
-                  tone="accent"
-                />
+                <Progress value={budget.limitCents > 0 ? weekUsedPct : 0} tone="accent" />
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-label text-faint">
+                  <span className="mono">
+                    {shortDate(budget.periodStart, tz)} – {shortDate(budget.periodEnd, tz)}
+                  </span>
+                  <span>· {budget.timezone}</span>
+                  {budget.reservedCents > 0 ? (
+                    <span className="text-accent">· 进行中预留 {money(budget.reservedCents)}</span>
+                  ) : null}
+                  {budget.overrun ? <span className="text-danger">· 已超支</span> : null}
+                  {budget.legacyUnclassified ? (
+                    <span className="text-accent">· 本周含台账上线前的运行，历史花费未知</span>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-label text-faint">
+                  金额由已上报的 token 按配置费率估算，不等同于账单；预算是本周的模型调用额度。
+                </p>
               </div>
             </div>
           </Card>

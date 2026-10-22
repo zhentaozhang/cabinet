@@ -24,6 +24,7 @@ import type {
   ApprovalDto,
   ArtifactDto,
   AuditEventDto,
+  BudgetViewDto,
   CheckinDto,
   CouncilDto,
   CouncilPositionDto,
@@ -109,6 +110,31 @@ export function toRunDto(row: typeof runs.$inferSelect): RunDto {
     startedAt: toIsoOrNull(row.startedAt),
     endedAt: toIsoOrNull(row.endedAt),
     createdAt: toIso(row.createdAt),
+  };
+}
+
+/** Ledger row -> DTO. Amounts stay in cents; the page formats them. */
+export function toBudgetViewDto(usage: {
+  timezone: string;
+  periodStart: Date;
+  periodEnd: Date;
+  limitCents: number;
+  reservedCents: number;
+  settledCents: number;
+  unknownCents: number;
+  overrun: boolean;
+  legacyUnclassified: boolean;
+}): BudgetViewDto {
+  return {
+    timezone: usage.timezone,
+    periodStart: toIso(usage.periodStart),
+    periodEnd: toIso(usage.periodEnd),
+    limitCents: usage.limitCents,
+    reservedCents: usage.reservedCents,
+    settledCents: usage.settledCents,
+    unknownCents: usage.unknownCents,
+    overrun: usage.overrun,
+    legacyUnclassified: usage.legacyUnclassified,
   };
 }
 

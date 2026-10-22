@@ -2,6 +2,7 @@ import { agentPageSchema, type AgentPageDto } from "@/contracts";
 import { asDto } from "@/server/dto-guard";
 import {
   toAgentDto,
+  toBudgetViewDto,
   toMemoryDto,
   toRunDto,
   toSkillDto,
@@ -21,6 +22,7 @@ export async function loadAgent(
     {
       timezone: data.timezone,
       agent: toAgentDto(data.agent),
+      budget: toBudgetViewDto(data.budget),
       runs: data.runs.map(toRunDto),
       memories: data.memories.map(toMemoryDto),
       skills: data.skills.map(toSkillDto),

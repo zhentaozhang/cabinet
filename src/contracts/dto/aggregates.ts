@@ -5,6 +5,7 @@ import {
   approvalDtoSchema,
   artifactDtoSchema,
   auditEventDtoSchema,
+  budgetViewDtoSchema,
   checkinDtoSchema,
   councilDtoSchema,
   councilPositionDtoSchema,
@@ -82,6 +83,8 @@ export const cabinetPageSchema = z.object({
   profile: profileDtoSchema.nullable(),
   agents: z.array(agentDtoSchema),
   tasks: z.array(taskDtoSchema),
+  /** Keyed by agent id: the current week's ledger view for each card. */
+  budgets: z.record(z.string(), budgetViewDtoSchema),
 });
 export type CabinetPageDto = z.infer<typeof cabinetPageSchema>;
 
@@ -142,6 +145,7 @@ export type CouncilPageDto = z.infer<typeof councilPageSchema>;
 export const agentPageSchema = z.object({
   timezone: z.string(),
   agent: agentDtoSchema,
+  budget: budgetViewDtoSchema,
   runs: z.array(runDtoSchema),
   memories: z.array(memoryDtoSchema),
   skills: z.array(skillDtoSchema),

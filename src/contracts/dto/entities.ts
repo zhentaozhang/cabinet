@@ -191,6 +191,27 @@ export const runDtoSchema = z.object({
 });
 export type RunDto = z.infer<typeof runDtoSchema>;
 
+/**
+ * Weekly Agent budget as the ledger records it. The three amounts are separate
+ * because they answer different questions: `reservedCents` is in-flight
+ * pre-authorisation, `settledCents` is measured-token spend priced from the
+ * configured rate, and `unknownCents` is exposure whose provider usage was
+ * never reported. `legacyUnclassified` marks a week that already held runs
+ * before the ledger existed — its spend is unknown, not zero.
+ */
+export const budgetViewDtoSchema = z.object({
+  timezone: z.string(),
+  periodStart: isoDateTime,
+  periodEnd: isoDateTime,
+  limitCents: z.number(),
+  reservedCents: z.number(),
+  settledCents: z.number(),
+  unknownCents: z.number(),
+  overrun: z.boolean(),
+  legacyUnclassified: z.boolean(),
+});
+export type BudgetViewDto = z.infer<typeof budgetViewDtoSchema>;
+
 export const stepDtoSchema = z.object({
   id: z.string(),
   runId: z.string(),

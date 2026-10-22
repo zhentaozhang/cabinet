@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { fetchReviewPage } from "@/lib/api/pages";
 import { passRate, roleMeta } from "@/lib/agents";
-import { dateTime, money, shortDate } from "@/lib/format";
+import { dateTime, shortDate } from "@/lib/format";
 import {
   Avatar,
   Badge,
@@ -371,7 +371,8 @@ export default async function ReviewPage({
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-label text-ink">{agent.name}</div>
                       <div className="text-label text-faint">
-                        {rate}% pass · L{agent.autonomyLevel} · {money(agent.spentCents)}
+                        {rate}% pass · L{agent.autonomyLevel} ·{" "}
+                        {(data.auditStats[agent.id]?.total ?? 0)} 个审计样本
                       </div>
                     </div>
                     <Badge tone={rec.tone}>{rec.label}</Badge>

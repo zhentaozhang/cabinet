@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, memories, runs, skills, tasks, users } from "@/lib/db/schema";
+import { loadWeeklyUsage } from "../commands/tasks/execution";
 export async function getAgentData(agentId: string, userId: string) {
   // Ownership is part of the WHERE clause, not a post-fetch check.
   const [agent] = await db
@@ -35,9 +36,16 @@ export async function getAgentData(agentId: string, userId: string) {
       .from(users)
       .where(eq(users.id, userId)),
   ]);
+  const timezone = userRows[0]?.timezone ?? "UTC";
+  // Read-only: a page load never provisions a bucket.
+  const budget = await loadWeeklyUsage(agentId, timezone, new Date(), undefined, {
+    provision: false,
+  });
+
   return {
-    timezone: userRows[0]?.timezone ?? "UTC",
+    timezone,
     agent,
+    budget,
     runs: agentRuns,
     memories: agentMemories,
     skills: agentSkills,

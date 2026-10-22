@@ -34,7 +34,16 @@ function successRate(success: number, fail: number) {
 function AgentCard({
   agent,
   taskCount,
+  budget,
 }: {
+  budget: {
+    limitCents: number;
+    settledCents: number;
+    unknownCents: number;
+    reservedCents: number;
+    overrun: boolean;
+    legacyUnclassified: boolean;
+  };
   agent: {
     id: string;
     name: string;
@@ -47,7 +56,6 @@ function AgentCard({
     trustScore: number;
     successCount: number;
     failCount: number;
-    spentCents: number;
     lifecycleStage: string;
   };
   taskCount: number;
@@ -105,13 +113,23 @@ function AgentCard({
             <div className="text-eyebrow uppercase tracking-wider text-faint">pass</div>
           </div>
           <div>
-            <div className="mono text-sm text-ink">{money(agent.spentCents)}</div>
-            <div className="text-eyebrow uppercase tracking-wider text-faint">spend</div>
+            <div className="mono text-sm text-ink">
+              {money(budget.settledCents + budget.unknownCents)}
+            </div>
+            <div className="text-eyebrow uppercase tracking-wider text-faint">本周用量</div>
           </div>
         </div>
 
         <div className="border-t border-line px-5 py-2.5 text-label text-faint">
           {taskCount} 个任务 · {agent.successCount} 次通过 · {agent.failCount} 次驳回
+        </div>
+        <div className="flex flex-wrap items-center gap-x-1.5 border-t border-line px-5 py-2 text-label text-faint">
+          <span className="mono">上限 {money(budget.limitCents)}</span>
+          <span>· 已结算 {money(budget.settledCents)}</span>
+          {budget.unknownCents > 0 ? <span>· 未知 {money(budget.unknownCents)}</span> : null}
+          {budget.reservedCents > 0 ? <span className="text-accent">· 预留 {money(budget.reservedCents)}</span> : null}
+          {budget.overrun ? <span className="text-danger">· 已超支</span> : null}
+          {budget.legacyUnclassified ? <span className="text-accent">· 含台账前运行</span> : null}
         </div>
       </Card>
     </Link>
@@ -272,7 +290,12 @@ export default async function CabinetPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {data.agents.map((agent) => (
-          <AgentCard key={agent.id} agent={agent} taskCount={taskCount(agent.id)} />
+          <AgentCard
+            key={agent.id}
+            agent={agent}
+            taskCount={taskCount(agent.id)}
+            budget={data.budgets[agent.id]}
+          />
         ))}
       </div>
 
