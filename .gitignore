@@ -48,3 +48,6 @@ next-env.d.ts
 
 # local pnpm store (accidentally committed)
 .pnpm-home/
+
+# editor settings (local preference, not project config)
+.vscode/
