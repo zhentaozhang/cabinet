@@ -91,10 +91,11 @@ function NavLinks({ compact = false }: { compact?: boolean }) {
 
 function ResetButton() {
   const router = useRouter();
-  const [state, setState] = useState<"idle" | "busy" | "error">("idle");
+  const [state, setState] = useState<
+    "idle" | "confirm" | "busy" | "error"
+  >("idle");
 
   async function reset() {
-    if (!window.confirm("重置会清空当前演示数据并重新播种，确认继续？")) return;
     setState("busy");
     try {
       const response = await fetch("/api/demo/reset", { method: "POST" });
@@ -106,11 +107,39 @@ function ResetButton() {
     }
   }
 
+  if (state === "confirm") {
+    return (
+      <div className="space-y-1">
+        <button
+          type="button"
+          onClick={reset}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-danger transition-colors hover:bg-danger/10",
+            FOCUS_RING,
+          )}
+        >
+          <RefreshCw aria-hidden="true" className="size-3" />
+          确认重置演示数据
+        </button>
+        <button
+          type="button"
+          onClick={() => setState("idle")}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-faint transition-colors hover:bg-white/[0.04]",
+            FOCUS_RING,
+          )}
+        >
+          取消
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <button
         type="button"
-        onClick={reset}
+        onClick={() => setState("confirm")}
         disabled={state === "busy"}
         className={cn(
           "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] transition-colors hover:bg-white/[0.04] disabled:opacity-50",

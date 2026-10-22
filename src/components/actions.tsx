@@ -609,6 +609,7 @@ export function AgentAdmin({
   const [budgetYuan, setBudgetYuan] = useState(String(budgetCents / 100));
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmRetire, setConfirmRetire] = useState(false);
 
   async function patch(body: Record<string, unknown>, label: string) {
     setBusy(label);
@@ -616,7 +617,10 @@ export function AgentAdmin({
     const data = await call(`/api/agents/${agentId}`, "PATCH", body);
     setBusy(null);
     setMsg(data.ok ? "已保存" : (data.error ?? "保存失败"));
-    if (data.ok) router.refresh();
+    if (data.ok) {
+      if (label === "retire") setConfirmRetire(false);
+      router.refresh();
+    }
   }
 
   return (
@@ -642,18 +646,34 @@ export function AgentAdmin({
           </Button>
         ) : null}
         {status !== "retired" ? (
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => {
-              if (window.confirm("退休后不可恢复。确认？")) {
-                patch({ status: "retired" }, "retire");
-              }
-            }}
-            disabled={busy !== null}
-          >
-            <UserMinus className="size-3" /> 退休
-          </Button>
+          confirmRetire ? (
+            <>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => patch({ status: "retired" }, "retire")}
+                disabled={busy !== null}
+              >
+                <UserMinus className="size-3" /> 确认退休
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setConfirmRetire(false)}
+                disabled={busy !== null}
+              >
+                取消
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => setConfirmRetire(true)}
+              disabled={busy !== null}
+            >
+              <UserMinus className="size-3" /> 退休
+            </Button>
+          )
         ) : null}
       </div>
 

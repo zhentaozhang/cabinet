@@ -10,6 +10,7 @@ export function DataControls() {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   async function exportData() {
     setBusy("export");
@@ -34,13 +35,6 @@ export function DataControls() {
   }
 
   async function deleteData() {
-    if (
-      !window.confirm(
-        "删除账号会移除你的 Agent、任务、记忆与审计记录，且不可恢复。确认？",
-      )
-    ) {
-      return;
-    }
     setBusy("delete");
     setMsg(null);
     const response = await fetch("/api/account", {
@@ -69,19 +63,40 @@ export function DataControls() {
           )}
           导出数据
         </Button>
-        <Button
-          size="sm"
-          variant="danger"
-          onClick={deleteData}
-          disabled={busy !== null}
-        >
-          {busy === "delete" ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
+        {confirmDelete ? (
+          <>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={deleteData}
+              disabled={busy !== null}
+            >
+              {busy === "delete" ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Trash2 className="size-3" />
+              )}
+              确认删除账号
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setConfirmDelete(false)}
+              disabled={busy !== null}
+            >
+              取消
+            </Button>
+          </>
+        ) : (
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => setConfirmDelete(true)}
+            disabled={busy !== null}
+          >
             <Trash2 className="size-3" />
-          )}
-          删除账号
-        </Button>
+            删除账号
+          </Button>
+        )}
       </div>
       <p className="text-[10px] leading-relaxed text-faint">
         导出包含 Agent、目标、任务、记忆、复盘和审计事件；不包含密码或会话。
