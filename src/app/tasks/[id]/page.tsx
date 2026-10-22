@@ -59,6 +59,26 @@ export default async function TaskPage({
 
   const latestAudit = audit.find((a) => a.action.startsWith("audit."));
 
+  /**
+   * The acceptance table reads top-down as "what I asked for" then "what the
+   * Auditor found". Failures are hoisted so a rejected run can be scanned
+   * without reading every row.
+   */
+  const checklistRows = (task.acceptanceChecklist ?? []).map((item, index) => ({
+    item,
+    index,
+    result: task.acceptanceReport?.[index] ?? null,
+  }));
+  const failedRows = checklistRows.filter((row) => row.result && !row.result.passed);
+  const orderedChecklist = [
+    ...failedRows,
+    ...checklistRows.filter((row) => !failedRows.includes(row)),
+  ];
+  const passedCount = checklistRows.filter((row) => row.result?.passed).length;
+  const auditedCount = checklistRows.filter((row) => row.result).length;
+  const allPassed =
+    checklistRows.length > 0 && passedCount === checklistRows.length;
+
   return (
     <div>
       <Link
@@ -117,44 +137,80 @@ export default async function TaskPage({
       <div className="grid gap-5 lg:grid-cols-[1.7fr_1fr]">
         <div className="space-y-5">
           <Card>
-            <CardHeader eyebrow="Acceptance criteria" title="验收标准" />
+            <CardHeader
+              eyebrow="Acceptance criteria"
+              title="验收标准"
+              right={
+                checklistRows.length === 0 ? null : auditedCount === 0 ? (
+                  <Badge tone="neutral">待验收</Badge>
+                ) : (
+                  <Badge tone={allPassed ? "teal" : "danger"}>
+                    通过 {passedCount}/{checklistRows.length}
+                  </Badge>
+                )
+              }
+            />
             <div className="px-5 py-4">
               <p className="text-xs leading-relaxed text-ink-soft">{task.acceptanceCriteria}</p>
-              {task.acceptanceChecklist?.length ? (
-                <div className="mt-3 space-y-1.5 rounded-md border border-line bg-panel2/40 px-3 py-2">
-                  {task.acceptanceChecklist.map((item, index) => {
-                    const result = task.acceptanceReport?.[index];
-                    const label =
-                      item.type === "contains"
-                        ? `包含「${item.value}」`
-                        : item.type === "min_words"
-                          ? `至少 ${item.value} 字`
-                          : item.type === "min_sources"
-                            ? `至少 ${item.value} 个来源`
-                            : item.type === "section"
-                              ? `包含章节「${item.value}」`
-                              : `人工项：${item.note}`;
-                    return (
-                      <div
-                        key={`${item.type}-${index}`}
-                        className="flex items-start gap-1.5 text-label"
-                      >
-                        {result ? (
-                          result.passed ? (
-                            <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-teal" />
-                          ) : (
-                            <XCircle className="mt-0.5 size-3 shrink-0 text-danger" />
-                          )
-                        ) : (
-                          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-faint" />
-                        )}
-                        <span className="text-muted">{label}</span>
-                        {result ? (
-                          <span className="text-faint">· {result.reason}</span>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+
+              {orderedChecklist.length ? (
+                <div className="mt-3 overflow-hidden rounded-md border border-line">
+                  <div className="grid grid-cols-[1.15fr_1fr] gap-3 border-b border-line bg-panel2/60 px-3 py-1.5 text-eyebrow tracking-[0.14em] text-faint uppercase">
+                    <span>标准</span>
+                    <span>Auditor 判定</span>
+                  </div>
+                  <div className="divide-line/70 divide-y">
+                    {orderedChecklist.map(({ item, index, result }) => {
+                      const label =
+                        item.type === "contains"
+                          ? `包含「${item.value}」`
+                          : item.type === "min_words"
+                            ? `至少 ${item.value} 字`
+                            : item.type === "min_sources"
+                              ? `至少 ${item.value} 个来源`
+                              : item.type === "section"
+                                ? `包含章节「${item.value}」`
+                                : `人工项：${item.note}`;
+                      return (
+                        <div
+                          key={`${item.type}-${index}`}
+                          className="grid grid-cols-[1.15fr_1fr] items-start gap-3 px-3 py-2"
+                        >
+                          <span className="text-label leading-relaxed text-muted">
+                            {label}
+                          </span>
+                          <span className="text-label leading-relaxed">
+                            {result ? (
+                              <span className="flex items-start gap-1.5">
+                                {result.passed ? (
+                                  <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-teal" />
+                                ) : (
+                                  <XCircle className="mt-0.5 size-3 shrink-0 text-danger" />
+                                )}
+                                <span className="min-w-0">
+                                  <span
+                                    className={
+                                      result.passed ? "text-teal" : "text-danger"
+                                    }
+                                  >
+                                    {result.passed ? "通过" : "未通过"}
+                                  </span>
+                                  {result.reason ? (
+                                    <span className="text-faint">
+                                      {" "}
+                                      · {result.reason}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-faint">待验收</span>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : null}
               <div className="mt-3 flex flex-wrap gap-4 text-label text-faint">

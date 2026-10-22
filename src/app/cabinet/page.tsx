@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
+  Brain,
   Gavel,
+  Lightbulb,
   ShieldCheck,
   Sparkles,
   Users,
@@ -24,6 +26,53 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
+
+/**
+ * One tile of the knowledge strip. Kept dumb: the cabinet page is the only
+ * consumer, and the values are already aggregated server-side.
+ */
+function KnowledgeCell({
+  icon,
+  label,
+  value,
+  unit,
+  detail,
+  href,
+  alert = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  unit: string;
+  detail: string;
+  href: string;
+  alert?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group bg-panel px-4 py-3.5 transition-colors hover:bg-panel2/70"
+    >
+      <div className="flex items-center gap-1.5 text-eyebrow tracking-[0.14em] text-faint uppercase">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-2 flex items-baseline gap-1.5">
+        <span className="mono text-xl text-ink">{value}</span>
+        <span className="text-label text-muted">{unit}</span>
+      </div>
+      <div
+        className={
+          alert
+            ? "mt-1 text-label text-danger"
+            : "mt-1 text-label text-faint"
+        }
+      >
+        {detail}
+      </div>
+    </Link>
+  );
+}
 
 function successRate(success: number, fail: number) {
   const total = success + fail;
@@ -197,6 +246,7 @@ export default async function CabinetPage() {
     );
   }
 
+  const knowledge = data.knowledge;
   const byRole = (role: string) => data.agents.filter((a) => a.role === role);
   const chief = byRole("chief")[0];
   // One pass over tasks instead of one scan per agent card.
@@ -281,6 +331,66 @@ export default async function CabinetPage() {
           </span>
         </div>
       </Card>
+
+      <div className="mb-6">
+        <Card>
+          <CardHeader
+            eyebrow="Knowledge"
+            title="知识资产"
+            right={
+              <Link
+                href="/memory"
+                className="inline-flex items-center gap-1 text-label text-faint hover:text-muted"
+              >
+                查看记忆 <ArrowRight className="size-3" />
+              </Link>
+            }
+          />
+          <div className="grid gap-px bg-line/60 sm:grid-cols-2 xl:grid-cols-4">
+            <KnowledgeCell
+              icon={<Sparkles className="size-3.5 text-teal" />}
+              label="技能"
+              value={knowledge.skills.certified}
+              unit="项已转正"
+              detail={`共 ${knowledge.skills.total} 项，含草案`}
+              href="/cabinet"
+            />
+            <KnowledgeCell
+              icon={<Brain className="size-3.5 text-blue" />}
+              label="记忆"
+              value={knowledge.memories.active}
+              unit="条有效"
+              detail={
+                knowledge.memories.conflicted > 0
+                  ? `${knowledge.memories.conflicted} 条自相矛盾，待你裁定`
+                  : "没有互相冲突的事实"
+              }
+              href="/memory"
+              alert={knowledge.memories.conflicted > 0}
+            />
+            <KnowledgeCell
+              icon={<Lightbulb className="size-3.5 text-accent" />}
+              label="洞察"
+              value={knowledge.insights.applied}
+              unit="条已采纳"
+              detail={`${knowledge.insights.proposed} 条待采纳`}
+              href="/review"
+            />
+            <KnowledgeCell
+              icon={<Gavel className="size-3.5 text-violet" />}
+              label="判例"
+              value={knowledge.dissents.vindicated}
+              unit="条已平反"
+              detail={
+                knowledge.dissents.pending > 0
+                  ? `${knowledge.dissents.pending} 条仍在观察`
+                  : `共 ${knowledge.dissents.total} 条异议`
+              }
+              href="/review"
+            />
+          </div>
+        </Card>
+      </div>
 
       <SectionTitle
         eyebrow="Agents"

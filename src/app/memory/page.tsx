@@ -4,21 +4,19 @@ import {
   Brain,
   Database,
   Fingerprint,
-  Link2,
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
 import { fetchMemoryPage } from "@/lib/api/pages";
-import { dateTime, pct } from "@/lib/format";
+import { pct } from "@/lib/format";
 import {
   Badge,
   Card,
   CardHeader,
   EmptyState,
-  Progress,
   Stat,
 } from "@/components/ui";
-import { MemoryActions } from "@/components/memory-actions";
+import { MemoryRow } from "@/components/memory-row";
 
 export const metadata: Metadata = {
   title: "Memory · Cabinet",
@@ -32,12 +30,6 @@ const TABS = [
   { key: "episodic", label: "情景" },
   { key: "procedural", label: "程序" },
 ];
-
-function typeTone(type: string) {
-  if (type === "semantic") return "blue" as const;
-  if (type === "episodic") return "teal" as const;
-  return "violet" as const;
-}
 
 export default async function MemoryPage({
   searchParams,
@@ -179,82 +171,12 @@ export default async function MemoryPage({
             />
           ) : (
             data.memories.map((memory) => (
-              <Card
+              <MemoryRow
                 key={memory.id}
-                className={
-                  view === "history" ? "px-5 py-4 opacity-70" : "px-5 py-4"
-                }
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge tone={typeTone(memory.type)}>{memory.type}</Badge>
-                    <Badge tone="neutral">{memory.domain}</Badge>
-                    {memory.factKey ? (
-                      <Badge tone="blue">{memory.factKey}</Badge>
-                    ) : null}
-                    {memory.status !== "active" ? (
-                      <Badge tone="danger">{memory.status}</Badge>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="mono text-label text-muted">
-                      {Math.round(memory.confidence * 100)}%
-                    </span>
-                    {view === "current" ? (
-                      <MemoryActions memoryId={memory.id} />
-                    ) : null}
-                  </div>
-                </div>
-
-                <p className="mt-2.5 text-xs leading-relaxed text-ink-soft">{memory.content}</p>
-                {memory.value ? (
-                  <p className="mt-1 text-label text-accent">
-                    事实值：{memory.value}
-                  </p>
-                ) : null}
-
-                <div className="mt-3">
-                  <Progress value={memory.confidence * 100} tone={memory.confidence >= 0.8 ? "teal" : "accent"} />
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 text-label text-faint">
-                    <Link2 className="size-2.5" /> evidence
-                  </span>
-                  {memory.evidence.map((e) => {
-                    const ref = e.ref ?? "";
-                    const content = (
-                      <span
-                        className="rounded border border-line bg-panel px-1.5 py-0.5 text-label text-muted hover:border-line2"
-                        title={e.quote}
-                      >
-                        {e.label}
-                      </span>
-                    );
-                    return ref.startsWith("tsk_") ? (
-                      <Link key={`${e.label}-${ref}`} href={`/tasks/${ref}`}>
-                        {content}
-                      </Link>
-                    ) : (
-                      <span key={`${e.label}-${ref}`}>{content}</span>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-label text-faint">
-                  <span>生效 {dateTime(memory.validFrom, tz)}</span>
-                  {memory.validTo ? (
-                    <span>失效 {dateTime(memory.validTo, tz)}</span>
-                  ) : null}
-                  <span>最后确认 {dateTime(memory.lastConfirmedAt, tz)}</span>
-                  {memory.supersededBy ? (
-                    <span className="mono">被 {memory.supersededBy} 取代</span>
-                  ) : null}
-                  {memory.sourceEventId ? (
-                    <span className="mono">source: {memory.sourceEventId}</span>
-                  ) : null}
-                </div>
-              </Card>
+                memory={memory}
+                view={view}
+                tz={tz}
+              />
             ))
           )}
         </div>
