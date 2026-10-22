@@ -848,22 +848,62 @@ export function QuickCreate({
     }
   }
 
+  async function createTask() {
+    await submit(
+      "/api/tasks",
+      {
+        title: taskTitle,
+        description: taskDesc,
+        acceptanceCriteria: taskCriteria,
+        assigneeId: taskAssignee,
+        auditorId: taskAuditor,
+        actionType: taskAction,
+        resource: taskAction === "external" ? "calendar" : "task",
+        goalId: taskGoal || null,
+        estimateMin: 25,
+      },
+      "task",
+    );
+  }
+
+  async function createGoal() {
+    await submit(
+      "/api/goals",
+      {
+        title: goalTitle,
+        why: goalWhy,
+        target: goalTarget,
+        horizon: goalHorizon,
+        domain: goalDomain,
+      },
+      "goal",
+    );
+  }
+
   return (
     <div className="space-y-2">
       <details className="rounded-md border border-line bg-panel2/40 px-3 py-2">
         <summary className="cursor-pointer text-micro text-muted">
           <Plus className="mr-1 inline size-3" /> 新建任务
         </summary>
-        <div className="mt-3 space-y-2">
+        <form
+          className="mt-3 space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createTask();
+          }}
+        >
           <input
             value={taskTitle}
             onChange={(event) => setTaskTitle(event.target.value)}
+            aria-label="任务标题"
             placeholder="任务标题"
             className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <textarea
             value={taskDesc}
             onChange={(event) => setTaskDesc(event.target.value)}
+            aria-label="任务描述"
             placeholder="描述"
             rows={2}
             className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
@@ -871,6 +911,7 @@ export function QuickCreate({
           <textarea
             value={taskCriteria}
             onChange={(event) => setTaskCriteria(event.target.value)}
+            aria-label="验收标准"
             placeholder="验收标准"
             rows={2}
             className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
@@ -879,6 +920,7 @@ export function QuickCreate({
             <select
               value={taskAssignee}
               onChange={(event) => setTaskAssignee(event.target.value)}
+            aria-label="执行 Agent"
               className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               {agents.map((agent) => (
@@ -890,6 +932,7 @@ export function QuickCreate({
             <select
               value={taskAuditor}
               onChange={(event) => setTaskAuditor(event.target.value)}
+            aria-label="验收 Agent"
               className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               {agents
@@ -905,6 +948,7 @@ export function QuickCreate({
             <select
               value={taskAction}
               onChange={(event) => setTaskAction(event.target.value)}
+            aria-label="动作类型"
               className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               <option value="internal">内部动作</option>
@@ -914,6 +958,7 @@ export function QuickCreate({
             <select
               value={taskGoal}
               onChange={(event) => setTaskGoal(event.target.value)}
+            aria-label="关联目标"
               className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               <option value="">无目标</option>
@@ -936,49 +981,42 @@ export function QuickCreate({
               !taskAuditor ||
               taskAssignee === taskAuditor
             }
-            onClick={() =>
-              submit(
-                "/api/tasks",
-                {
-                  title: taskTitle,
-                  description: taskDesc,
-                  acceptanceCriteria: taskCriteria,
-                  assigneeId: taskAssignee,
-                  auditorId: taskAuditor,
-                  actionType: taskAction,
-                  resource: taskAction === "external" ? "calendar" : "task",
-                  goalId: taskGoal || null,
-                  estimateMin: 25,
-                },
-                "task",
-              )
-            }
+            type="submit"
           >
             创建任务
           </Button>
-        </div>
+        </form>
       </details>
 
       <details className="rounded-md border border-line bg-panel2/40 px-3 py-2">
         <summary className="cursor-pointer text-micro text-muted">
           <Plus className="mr-1 inline size-3" /> 新建目标
         </summary>
-        <div className="mt-3 space-y-2">
+        <form
+          className="mt-3 space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void createGoal();
+          }}
+        >
           <input
             value={goalTitle}
             onChange={(event) => setGoalTitle(event.target.value)}
+            aria-label="目标标题"
             placeholder="目标标题"
             className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
             value={goalWhy}
             onChange={(event) => setGoalWhy(event.target.value)}
+            aria-label="为什么"
             placeholder="为什么（一句话）"
             className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
             value={goalTarget}
             onChange={(event) => setGoalTarget(event.target.value)}
+            aria-label="可验收的结果"
             placeholder="可验收的目标"
             className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
@@ -986,11 +1024,13 @@ export function QuickCreate({
             <input
               value={goalHorizon}
               onChange={(event) => setGoalHorizon(event.target.value)}
+            aria-label="目标周期"
               className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <select
               value={goalDomain}
               onChange={(event) => setGoalDomain(event.target.value)}
+            aria-label="目标领域"
               className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
             >
               <option value="learning">学习</option>
@@ -1008,23 +1048,11 @@ export function QuickCreate({
               !goalWhy.trim() ||
               !goalTarget.trim()
             }
-            onClick={() =>
-              submit(
-                "/api/goals",
-                {
-                  title: goalTitle,
-                  why: goalWhy,
-                  target: goalTarget,
-                  horizon: goalHorizon,
-                  domain: goalDomain,
-                },
-                "goal",
-              )
-            }
+            type="submit"
           >
             创建目标
           </Button>
-        </div>
+        </form>
       </details>
 
       {msg ? <div className="text-mini text-muted">{msg}</div> : null}
@@ -1057,28 +1085,36 @@ export function NewCouncilForm() {
   }
 
   return (
-    <div className="space-y-2">
+    <form
+      className="space-y-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
       <input
         value={topic}
         onChange={(event) => setTopic(event.target.value)}
+            aria-label="议题"
         placeholder="议题"
         className="h-8 w-full rounded border border-line bg-panel2 px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <input
         value={trigger}
         onChange={(event) => setTrigger(event.target.value)}
+            aria-label="触发条件"
         placeholder="触发条件（如：单笔支出 > ¥200）"
         className="h-8 w-full rounded border border-line bg-panel2 px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <Button
         size="sm"
-        onClick={submit}
+        type="submit"
         disabled={busy || !topic.trim() || !trigger.trim()}
       >
         {busy ? <Loader2 className="size-3 animate-spin" /> : null}
         发起会议
       </Button>
       {msg ? <div className="text-mini text-muted">{msg}</div> : null}
-    </div>
+    </form>
   );
 }

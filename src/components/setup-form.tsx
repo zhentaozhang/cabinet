@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { Badge, Button, Card, CardHeader } from "@/components/ui";
+import { API_ROUTES } from "@/contracts";
+import { browserApi, idempotencyKey } from "@/lib/api/browser";
 
 type AgentPreview = {
   role: string;
@@ -24,31 +26,28 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
   async function submit() {
     setBusy(true);
     setError(null);
-    const response = await fetch("/api/setup", {
+    const body = {
+      timezone,
+      ...(title.trim() && target.trim()
+        ? {
+            goal: {
+              title,
+              why,
+              target,
+              horizon: "6 weeks",
+              domain: "learning",
+            },
+          }
+        : {}),
+    };
+    const result = await browserApi.mutate(API_ROUTES.setup, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": crypto.randomUUID(),
-      },
-      body: JSON.stringify({
-        timezone,
-        ...(title.trim() && target.trim()
-          ? {
-              goal: {
-                title,
-                why,
-                target,
-                horizon: "6 weeks",
-                domain: "learning",
-              },
-            }
-          : {}),
-      }),
+      body,
+      idempotencyKey: idempotencyKey(API_ROUTES.setup, body),
     });
-    const data = await response.json();
     setBusy(false);
-    if (!response.ok || !data.ok) {
-      setError(data.error ?? "创建失败");
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
     router.push("/");
@@ -59,12 +58,23 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
     <div className="grid gap-5 md:grid-cols-[1.1fr_0.9fr]">
       <Card>
         <CardHeader eyebrow="Step 1" title="基础设置" />
-        <div className="space-y-3 px-5 py-4">
+        <form
+          className="space-y-3 px-5 py-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
           <div>
-            <label className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint">
+            <label
+              htmlFor="setup-timezone"
+              className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint"
+            >
               Timezone
             </label>
             <select
+              id="setup-timezone"
+              name="timezone"
               value={timezone}
               onChange={(event) => setTimezone(event.target.value)}
               className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink"
@@ -81,19 +91,34 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
             <div className="mb-2 text-mini uppercase tracking-[0.16em] text-faint">
               Optional first goal
             </div>
+            <label htmlFor="setup-goal-title" className="sr-only">
+              目标标题
+            </label>
             <input
+              id="setup-goal-title"
+              name="goalTitle"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="目标标题（可跳过）"
               className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
+            <label htmlFor="setup-goal-why" className="sr-only">
+              为什么
+            </label>
             <input
+              id="setup-goal-why"
+              name="goalWhy"
               value={why}
               onChange={(event) => setWhy(event.target.value)}
               placeholder="为什么"
               className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
+            <label htmlFor="setup-goal-target" className="sr-only">
+              可验收的目标
+            </label>
             <input
+              id="setup-goal-target"
+              name="goalTarget"
               value={target}
               onChange={(event) => setTarget(event.target.value)}
               placeholder="可验收的目标"
@@ -108,9 +133,9 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
           ) : null}
 
           <Button
+            type="submit"
             variant="primary"
             className="w-full"
-            onClick={submit}
             disabled={busy}
           >
             {busy ? (
@@ -120,7 +145,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
             )}
             创建内阁
           </Button>
-        </div>
+        </form>
       </Card>
 
       <Card>

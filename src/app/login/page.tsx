@@ -94,13 +94,25 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <div className="space-y-3 px-6 py-5">
+        <form
+          className="space-y-3 px-6 py-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void (mode === "signin" ? signIn() : signUp());
+          }}
+        >
           {mode === "signup" ? (
             <div>
-              <label className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint">
+              <label
+                htmlFor="login-name"
+                className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint"
+              >
                 Name
               </label>
               <input
+                id="login-name"
+                name="name"
+                autoComplete="name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="你的名字"
@@ -110,10 +122,16 @@ export default function LoginPage() {
           ) : null}
 
           <div>
-            <label className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint">
+            <label
+              htmlFor="login-email"
+              className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint"
+            >
               Email
             </label>
             <input
+              id="login-email"
+              name="email"
+              autoComplete="email"
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -121,10 +139,16 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint">
+            <label
+              htmlFor="login-password"
+              className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint"
+            >
               Password
             </label>
             <input
+              id="login-password"
+              name="password"
+              autoComplete="current-password"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -139,11 +163,9 @@ export default function LoginPage() {
           ) : null}
 
           <Button
+            type="submit"
             variant="primary"
             className="w-full"
-            onClick={() =>
-              mode === "signin" ? signIn() : signUp()
-            }
             disabled={busy !== null}
           >
             {busy === "password" || busy === "signup" ? (
@@ -156,6 +178,7 @@ export default function LoginPage() {
 
           <div className="flex items-center justify-between pt-1 text-mini">
             <button
+              type="button"
               className="text-faint hover:text-muted"
               onClick={() => {
                 setMode(mode === "signin" ? "signup" : "signin");
@@ -169,6 +192,7 @@ export default function LoginPage() {
               {mode === "signin" ? "创建新账号 →" : "已有账号？登录"}
             </button>
             <button
+              type="button"
               className="text-faint hover:text-muted"
               onClick={() => signIn("demo@cabinet.local", "cabinet-demo", "demo")}
               disabled={busy !== null}
@@ -176,7 +200,7 @@ export default function LoginPage() {
               使用演示账号
             </button>
           </div>
-        </div>
+        </form>
       </Card>
     </div>
   );

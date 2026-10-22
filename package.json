@@ -11,8 +11,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:setup": "pnpm db:push && pnpm db:seed",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --maxWorkers=1 --no-file-parallelism",
+    "test:watch": "vitest --maxWorkers=1 --no-file-parallelism",
     "test:db:setup": "DATABASE_URL=${DATABASE_URL_TEST:-postgres://zhentao@localhost:5432/cabinet_test} drizzle-kit push",
     "db:migrate": "drizzle-kit migrate"
   },
