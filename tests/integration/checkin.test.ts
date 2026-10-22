@@ -151,6 +151,30 @@ describe("check-in", () => {
     expect(rows[0].note).toBe("第二次");
   });
 
+  it("stores learning minutes, recall and weak topics", async () => {
+    await saveCheckin(
+      {
+        energy: 4,
+        mood: 4,
+        note: "retry",
+        completed: [],
+        studyMinutes: 35,
+        recallScore: 0.65,
+        errorTags: ["rerank", "precision"],
+      },
+      DEMO_USER_ID,
+    );
+
+    const today = localDateKey(new Date(), "Asia/Shanghai");
+    const [row] = await db
+      .select()
+      .from(checkins)
+      .where(and(eq(checkins.userId, DEMO_USER_ID), eq(checkins.date, today)));
+    expect(row.studyMinutes).toBe(35);
+    expect(row.recallScore).toBeCloseTo(0.65);
+    expect(row.errorTags).toEqual(["rerank", "precision"]);
+  });
+
   it("keeps one memory per check-in when the note is rewritten", async () => {
     await saveCheckin(
       { energy: 3, mood: 3, note: "旧笔记", completed: [] },

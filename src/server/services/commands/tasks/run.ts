@@ -18,7 +18,12 @@ import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { decideRun } from "@/lib/domain/policy";
 import { assertTransition } from "@/lib/domain/state";
-import { ConflictError, NotFoundError, PolicyDenied } from "@/lib/domain/errors";
+import {
+  ConflictError,
+  NotFoundError,
+  PolicyDenied,
+  ValidationError,
+} from "@/lib/domain/errors";
 import { startOfLocalWeek } from "@/lib/domain/time";
 import { draftFor } from "../../shared/draft";
 import { loadLatestApproval, loadSpentCents } from "./execution";
@@ -32,6 +37,7 @@ export async function runTask(taskId: string, userId: string) {
   let task = found;
   if (!task.assigneeId) throw new ConflictError("Task has no assignee");
   const retrying = task.status === "failed" || task.status === "rejected";
+  const demoMode = process.env.DEMO_MODE === "true";
 
   // A failed/rejected run can be retried through the normal state machine.
   if (retrying) {
@@ -155,7 +161,8 @@ export async function runTask(taskId: string, userId: string) {
         taskId,
         agentId: agent.id,
         status: "succeeded",
-        mode: "demo",
+        mode: demoMode ? "demo" : "rule",
+        sourceType: demoMode ? "demo_fixture" : "rule_generated",
         startedAt: new Date(),
         endedAt: new Date(),
         replayKey: `suggest_${taskId}_${prior.length + 1}`,
@@ -167,6 +174,7 @@ export async function runTask(taskId: string, userId: string) {
         type: "markdown",
         title: draft.title,
         content: draft.content,
+        sourceType: demoMode ? "demo_fixture" : "rule_generated",
       });
       await tx.insert(steps).values({
         id: newId("stp"),
@@ -288,7 +296,8 @@ export async function runTask(taskId: string, userId: string) {
       taskId,
       agentId: agent.id,
       status: "running",
-      mode: process.env.OPENAI_API_KEY ? "live" : "demo",
+      mode: demoMode ? "demo" : "live",
+      sourceType: "system_event",
       startedAt,
       replayKey: `replay_${taskId}_${prior.length + 1}`,
     });
@@ -327,7 +336,13 @@ export async function runTask(taskId: string, userId: string) {
     const agentMemories = await retrieveMemories(
       task.userId,
       `${task.title} ${task.description}`,
-      { limit: 5 },
+      {
+        limit: 5,
+        agentId: agent.id,
+        scopes: agent.memoryScope.includes("all_evidence")
+          ? ["*"]
+          : agent.memoryScope,
+      },
     );
 
     await addStep({
@@ -374,14 +389,11 @@ export async function runTask(taskId: string, userId: string) {
       tool,
       input: { query: task.title },
       output: {
-        result:
-          agent.role === "researcher"
-            ? "3 条结果，已抓取 1 篇"
-            : "命中 2 条相关记忆",
+        status: "not_connected",
+        tool,
+        reason: "No external connector is configured for this tool.",
       },
-      ti: 180,
-      to: 80,
-      latency: 600,
+      latency: 10,
     });
 
     const [priorRejection] = await db
@@ -395,7 +407,7 @@ export async function runTask(taskId: string, userId: string) {
       )
       .limit(1);
 
-    const generated = await generateArtifact({
+    const modelResult = await generateArtifact({
       agentName: agent.name,
       role: agent.role,
       charter: agent.charter,
@@ -405,18 +417,41 @@ export async function runTask(taskId: string, userId: string) {
       memories: agentMemories.map((m) => m.content),
       maxOutputTokens: config.cost.maxOutputTokens,
     });
-    const draft =
-      generated ??
-      draftFor(agent.role, task.title, prior.length, Boolean(priorRejection));
+
+    let draft: { title: string; content: string };
+    let sourceMode: "live" | "demo";
+    if (modelResult.status === "success") {
+      draft = modelResult.draft;
+      sourceMode = "live";
+    } else if (demoMode) {
+      // Explicit demo mode is the only path that may use a template draft.
+      draft = draftFor(agent.role, task.title, prior.length, Boolean(priorRejection));
+      sourceMode = "demo";
+    } else {
+      throw new ValidationError(
+        modelResult.status === "not_configured"
+          ? "Model is not configured. Configure OPENAI_API_KEY or enable DEMO_MODE."
+          : `Model execution failed (${modelResult.status}).`,
+      );
+    }
     const artifactId = newId("art");
 
     await addStep({
       type: "draft",
-      input: { format: "markdown", mode: generated ? "live" : "demo" },
-      output: { artifactId, title: draft.title },
-      ti: generated ? generated.tokensIn : 500,
-      to: generated ? generated.tokensOut : 600,
-      latency: generated ? 2400 : 1100,
+      input: { format: "markdown", mode: sourceMode },
+      output: {
+        artifactId,
+        title: draft.title,
+        ...(modelResult.status === "success"
+          ? {
+              tokensIn: modelResult.draft.tokensIn,
+              tokensOut: modelResult.draft.tokensOut,
+            }
+          : {}),
+      },
+      ti: modelResult.status === "success" ? modelResult.draft.tokensIn : 0,
+      to: modelResult.status === "success" ? modelResult.draft.tokensOut : 0,
+      latency: sourceMode === "live" ? 2400 : 1100,
     });
 
     await addStep({
@@ -447,6 +482,8 @@ export async function runTask(taskId: string, userId: string) {
         type: "markdown",
         title: draft.title,
         content: draft.content,
+        sourceType:
+          sourceMode === "live" ? "model_generated" : "demo_fixture",
       });
 
       const [submitted] = await tx
@@ -460,7 +497,7 @@ export async function runTask(taskId: string, userId: string) {
         .update(runs)
         .set({
           status: "succeeded",
-          mode: generated ? "live" : "demo",
+          mode: sourceMode,
           endedAt: new Date(),
           costCents: cost,
           tokensIn,

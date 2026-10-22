@@ -22,6 +22,7 @@ import {
 } from "@/contracts";
 
 import { serverApi } from "./server";
+import { needsSetup } from "./page-guard";
 
 /**
  * Page data loaders.
@@ -48,6 +49,7 @@ async function loadPage<T>(
 export async function fetchTodayPage(): Promise<TodayPageDto> {
   const result = await loadPage("/api/today", todayPageSchema);
   if ("missing" in result) redirect("/setup");
+  if (needsSetup(result.data.agents)) redirect("/setup");
   return result.data;
 }
 
@@ -67,12 +69,14 @@ export async function fetchReviewPage(options: {
   const query = params.size > 0 ? `?${params.toString()}` : "";
   const result = await loadPage(`/api/review${query}`, reviewPageSchema);
   if ("missing" in result) redirect("/setup");
+  if (needsSetup(result.data.agents)) redirect("/setup");
   return result.data;
 }
 
 export async function fetchCabinetPage(): Promise<CabinetPageDto> {
   const result = await loadPage("/api/cabinet", cabinetPageSchema);
   if ("missing" in result) redirect("/setup");
+  if (needsSetup(result.data.agents)) redirect("/setup");
   return result.data;
 }
 

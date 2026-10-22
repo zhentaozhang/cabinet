@@ -41,7 +41,7 @@ export async function createCouncil(
     topic,
     trigger,
     status: "deliberating",
-    memo: `## 议题\n${topic}\n\n## 触发\n${trigger}\n\n## 状态\n各方正在独立提交立场。`,
+    memo: `## 议题\n${topic}\n\n## 触发\n${trigger}\n\n## 状态\n各方立场正在按规则生成。`,
   });
 
   let positions: CouncilPositionDraft[];
@@ -58,7 +58,7 @@ export async function createCouncil(
     ] as const;
     const drafts = await Promise.all(
       roles.map(async (role) =>
-        buildCouncilPosition({ role, context, config }),
+        buildCouncilPosition({ role, context, config, topic }),
       ),
     );
     positions = drafts.filter(

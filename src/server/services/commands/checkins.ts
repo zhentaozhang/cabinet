@@ -7,6 +7,8 @@ import { assertTransition } from "@/lib/domain/state";
 import { localDateKey } from "@/lib/domain/time";
 import { ValidationError } from "@/lib/domain/errors";
 import { getWorkspace } from "../queries/workspace";
+import { getPolicyConfig } from "@/lib/policy/config";
+import { recalculateUserGoalProgress } from "./progress";
 
 export async function saveCheckin(
   input: {
@@ -14,10 +16,14 @@ export async function saveCheckin(
     mood: number;
     completed: Array<{ taskId: string; done: boolean }>;
     note: string;
+    studyMinutes?: number;
+    recallScore?: number | null;
+    errorTags?: string[];
   },
   userId: string,
 ) {
   const { user } = await getWorkspace(userId);
+  const config = await getPolicyConfig();
   const today = localDateKey(new Date(), user.timezone);
 
   const taskIds = [...new Set(input.completed.map((item) => item.taskId))];
@@ -37,6 +43,10 @@ export async function saveCheckin(
     .where(and(eq(agents.userId, userId), eq(agents.role, "coach")))
     .limit(1);
 
+  const studyMinutes = Math.max(0, Math.round(input.studyMinutes ?? 0));
+  const recallScore = input.recallScore ?? null;
+  const errorTags = [...new Set(input.errorTags ?? [])];
+
   await db.transaction(async (tx) => {
     // One check-in per user per local day: re-submitting updates it instead of
     // creating a duplicate row (the unique index enforces this at the DB).
@@ -50,6 +60,9 @@ export async function saveCheckin(
         mood: input.mood,
         completed: input.completed,
         note: input.note,
+        studyMinutes,
+        recallScore,
+        errorTags,
       })
       .onConflictDoUpdate({
         target: [checkins.userId, checkins.date],
@@ -58,6 +71,9 @@ export async function saveCheckin(
           mood: input.mood,
           completed: input.completed,
           note: input.note,
+          studyMinutes,
+          recallScore,
+          errorTags,
         },
       })
       .returning({ id: checkins.id });
@@ -90,14 +106,26 @@ export async function saveCheckin(
         and(eq(memories.userId, userId), eq(memories.sourceEventId, checkinId)),
       );
 
-    if (input.note.trim()) {
+    const memoryContent = [
+      studyMinutes > 0 ? `学习 ${studyMinutes} 分钟` : null,
+      recallScore !== null
+        ? `回忆正确率 ${Math.round(recallScore * 100)}%`
+        : null,
+      errorTags.length > 0 ? `薄弱点：${errorTags.join("、")}` : null,
+      input.note.trim() || null,
+    ]
+      .filter(Boolean)
+      .join("；");
+
+    if (memoryContent) {
       await tx.insert(memories).values({
         id: newId("mem"),
         userId,
         agentId: coach?.id ?? null,
         type: "episodic",
         domain: "checkin",
-        content: input.note.trim(),
+        content: memoryContent,
+        sourceType: "user_input",
         confidence: 0.9,
         salience: 0.55,
         evidence: [
@@ -107,6 +135,8 @@ export async function saveCheckin(
         lastConfirmedAt: new Date(),
       });
     }
+
+    await recalculateUserGoalProgress(tx, userId, config.learning);
 
     await logAuditTx(tx, {
       userId,
@@ -118,6 +148,9 @@ export async function saveCheckin(
         energy: input.energy,
         mood: input.mood,
         completed: input.completed.filter((item) => item.done).length,
+        studyMinutes,
+        recallScore,
+        errorTags,
       },
     });
   });

@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { memories } from "@/lib/db/schema";
 
@@ -99,12 +99,46 @@ export function scoreMemories<T extends RetrievalCandidate>(
     .sort((a, b) => b.scores.total - a.scores.total);
 }
 
+export type MemoryRetrievalOptions = {
+  limit?: number;
+  now?: Date;
+  /** Agent performing the retrieval. Memories it owns are always visible. */
+  agentId?: string;
+  /**
+   * Domains of user-level memories (those with no owning agent) this agent may
+   * read. Private memories owned by other agents stay hidden.
+   */
+  scopes?: string[];
+};
+
 export async function retrieveMemories(
   userId: string,
   query: string,
-  options: { limit?: number; now?: Date } = {},
+  options: MemoryRetrievalOptions = {},
 ): Promise<Array<ScoredMemory<typeof memories.$inferSelect>>> {
   const now = options.now ?? new Date();
+
+  const visibility: SQL[] = [];
+  if (options.agentId) {
+    visibility.push(eq(memories.agentId, options.agentId));
+  }
+  if (options.scopes && options.scopes.length > 0) {
+    visibility.push(
+      options.scopes.includes("*")
+        ? isNull(memories.agentId)
+        : (and(
+            isNull(memories.agentId),
+            inArray(memories.domain, options.scopes),
+          ) as SQL),
+    );
+  }
+  const visibilityFilter =
+    visibility.length === 0
+      ? undefined
+      : visibility.length === 1
+        ? visibility[0]
+        : or(...visibility);
+
   const rows = await db
     .select()
     .from(memories)
@@ -114,6 +148,7 @@ export async function retrieveMemories(
         eq(memories.status, "active"),
         isNull(memories.validTo),
         or(isNull(memories.expiresAt), gt(memories.expiresAt, now)),
+        visibilityFilter,
       ),
     )
     .limit(200);

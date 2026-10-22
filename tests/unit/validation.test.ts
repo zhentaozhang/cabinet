@@ -3,6 +3,7 @@ import {
   agentUpdateSchema,
   checkinSchema,
   insightActionSchema,
+  setupSchema,
   taskCreateSchema,
 } from "@/lib/validation/schemas";
 
@@ -32,6 +33,51 @@ describe("validation schemas", () => {
     expect(result.estimatedCostCents).toBe(0);
   });
 
+  it("rejects a spend task without a positive amount", () => {
+    const base = {
+      title: "buy",
+      description: "desc",
+      assigneeId: "ag_a",
+      auditorId: "ag_b",
+      acceptanceCriteria: "ok",
+      actionType: "spend" as const,
+    };
+    expect(taskCreateSchema.safeParse(base).success).toBe(false);
+    expect(
+      taskCreateSchema.safeParse({ ...base, estimatedCostCents: 0 }).success,
+    ).toBe(false);
+    expect(
+      taskCreateSchema.safeParse({ ...base, estimatedCostCents: -100 }).success,
+    ).toBe(false);
+  });
+
+  it("accepts a spend task with a positive amount", () => {
+    const result = taskCreateSchema.safeParse({
+      title: "buy",
+      description: "desc",
+      assigneeId: "ag_a",
+      auditorId: "ag_b",
+      acceptanceCriteria: "ok",
+      actionType: "spend",
+      estimatedCostCents: 100,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("defaults non-spend tasks to zero cost", () => {
+    for (const actionType of ["internal", "external", "publish"] as const) {
+      const result = taskCreateSchema.parse({
+        title: "t",
+        description: "d",
+        assigneeId: "ag_a",
+        auditorId: "ag_b",
+        acceptanceCriteria: "ok",
+        actionType,
+      });
+      expect(result.estimatedCostCents).toBe(0);
+    }
+  });
+
   it("rejects an empty agent update", () => {
     expect(agentUpdateSchema.safeParse({}).success).toBe(false);
   });
@@ -56,6 +102,22 @@ describe("validation schemas", () => {
     expect(result.mood).toBe(3);
     expect(result.completed).toEqual([]);
     expect(result.note).toBe("");
+  });
+
+  it("requires a first goal during setup", () => {
+    expect(setupSchema.safeParse({ timezone: "UTC" }).success).toBe(false);
+    expect(
+      setupSchema.safeParse({
+        timezone: "UTC",
+        goal: {
+          title: "学习",
+          why: "why",
+          target: "target",
+          horizon: "6 weeks",
+          domain: "learning",
+        },
+      }).success,
+    ).toBe(true);
   });
 
   it("rejects unknown insight actions", () => {

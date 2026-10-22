@@ -69,11 +69,18 @@ export function ExamButton() {
     setBusy(true);
     const data = await call("/api/apprentice/exam", "POST");
     setBusy(false);
-    const text = data.ok
-      ? `考试通过 ${data.passed}/${data.required}，已转正。`
-      : (data.error ?? "失败");
+    let text: string;
+    if (!data.ok) {
+      text = data.error ?? "失败";
+    } else if (data.promoted === true) {
+      text = `考试通过 ${Number(data.passed ?? 0)}/${Number(data.required ?? 0)}，已转正。`;
+    } else if (data.retired === true) {
+      text = `考试未通过 ${Number(data.passed ?? 0)}/${Number(data.required ?? 0)}，已累计 2 次失败，学徒已退休。`;
+    } else {
+      text = `考试未通过 ${Number(data.passed ?? 0)}/${Number(data.required ?? 0)}，仍在观察期，可复习后重考。`;
+    }
     setResult(text);
-    if (data.ok) {
+    if (data.ok && data.promoted === true) {
       toast.success(text);
     } else {
       toast.error(text);
@@ -88,6 +95,9 @@ export function ExamButton() {
         运行结业考试
       </Button>
       {result ? <span className="text-micro text-muted">{result}</span> : null}
+      <span className="text-micro text-faint">
+        考试产物为确定性模拟，由 Auditor 按常规审计流程验收。
+      </span>
     </div>
   );
 }

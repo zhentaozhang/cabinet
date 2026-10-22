@@ -14,6 +14,7 @@ import {
 import { fetchTaskPage } from "@/lib/api/pages";
 import { roleMeta, statusLabel, statusTone } from "@/lib/agents";
 import { dateTime, money, timeOnly } from "@/lib/format";
+import { isSimulatedSource, sourceLabel } from "@/lib/domain/provenance";
 import {
   Avatar,
   Badge,
@@ -21,7 +22,7 @@ import {
   CardHeader,
   EmptyState,
 } from "@/components/ui";
-import { TaskActions } from "@/components/actions";
+import { ArtifactSubmitForm, TaskActions } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
 
 export const metadata: Metadata = {
@@ -47,8 +48,8 @@ export default async function TaskPage({
   const { id } = await params;
   const data = await fetchTaskPage(id);
   if (!data) notFound();
+  const tz = data.timezone;
   const { task, goal, assignee, auditor, runs, steps, artifacts, approvals, audit } = data;
-
   const stepsByRun = new Map<string, typeof steps>();
   for (const step of steps) {
     const list = stepsByRun.get(step.runId) ?? [];
@@ -80,6 +81,14 @@ export default async function TaskPage({
         <TaskActions taskId={task.id} status={task.status} />
       </div>
 
+      <div className="mb-5">
+        <ArtifactSubmitForm
+          taskId={task.id}
+          status={task.status}
+          actionType={task.actionType}
+        />
+      </div>
+
       {latestAudit ? (
         <div
           className={
@@ -101,7 +110,7 @@ export default async function TaskPage({
               {String((latestAudit.after as Record<string, unknown> | null)?.reason ?? "")}
             </div>
           </div>
-          <span className="text-mini text-faint">{dateTime(latestAudit.createdAt)}</span>
+          <span className="text-mini text-faint">{dateTime(latestAudit.createdAt, tz)}</span>
         </div>
       ) : null}
 
@@ -150,7 +159,7 @@ export default async function TaskPage({
               ) : null}
               <div className="mt-3 flex flex-wrap gap-4 text-mini text-faint">
                 <span>预估 {task.estimateMin} 分钟</span>
-                <span>截止 {dateTime(task.dueAt)}</span>
+                <span>截止 {dateTime(task.dueAt, tz)}</span>
                 <span>创建者 {task.createdBy}</span>
               </div>
             </div>
@@ -194,7 +203,7 @@ export default async function TaskPage({
                           {money(run.costCents)}
                         </span>
                         <span className="ml-auto text-mini text-faint">
-                          {timeOnly(run.startedAt)} → {timeOnly(run.endedAt)}
+                          {timeOnly(run.startedAt, tz)} → {timeOnly(run.endedAt, tz)}
                         </span>
                       </div>
 
@@ -267,7 +276,18 @@ export default async function TaskPage({
                     <div className="mb-2 flex items-center gap-2">
                       <FileText className="size-3.5 text-teal" />
                       <span className="text-xs font-medium text-ink">{artifact.title}</span>
-                      <span className="text-nano text-faint">{dateTime(artifact.createdAt)}</span>
+                      <Badge tone={artifact.submittedBy === "user" ? "accent" : "neutral"}>
+                        {sourceLabel(artifact.sourceType)}
+                      </Badge>
+                      {isSimulatedSource(artifact.sourceType) ? (
+                        <Badge
+                          tone="neutral"
+                          title="该产物来自显式演示或规则路径，不是真实模型调用"
+                        >
+                          非真实执行
+                        </Badge>
+                      ) : null}
+                      <span className="text-nano text-faint">{dateTime(artifact.createdAt, tz)}</span>
                     </div>
                     <details open={artifact.id === artifacts[0]?.id}>
                       <summary className="cursor-pointer text-mini text-faint hover:text-muted">
@@ -318,15 +338,15 @@ export default async function TaskPage({
             <div className="space-y-3 px-5 py-4 text-micro">
               <div className="flex items-center justify-between">
                 <span className="text-faint">创建</span>
-                <span className="text-muted">{dateTime(task.createdAt)}</span>
+                <span className="text-muted">{dateTime(task.createdAt, tz)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-faint">截止</span>
-                <span className="text-muted">{dateTime(task.dueAt)}</span>
+                <span className="text-muted">{dateTime(task.dueAt, tz)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-faint">最近更新</span>
-                <span className="text-muted">{dateTime(task.updatedAt)}</span>
+                <span className="text-muted">{dateTime(task.updatedAt, tz)}</span>
               </div>
             </div>
           </Card>
@@ -340,7 +360,7 @@ export default async function TaskPage({
                     <div className="flex items-center gap-2 text-ink">
                       <CircleAlert className="size-3 text-accent" /> {approval.action}
                     </div>
-                    <div className="mt-1">{String(approval.payload.note ?? "")}</div>
+                    <div className="mt-1">{String(approval.payload.reason ?? approval.payload.note ?? "")}</div>
                     <Badge tone={approval.status === "pending" ? "accent" : "neutral"} className="mt-2">
                       {approval.status}
                     </Badge>
@@ -360,7 +380,7 @@ export default async function TaskPage({
                     <span className="text-faint">·</span>
                     <span className="truncate text-faint">{event.actor}</span>
                   </div>
-                  <div className="mt-0.5 text-nano text-faint">{dateTime(event.createdAt)}</div>
+                  <div className="mt-0.5 text-nano text-faint">{dateTime(event.createdAt, tz)}</div>
                 </div>
               ))}
               {audit.length === 0 ? (

@@ -27,12 +27,18 @@ export function QuickCreate({
     agents.find((agent) => agent.role === "auditor")?.id ?? "",
   );
   const [taskAction, setTaskAction] = useState("internal");
+  const [taskCostYuan, setTaskCostYuan] = useState("");
   const [taskGoal, setTaskGoal] = useState("");
   const [goalTitle, setGoalTitle] = useState("");
   const [goalWhy, setGoalWhy] = useState("");
   const [goalTarget, setGoalTarget] = useState("");
   const [goalHorizon, setGoalHorizon] = useState("6 weeks");
   const [goalDomain, setGoalDomain] = useState("learning");
+
+  const taskCostCents = Math.round(Number.parseFloat(taskCostYuan) * 100);
+  const hasValidCost =
+    taskAction !== "spend" ||
+    (Number.isFinite(taskCostCents) && taskCostCents > 0);
 
   async function submit(
     url: string,
@@ -55,6 +61,7 @@ export function QuickCreate({
         setTaskDesc("");
         setTaskCriteria("");
         setTaskGoal("");
+        setTaskCostYuan("");
       } else {
         setGoalTitle("");
         setGoalWhy("");
@@ -75,6 +82,7 @@ export function QuickCreate({
         auditorId: taskAuditor,
         actionType: taskAction,
         resource: taskAction === "external" ? "calendar" : "task",
+        estimatedCostCents: taskAction === "spend" ? taskCostCents : 0,
         goalId: taskGoal || null,
         estimateMin: 25,
       },
@@ -185,6 +193,27 @@ export function QuickCreate({
               ))}
             </select>
           </div>
+          {taskAction === "spend" ? (
+            <div className="space-y-1">
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                inputMode="decimal"
+                value={taskCostYuan}
+                onChange={(event) => setTaskCostYuan(event.target.value)}
+                aria-label="预计支出金额（元）"
+                placeholder="金额（元）"
+                className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              />
+              <p className="text-mini text-muted">
+                金额用于审批和预算校验，超过审批阈值需要审批。
+              </p>
+              {taskCostYuan.trim() && !hasValidCost ? (
+                <p className="text-mini text-danger">金额需大于 0。</p>
+              ) : null}
+            </div>
+          ) : null}
           <Button
             size="sm"
             variant="primary"
@@ -195,7 +224,8 @@ export function QuickCreate({
               !taskCriteria.trim() ||
               !taskAssignee ||
               !taskAuditor ||
-              taskAssignee === taskAuditor
+              taskAssignee === taskAuditor ||
+              !hasValidCost
             }
             type="submit"
           >

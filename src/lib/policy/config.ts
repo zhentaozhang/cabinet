@@ -14,6 +14,7 @@ const REQUIRED_KEYS = [
   "council",
   "reflection",
   "dissent",
+  "learning",
 ] as const;
 
 type ConfigKey = (typeof REQUIRED_KEYS)[number];
@@ -27,6 +28,7 @@ const DESCRIPTIONS: Record<ConfigKey, string> = {
   council: "Council role weights, score formula and quorum",
   reflection: "Reflection window, sample sizes and signal thresholds",
   dissent: "Dissent vindication trust bonus and chief deviation penalty",
+  learning: "Learning progress weights and next-task policy",
 };
 
 
@@ -90,6 +92,21 @@ const policyConfigSchema = z.object({
     chiefPenalty: z.number(),
     precedentSalience: z.number(),
   }),
+  learning: z.object({
+    progressWeights: z.object({
+      acceptedTasks: z.number().nonnegative(),
+      recall: z.number().nonnegative(),
+      checkins: z.number().nonnegative(),
+    }),
+    targetCheckinsPerWeek: z.number().int().positive(),
+    nextTask: z.object({
+      estimateMin: z.number().int().positive(),
+      minRecallScore: z.number().min(0).max(1),
+      minWords: z.number().int().positive(),
+      maxErrorTags: z.number().int().positive(),
+      retestAfterDays: z.number().int().positive(),
+    }),
+  }),
 });
 
 /**
@@ -120,6 +137,7 @@ export const getPolicyConfig = cache(
       council: map.get("council"),
       reflection: map.get("reflection"),
       dissent: map.get("dissent"),
+      learning: map.get("learning"),
     };
     const parsed = policyConfigSchema.safeParse(candidate);
     if (!parsed.success) {

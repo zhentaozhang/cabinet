@@ -8,9 +8,17 @@ export type ArtifactDraft = {
   tokensOut: number;
 };
 
+export type ModelExecutionResult =
+  | { status: "success"; draft: ArtifactDraft }
+  | { status: "not_configured" }
+  | { status: "timeout" }
+  | { status: "provider_error"; error: string }
+  | { status: "empty_response" };
+
 /**
- * Optional live-model path. When OPENAI_API_KEY is missing the runtime falls
- * back to deterministic demo output, so the product is always demoable.
+ * Server-side model call. A missing key or provider failure is returned as a
+ * typed non-success result; callers must not replace it with a template
+ * artifact in a real workspace.
  */
 export async function generateArtifact(input: {
   agentName: string;
@@ -21,10 +29,12 @@ export async function generateArtifact(input: {
   acceptanceCriteria: string;
   memories: string[];
   maxOutputTokens: number;
-}): Promise<ArtifactDraft | null> {
+}): Promise<ModelExecutionResult> {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) return { status: "not_configured" };
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
   try {
     const provider = createOpenAI({
       apiKey,
@@ -33,8 +43,6 @@ export async function generateArtifact(input: {
         : {}),
     });
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20_000);
     const { text, usage } = await generateText({
       model: provider(process.env.OPENAI_MODEL ?? "gpt-4.1-mini"),
       abortSignal: controller.signal,
@@ -53,17 +61,27 @@ export async function generateArtifact(input: {
         `可用记忆：${input.memories.join("；") || "无"}`,
         "请产出一份可验收的 Markdown 产物。",
       ].join("\n"),
-    }).finally(() => clearTimeout(timer));
+    });
 
-    if (!text.trim()) return null;
+    if (!text.trim()) return { status: "empty_response" };
 
     return {
-      title: `${input.taskTitle} · ${input.agentName}`,
-      content: text,
-      tokensIn: usage?.inputTokens ?? 0,
-      tokensOut: usage?.outputTokens ?? 0,
+      status: "success",
+      draft: {
+        title: `${input.taskTitle} · ${input.agentName}`,
+        content: text,
+        tokensIn: usage?.inputTokens ?? 0,
+        tokensOut: usage?.outputTokens ?? 0,
+      },
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if (controller.signal.aborted) return { status: "timeout" };
+    return {
+      status: "provider_error",
+      // Keep the category safe; provider payloads can contain request details.
+      error: error instanceof Error ? error.name : "provider_error",
+    };
+  } finally {
+    clearTimeout(timer);
   }
 }

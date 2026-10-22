@@ -19,18 +19,24 @@ export const TRANSITIONS: Record<
   Record<string, readonly string[]>
 > = {
   task: {
-    planned: ["assigned", "suggested", "cancelled"],
-    assigned: ["running", "awaiting_approval", "suggested", "cancelled"],
+    planned: ["assigned", "suggested", "submitted", "cancelled"],
+    assigned: [
+      "running",
+      "awaiting_approval",
+      "suggested",
+      "submitted",
+      "cancelled",
+    ],
     suggested: ["planned", "cancelled"],
-    awaiting_approval: ["approved", "cancelled"],
+    awaiting_approval: ["approved", "cancelled", "planned"],
     approved: ["running", "cancelled"],
     running: ["submitted", "failed"],
     submitted: ["auditing", "rejected"],
     auditing: ["accepted", "rejected"],
-    rejected: ["running", "failed"],
+    rejected: ["running", "failed", "planned", "submitted"],
+    failed: ["planned", "cancelled"],
     accepted: ["done"],
     done: [],
-    failed: [],
     cancelled: [],
   },
   agent: {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Trash2 } from "lucide-react";
-import { browserApi, idempotencyKey } from "@/lib/api/browser";
+import { browserApi } from "@/lib/api/browser";
 
 export function MemoryActions({ memoryId }: { memoryId: string }) {
   const router = useRouter();
@@ -15,10 +15,7 @@ export function MemoryActions({ memoryId }: { memoryId: string }) {
     setBusy(true);
     setMsg(null);
     const url = `/api/memories/${memoryId}`;
-    const result = await browserApi.mutate(url, {
-      method: "DELETE",
-      idempotencyKey: idempotencyKey(url, {}),
-    });
+    const result = await browserApi.mutate(url, { method: "DELETE" });
     setBusy(false);
     if (!result.ok) {
       setMsg(result.error);

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agentGrants,
@@ -30,6 +30,7 @@ const POLICY_KEYS = [
   "council",
   "reflection",
   "dissent",
+  "learning",
 ] as const;
 
 export type SetupInput = {
@@ -68,6 +69,23 @@ export async function setupWorkspace(input: SetupInput) {
   const weekStart = startOfLocalWeek(new Date(), timezone);
 
   const result = await db.transaction(async (tx) => {
+    // Serialise concurrent setup calls for the same user. The pre-check above
+    // is only a fast path: two tabs can pass it simultaneously. The
+    // transaction-scoped lock makes the re-check below authoritative, without
+    // adding a schema constraint.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`,
+    );
+
+    const [createdAgent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.userId, input.userId))
+      .limit(1);
+    if (createdAgent) {
+      throw new ConflictError("Workspace already exists.");
+    }
+
     await tx
       .update(users)
       .set({
@@ -77,24 +95,13 @@ export async function setupWorkspace(input: SetupInput) {
       })
       .where(eq(users.id, input.userId));
 
+    // Do not invent personal facts during setup. Users can add constraints,
+    // preferences and energy patterns later; empty objects mean "not set".
     const profileValues = {
-      constraints: {
-        weekdayMinutes: 90,
-        monthlyLearningBudgetCents: 60000,
-        noWorkAfter: "21:30",
-      },
-      preferences: {
-        examplesBeforeTheory: true,
-        shortTasks: true,
-        language: "zh-CN",
-        rules: [],
-      },
-      energyPattern: {
-        peak: "09:00-11:30",
-        dip: "14:00-15:00",
-        low: "20:00-23:00",
-      },
-      managementBudgetMin: 3,
+      constraints: {},
+      preferences: {},
+      energyPattern: {},
+      managementBudgetMin: 0,
       updatedAt: new Date(),
     };
     if (existingProfile) {

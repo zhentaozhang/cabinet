@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { idempotencyKeys } from "@/lib/db/schema";
 import { ConflictError } from "@/lib/domain/errors";
@@ -15,6 +15,20 @@ type StoredKey = {
   statusCode: number;
   responseJson: Record<string, unknown> | null;
 };
+
+/** A crashed handler must not block the key forever. */
+const PROCESSING_TTL_MS = 5 * 60 * 1000;
+
+function isExpired(row: { expiresAt: Date | null }): boolean {
+  return Boolean(row.expiresAt && row.expiresAt.getTime() <= Date.now());
+}
+
+function isAbandoned(row: { status: string; createdAt: Date }): boolean {
+  return (
+    row.status === "processing" &&
+    Date.now() - row.createdAt.getTime() > PROCESSING_TTL_MS
+  );
+}
 
 function replay(stored: StoredKey, requestHash: string): Response {
   if (stored.requestHash !== requestHash) {
@@ -75,15 +89,31 @@ export async function withIdempotency(input: {
     .limit(1);
 
   if (existing) {
-    if (existing.status === "failed") {
-      // The previous attempt blew up mid-flight. Free the key so the same
-      // request can be retried instead of being blocked for 24 hours.
+    // Free the key when the previous attempt cannot be trusted to still be
+    // meaningful: it crashed mid-flight, its record is expired, or the
+    // process died while holding it. Otherwise a deterministic retry would be
+    // blocked forever.
+    if (
+      existing.status === "failed" ||
+      isExpired(existing) ||
+      isAbandoned(existing)
+    ) {
       await db
         .delete(idempotencyKeys)
         .where(
           and(
             eq(idempotencyKeys.userId, input.userId),
             eq(idempotencyKeys.key, key),
+          ),
+        );
+      // Opportunistic garbage collection, scoped to this user so it uses the
+      // (user_id, key) index instead of scanning the whole table.
+      await db
+        .delete(idempotencyKeys)
+        .where(
+          and(
+            eq(idempotencyKeys.userId, input.userId),
+            lt(idempotencyKeys.expiresAt, new Date()),
           ),
         );
     } else {

@@ -33,16 +33,20 @@ import {
 export const weeklyMetricsSchema = z.object({
   weekKey: z.string(),
   aao: z.number(),
-  adherence: z.number(),
-  managementMinutes: z.number(),
+  /** Null when no tasks were planned in the window. */
+  adherence: z.number().nullable(),
+  /** Null when there are neither measured actions nor decision samples. */
+  managementMinutes: z.number().nullable(),
   managementMinutesSource: z.enum(["measured", "estimated"]),
   studyMinutes: z.number(),
   recallAvg: z.number().nullable(),
   learningTasks: z.number(),
-  retestPassRate: z.number(),
+  /** Null when no retest tasks were sampled in the window. */
+  retestPassRate: z.number().nullable(),
   costUsd: z.number(),
   goalProgress: z.number(),
-  auditRejectRate: z.number(),
+  /** Null when no audit accept/reject events were sampled. */
+  auditRejectRate: z.number().nullable(),
   sample: z.object({
     planned: z.number(),
     completed: z.number(),

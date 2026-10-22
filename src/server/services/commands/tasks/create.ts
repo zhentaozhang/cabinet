@@ -6,6 +6,8 @@ import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
+import { getPolicyConfig } from "@/lib/policy/config";
+import { recalculateGoalProgress } from "../progress";
 
 export async function promoteSuggestion(taskId: string, userId: string) {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
@@ -51,6 +53,8 @@ export async function createTask(
     acceptanceChecklist?: AcceptanceItem[] | null;
     estimateMin: number;
     dueAt?: string | null;
+    template?: string | null;
+    createdBy?: "user" | "agent" | "system";
   },
   userId: string,
 ) {
@@ -62,6 +66,9 @@ export async function createTask(
   }
   if (input.assigneeId === input.auditorId) {
     throw new ValidationError("Assignee and auditor must differ.");
+  }
+  if (input.actionType === "spend" && input.estimatedCostCents <= 0) {
+    throw new ValidationError("Spend tasks require a positive estimated cost.");
   }
 
   const [assignee] = await db
@@ -97,6 +104,7 @@ export async function createTask(
   }
 
   const id = newId("tsk");
+  const policy = input.goalId ? await getPolicyConfig() : null;
   return db.transaction(async (tx) => {
     const [created] = await tx
       .insert(tasks)
@@ -117,13 +125,23 @@ export async function createTask(
         actionType: input.actionType,
         resource: input.resource,
         estimatedCostCents: Math.max(0, input.estimatedCostCents),
-        createdBy: "user",
+        template: input.template ?? null,
+        createdBy: input.createdBy ?? "user",
       })
       .returning();
 
+    if (input.goalId && policy) {
+      await recalculateGoalProgress(
+        tx,
+        userId,
+        input.goalId,
+        policy.learning,
+      );
+    }
+
     await logAuditTx(tx, {
       userId: userId,
-      actor: "user",
+      actor: input.createdBy ?? "user",
       action: "task.create",
       target: id,
       before: null,

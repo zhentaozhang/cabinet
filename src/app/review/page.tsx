@@ -22,6 +22,7 @@ import {
   InsightCard,
   ReflectButton,
   VerifyAuditButton,
+  WeeklyReviewButton,
 } from "@/components/actions";
 import type { PolicyConfigDto } from "@/contracts";
 import { Markdown } from "@/components/markdown";
@@ -100,6 +101,7 @@ export default async function ReviewPage({
   const insightOffset = Math.max(Number(params.insightOffset ?? 0) || 0, 0);
   const dissentOffset = Math.max(Number(params.dissentOffset ?? 0) || 0, 0);
   const data = await fetchReviewPage({ insightOffset, dissentOffset });
+  const tz = data.user.timezone;
   const metrics = data.weeklyMetrics;
   const agentById = new Map(data.agents.map((agent) => [agent.id, agent]));
   const applied = data.insights.filter((i) => i.status === "applied");
@@ -135,19 +137,38 @@ export default async function ReviewPage({
             这一页回答三件事：发生了什么、学到了什么、下周改什么。
           </p>
         </div>
-        <Badge tone="teal">
-          <ShieldCheck className="size-2.5" /> 每条结论可点回证据
-        </Badge>
+        <div className="flex items-center gap-2">
+          {metrics.managementMinutes !== null &&
+          metrics.managementMinutesSource === "estimated" ? (
+            <Badge tone="neutral">管理时间估算</Badge>
+          ) : null}
+          <WeeklyReviewButton />
+          <Badge tone="teal">
+            <ShieldCheck className="size-2.5" /> 每条结论可点回证据
+          </Badge>
+        </div>
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
-          ["AAO / week", String(metrics.aao), "被接受的自主结果"],
-          ["Adherence", `${metrics.adherence.toFixed(0)}%`, "计划依从性"],
-          ["Management", `${metrics.managementMinutes.toFixed(1)}m`, "每日管理时间"],
-          ["Cost", `$${metrics.costUsd.toFixed(2)}`, "本周模型成本"],
+          ["Study", `${metrics.studyMinutes}m`, "本周学习时长"],
+          [
+            "Recall",
+            metrics.recallAvg === null
+              ? "—"
+              : `${Math.round(metrics.recallAvg * 100)}%`,
+            "回忆正确率",
+          ],
+          ["Learning", String(metrics.learningTasks), "已验收学习任务"],
           ["Goal", `${metrics.goalProgress.toFixed(0)}%`, "主目标进度"],
-          ["Audit reject", `${metrics.auditRejectRate.toFixed(0)}%`, "驳回率"],
+          ["AAO / week", String(metrics.aao), "被接受的自主结果"],
+          [
+            "Audit reject",
+            metrics.auditRejectRate === null
+              ? "—"
+              : `${metrics.auditRejectRate.toFixed(0)}%`,
+            metrics.auditRejectRate === null ? "暂无审计数据" : "驳回率",
+          ],
         ].map(([label, value, hint]) => (
           <Card key={label} className="px-4 py-3">
             <Stat label={label} value={value} hint={hint} />
@@ -161,7 +182,7 @@ export default async function ReviewPage({
             <CardHeader
               eyebrow="Narrative"
               title="本周叙事"
-              right={<span className="text-mini text-faint">{dateTime(data.weekly?.createdAt)}</span>}
+              right={<span className="text-mini text-faint">{dateTime(data.weekly?.createdAt, tz)}</span>}
             />
             <div className="px-5 py-4">
               <Markdown content={data.weekly?.narrative ?? "本周还没有复盘。"} />
@@ -253,9 +274,9 @@ export default async function ReviewPage({
                         {dissent.warning}
                       </p>
                       <div className="mt-1 text-nano text-faint">
-                        提出 {dateTime(dissent.createdAt)}
+                        提出 {dateTime(dissent.createdAt, tz)}
                         {dissent.evaluatedAt
-                          ? ` · 评估 ${dateTime(dissent.evaluatedAt)}`
+                          ? ` · 评估 ${dateTime(dissent.evaluatedAt, tz)}`
                           : ""}
                         {dissent.evidence.length > 0
                           ? ` · ${dissent.evidence.length} 条证据`
@@ -376,7 +397,7 @@ export default async function ReviewPage({
                 <div key={event.id} className="px-5 py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="mono text-mini text-muted">{event.action}</span>
-                    <span className="ml-auto text-nano text-faint">{dateTime(event.createdAt)}</span>
+                    <span className="ml-auto text-nano text-faint">{dateTime(event.createdAt, tz)}</span>
                   </div>
                   <div className="mt-0.5 truncate text-nano text-faint">
                     {event.actor} → {event.target}
@@ -400,7 +421,7 @@ export default async function ReviewPage({
                       {focus.title}
                     </Link>
                     {` · 优先级 ${focus.priority}`}
-                    {focus.dueAt ? ` · 截止 ${shortDate(focus.dueAt)}` : ""}
+                    {focus.dueAt ? ` · 截止 ${shortDate(focus.dueAt, tz)}` : ""}
                   </p>
                 ) : (
                   <p className="mt-1 text-micro leading-relaxed text-muted">

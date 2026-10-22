@@ -14,10 +14,15 @@ export const approvalDecisionSchema = z.object({
   reason: z.string().max(2000).optional(),
 });
 
-export const councilDecisionSchema = z.object({
-  decision: z.enum(["approve", "reject", "conditions"]),
-  note: z.string().max(2000).default(""),
-});
+export const councilDecisionSchema = z
+  .object({
+    decision: z.enum(["approve", "reject", "conditions"]),
+    note: z.string().max(2000).default(""),
+  })
+  .refine((value) => value.decision !== "reject" || value.note.trim().length > 0, {
+    message: "Rejecting a council decision requires a reason.",
+    path: ["note"],
+  });
 
 export const checkinSchema = z.object({
   energy: z.number().int().min(1).max(5).default(3),
@@ -31,6 +36,9 @@ export const checkinSchema = z.object({
     )
     .default([]),
   note: z.string().max(2000).default(""),
+  studyMinutes: z.number().int().min(0).max(1440).default(0),
+  recallScore: z.number().min(0).max(1).nullable().optional(),
+  errorTags: z.array(z.string().min(1).max(40)).max(10).default([]),
 });
 
 export const taskCreateSchema = z
@@ -60,7 +68,20 @@ export const taskCreateSchema = z
   })
   .refine((value) => value.assigneeId !== value.auditorId, {
     message: "Assignee and auditor must differ.",
-  });
+  })
+  .refine(
+    (value) =>
+      value.actionType !== "spend" || value.estimatedCostCents > 0,
+    {
+      message: "Spend tasks require a positive estimated cost.",
+      path: ["estimatedCostCents"],
+    },
+  );
+
+export const taskSubmitSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  content: z.string().min(1).max(20000),
+});
 
 export const goalCreateSchema = z.object({
   title: z.string().min(1).max(200),
@@ -88,13 +109,11 @@ export const agentUpdateSchema = z
 export const setupSchema = z.object({
   timezone: z.string().min(1).max(100).default("Asia/Shanghai"),
   name: z.string().min(1).max(100).optional(),
-  goal: z
-    .object({
-      title: z.string().min(1).max(200),
-      why: z.string().max(1000).default(""),
-      target: z.string().min(1).max(2000),
-      horizon: z.string().min(1).max(100).default("6 weeks"),
-      domain: z.string().min(1).max(50).default("learning"),
-    })
-    .optional(),
+  goal: z.object({
+    title: z.string().min(1).max(200),
+    why: z.string().max(1000).default(""),
+    target: z.string().min(1).max(2000),
+    horizon: z.string().min(1).max(100).default("6 weeks"),
+    domain: z.string().min(1).max(50).default("learning"),
+  }),
 });

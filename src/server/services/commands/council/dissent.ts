@@ -53,6 +53,8 @@ export async function measureDissent(
   }
 
   if (metric === "budget_spend_cents") {
+    // Weekly spend is a user-level quantity: a task-scoped dissent still
+    // measures every run the user paid for in the window, not just that task.
     const [row] = await db
       .select({ total: sql<number>`coalesce(sum(${runs.costCents}), 0)` })
       .from(runs)
@@ -60,7 +62,6 @@ export async function measureDissent(
       .where(
         and(
           eq(tasks.userId, userId),
-          dissent.taskId ? eq(runs.taskId, dissent.taskId) : undefined,
           gte(runs.createdAt, start),
           lte(runs.createdAt, end),
         ),

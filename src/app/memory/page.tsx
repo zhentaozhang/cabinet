@@ -49,10 +49,11 @@ export default async function MemoryPage({
   const view = params.view === "history" ? "history" : "current";
   const offset = Math.max(Number(params.offset ?? 0) || 0, 0);
   const data = await fetchMemoryPage(type, view, { offset });
+  const tz = data.timezone;
   const avgConfidence =
     data.memories.length > 0
       ? data.memories.reduce((sum, m) => sum + m.confidence, 0) / data.memories.length
-      : 0;
+      : null;
   const conflicts = data.memories.filter((m) => m.status === "conflicted").length;
   const stale = data.stale;
   const pageHref = (nextOffset: number) => {
@@ -103,7 +104,11 @@ export default async function MemoryPage({
           />
         </Card>
         <Card className="px-4 py-3">
-          <Stat label="Avg confidence" value={pct(avgConfidence * 100)} hint="平均置信度" />
+          <Stat
+            label="Avg confidence"
+            value={avgConfidence === null ? "—" : pct(avgConfidence * 100)}
+            hint={avgConfidence === null ? "暂无记忆" : "平均置信度"}
+          />
         </Card>
         <Card className="px-4 py-3">
           <Stat label="Conflicts" value={conflicts} hint="待解决矛盾" />
@@ -237,11 +242,11 @@ export default async function MemoryPage({
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-nano text-faint">
-                  <span>生效 {dateTime(memory.validFrom)}</span>
+                  <span>生效 {dateTime(memory.validFrom, tz)}</span>
                   {memory.validTo ? (
-                    <span>失效 {dateTime(memory.validTo)}</span>
+                    <span>失效 {dateTime(memory.validTo, tz)}</span>
                   ) : null}
-                  <span>最后确认 {dateTime(memory.lastConfirmedAt)}</span>
+                  <span>最后确认 {dateTime(memory.lastConfirmedAt, tz)}</span>
                   {memory.supersededBy ? (
                     <span className="mono">被 {memory.supersededBy} 取代</span>
                   ) : null}

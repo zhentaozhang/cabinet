@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { approvals, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
@@ -12,6 +12,9 @@ export async function requestApproval(
   input: {
     userId: string;
     taskId: string;
+    title: string;
+    resource: string;
+    dueAt: Date | null;
     action: string;
     reason: string;
     estimatedCostCents: number;
@@ -19,6 +22,9 @@ export async function requestApproval(
   tx?: Tx,
 ) {
   const client = tx ?? db;
+  await client.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${`approval:${input.taskId}:${input.action}`}))`,
+  );
   const existing = await loadLatestApproval(input.taskId, tx);
   if (existing?.status === "pending") return existing;
 
@@ -31,7 +37,10 @@ export async function requestApproval(
       action: input.action,
       payload: {
         taskId: input.taskId,
+        title: input.title,
         actionType: input.action,
+        resource: input.resource,
+        dueAt: input.dueAt ? input.dueAt.toISOString() : null,
         estimatedCostCents: input.estimatedCostCents,
         reason: input.reason,
       },
@@ -57,6 +66,57 @@ export async function decideApproval(
   }
   if (approval.status !== "pending") {
     throw new ConflictError(`Approval is already ${approval.status}.`);
+  }
+  if (approval.expiresAt && approval.expiresAt.getTime() <= Date.now()) {
+    await db.transaction(async (tx) => {
+      const [expired] = await tx
+        .update(approvals)
+        .set({ status: "expired", decidedAt: new Date() })
+        .where(
+          and(
+            eq(approvals.id, approvalId),
+            eq(approvals.userId, userId),
+            eq(approvals.status, "pending"),
+          ),
+        )
+        .returning();
+      if (!expired) return;
+      if (approval.taskId) {
+        const [task] = await tx
+          .select()
+          .from(tasks)
+          .where(
+            and(
+              eq(tasks.id, approval.taskId),
+              eq(tasks.userId, userId),
+            ),
+          );
+        if (task?.status === "awaiting_approval") {
+          assertTransition("task", task.status, "planned");
+          await tx
+            .update(tasks)
+            .set({ status: "planned", updatedAt: new Date() })
+            .where(
+              and(
+                eq(tasks.id, task.id),
+                eq(tasks.userId, userId),
+                eq(tasks.status, "awaiting_approval"),
+              ),
+            );
+        }
+      }
+      await logAuditTx(tx, {
+        userId,
+        actor: "system",
+        action: "approval.expire",
+        target: approvalId,
+        before: { status: "pending" },
+        after: { status: "expired", taskId: approval.taskId },
+      });
+    });
+    throw new ConflictError(
+      "Approval expired; the task was returned to planned.",
+    );
   }
 
   await db.transaction(async (tx) => {

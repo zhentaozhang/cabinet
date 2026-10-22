@@ -99,6 +99,7 @@ export async function updateAgent(
   }
 
   const nextStatus = input.status ?? agent.status;
+  const retiring = input.status === "retired" && agent.status !== "retired";
   if (input.status && input.status !== agent.status) {
     assertTransition("agent", agent.status, input.status);
     if (input.status === "retired") {
@@ -141,10 +142,14 @@ export async function updateAgent(
   }
 
   return db.transaction(async (tx) => {
+    const retiredAt = retiring ? new Date() : agent.retiredAt;
     const [updated] = await tx
       .update(agents)
       .set({
         ...(input.status ? { status: nextStatus } : {}),
+        ...(retiring
+          ? { lifecycleStage: "retired", retiredAt }
+          : {}),
         ...(input.charter !== undefined
           ? { charter: input.charter.trim() }
           : {}),
@@ -163,11 +168,15 @@ export async function updateAgent(
       target: agentId,
       before: {
         status: agent.status,
+        lifecycleStage: agent.lifecycleStage,
+        retiredAt: agent.retiredAt?.toISOString() ?? null,
         charter: agent.charter,
         budgetCents: agent.budgetCents,
       },
       after: {
         status: updated.status,
+        lifecycleStage: updated.lifecycleStage,
+        retiredAt: updated.retiredAt?.toISOString() ?? null,
         charter: updated.charter,
         budgetCents: updated.budgetCents,
       },

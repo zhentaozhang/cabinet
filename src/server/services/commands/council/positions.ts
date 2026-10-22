@@ -9,10 +9,12 @@ export function buildCouncilPosition(input: {
   role: "chief" | "researcher" | "coach" | "treasurer" | "critic";
   context: CouncilContext;
   config: Awaited<ReturnType<typeof getPolicyConfig>>;
+  topic: string;
 }): CouncilPositionDraft | null {
-  const { role, context, config } = input;
+  const { role, context, config, topic } = input;
   const agent = context.agents.find((candidate) => candidate.role === role);
   if (!agent) return null;
+  const topicLabel = short(topic.trim(), 60);
 
   const goal =
     context.goals.find((candidate) => candidate.status === "active") ??
@@ -39,20 +41,20 @@ export function buildCouncilPosition(input: {
   if (role === "chief") {
     stance = goal ? "support" : "neutral";
     claim = goal
-      ? `目标「${goal.title}」当前进度 ${Math.round(goalProgress)}%；近 7 天有 ${context.tasks.length} 个任务，${acceptedCount} 个已验收。`
-      : "当前没有进行中的目标；如果推进，需要先明确成功标准。";
-    risk = `执行资源会被新议题占用；当前有 ${pausedCount} 个 Agent 暂停。`;
-    recommendation = "批准，但限定本周预算和验收标准。";
+      ? `议题「${topicLabel}」可以挂到目标「${goal.title}」上：当前进度 ${Math.round(goalProgress)}%；近 7 天有 ${context.tasks.length} 个任务，${acceptedCount} 个已验收。`
+      : `议题「${topicLabel}」没有可挂靠的进行中目标；推进前需要先定义成功标准。`;
+    risk = `批准「${topicLabel}」会占用本周执行资源；当前有 ${pausedCount} 个 Agent 暂停。`;
+    recommendation = `批准「${topicLabel}」，但限定本周预算和验收标准。`;
     evidence = goal
       ? [{ label: "目标进度", ref: `goal:${goal.id}`, quote: `${Math.round(goalProgress)}%` }]
       : [{ label: "Chief 状态", ref: `agent:${agent.id}`, quote: agent.title }];
   } else if (role === "researcher") {
     stance = "neutral";
     claim = latestMemory
-      ? `找到 ${context.memories.length} 条相关记忆，最高显著性来自「${short(latestMemory.content)}」。`
-      : "没有可引用的历史记忆；当前只能基于议题本身判断。";
-    risk = "证据不足时，结论可能只是叙事。";
-    recommendation = "先补 1 条可核验来源，再进入执行。";
+      ? `围绕「${topicLabel}」找到 ${context.memories.length} 条相关记忆，最高显著性来自「${short(latestMemory.content)}」。`
+      : `围绕「${topicLabel}」没有可引用的历史记忆；当前只能基于议题本身判断。`;
+    risk = `「${topicLabel}」的证据不足时，结论可能只是叙事。`;
+    recommendation = `先为「${topicLabel}」补 1 条可核验来源，再进入执行。`;
     evidence = latestMemory
       ? [{ label: "记忆", ref: `memory:${latestMemory.id}`, quote: short(latestMemory.content) }]
       : latestTask
@@ -67,10 +69,10 @@ export function buildCouncilPosition(input: {
         ? "support"
         : "neutral";
     claim = latestCheckin
-      ? `最近一次 Check-in 精力 ${energy}/5；能量高峰 ${peak}。`
-      : `还没有 Check-in 数据；当前精力阈值设为 ${config.council.minEnergy}/5。`;
-    risk = "低精力时段执行会拉长周期。";
-    recommendation = "把执行放到高能量时段，单次不超过 25 分钟。";
+      ? `围绕「${topicLabel}」，最近一次 Check-in 精力 ${energy}/5；能量高峰 ${peak}。`
+      : `围绕「${topicLabel}」还没有 Check-in 数据；当前精力阈值设为 ${config.council.minEnergy}/5。`;
+    risk = `在低精力时段推进「${topicLabel}」会拉长周期。`;
+    recommendation = `把「${topicLabel}」的执行放到高能量时段，单次不超过 25 分钟。`;
     evidence = latestCheckin
       ? [{ label: "Check-in", ref: `checkin:${latestCheckin.id}`, quote: `energy ${energy}/5` }]
       : goal
@@ -87,9 +89,9 @@ export function buildCouncilPosition(input: {
       ),
     );
     stance = costEfficiency < config.council.score.base ? "oppose" : "support";
-    claim = `本周预算已用 ${percent}%（${context.budget.spentCents}/${context.budget.limitCents} 分），剩余 ${remaining} 分。`;
-    risk = "超支会挤压后续实验和资料预算。";
-    recommendation = "设硬上限；超过上限需二次审批。";
+    claim = `议题「${topicLabel}」相关支出：本周预算已用 ${percent}%（${context.budget.spentCents}/${context.budget.limitCents} 分），剩余 ${remaining} 分。`;
+    risk = `「${topicLabel}」若超支会挤压后续实验和资料预算。`;
+    recommendation = `为「${topicLabel}」设硬上限；超过上限需二次审批。`;
     evidence = [
       {
         label: "预算执行",
@@ -98,13 +100,17 @@ export function buildCouncilPosition(input: {
       },
     ];
   } else {
-    stance = "neutral";
+    // The Critic's job is to argue the opposite; a supportive Critic would
+    // make the session theatrics rather than a real challenge.
+    stance = "oppose";
     const rejectReason = latestReject?.after
       ? String(latestReject.after.reason ?? "未记录")
       : "无记录";
-    claim = `过去 7 天有 ${context.rejects.length} 次审计驳回，${pausedCount} 个 Agent 处于暂停。`;
-    risk = `最近一次驳回原因：${short(rejectReason)}。`;
-    recommendation = "先验证证伪条件，再批准。";
+    claim = `我反对推进「${topicLabel}」：过去 7 天有 ${context.rejects.length} 次审计驳回，${pausedCount} 个 Agent 处于暂停。`;
+    risk = latestReject
+      ? `「${topicLabel}」最近一次驳回原因：${short(rejectReason)}。`
+      : `「${topicLabel}」缺少可证伪的失败路径记录，风险还没有被验证。`;
+    recommendation = `先为「${topicLabel}」写出证伪条件和止损线，再批准。`;
     evidence = latestReject
       ? [{ label: "审计驳回", ref: `audit:${latestReject.id}`, quote: short(rejectReason) }]
       : latestTask
@@ -123,14 +129,6 @@ export function buildCouncilPosition(input: {
     },
     config.council,
   );
-
-  if (role === "critic") {
-    stance =
-      scores.robustness < config.council.score.base ||
-      scores.evidenceQuality < config.council.score.base
-        ? "oppose"
-        : "neutral";
-  }
 
   return {
     agentId: agent.id,

@@ -1,11 +1,85 @@
 import { clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
 
 /**
- * Class combiner. `twMerge` resolves *conflicting* utilities by call order, so
- * a component's `className` can actually override its variant instead of
- * depending on where Tailwind happened to emit each rule.
+ * Projects tokens (`text-micro`, `text-muted`, …) are not Tailwind defaults, so
+ * `tailwind-merge` cannot tell a font size from a text colour and would drop one
+ * of `"text-micro text-muted"`. Teaching it the two groups keeps arbitrary
+ * token strings mergeable while still resolving real conflicts.
  */
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      "font-size": [
+        { text: ["nano", "mini", "micro", "caption", "subhead"] },
+      ],
+      "text-color": [
+        {
+          text: [
+            "ink",
+            "muted",
+            "faint",
+            "accent",
+            "teal",
+            "danger",
+            "blue",
+            "violet",
+            "bg",
+            "panel",
+            "panel-base",
+            "panel2",
+            "panel-raised",
+            "line",
+            "line2",
+            "hairline",
+          ],
+        },
+      ],
+      "bg-color": [
+        {
+          bg: [
+            "bg",
+            "bg-void",
+            "panel",
+            "panel-base",
+            "panel2",
+            "panel-raised",
+            "line",
+            "line2",
+            "hairline",
+            "ink",
+            "muted",
+            "faint",
+            "accent",
+            "teal",
+            "danger",
+            "blue",
+            "violet",
+          ],
+        },
+      ],
+      "border-color": [
+        {
+          border: [
+            "line",
+            "line2",
+            "hairline",
+            "ink",
+            "muted",
+            "faint",
+            "accent",
+            "teal",
+            "danger",
+            "blue",
+            "violet",
+          ],
+        },
+      ],
+    },
+  },
+});
+
+/** Combine class names, resolving conflicting project utilities by call order. */
 export function cn(...parts: Array<string | false | null | undefined>) {
   return twMerge(clsx(parts));
 }

@@ -21,14 +21,24 @@ export async function regenerateBrief(userId: string) {
     ...data.tasks.slice(0, 3).map((t, i) => `${i + 1}. ${t.title}（${t.estimateMin} 分钟）`),
   ];
   const content = lines.join("\n");
-  await db.insert(reviews).values({
-    id: newId("rev"),
-    userId: userId,
-    period: localDateKey(new Date(), data.user.timezone),
-    type: "daily",
-    narrative: content,
-    metrics: { tasks: data.tasks.length, decisions: data.approvals.length },
-    decisions: [],
-  });
+  const metrics = {
+    tasks: data.tasks.length,
+    decisions: data.approvals.length,
+  };
+  await db
+    .insert(reviews)
+    .values({
+      id: newId("rev"),
+      userId,
+      period: localDateKey(new Date(), data.user.timezone),
+      type: "daily",
+      narrative: content,
+      metrics,
+      decisions: [],
+    })
+    .onConflictDoUpdate({
+      target: [reviews.userId, reviews.type, reviews.period],
+      set: { narrative: content, metrics, decisions: [], createdAt: new Date() },
+    });
   return content;
 }

@@ -40,6 +40,7 @@ const eslintConfig = defineConfig([
     ".research/**",
     ".tmp-types/**",
     ".pnpm-home/**",
+    ".worktrees/**",
   ]),
 ]);
 

@@ -22,6 +22,7 @@ export async function loadTask(
   return asDto(
     taskPageSchema,
     {
+      timezone: data.timezone,
       task: toTaskDto(data.task),
       goal: data.goal ? toGoalDto(data.goal) : null,
       assignee: data.assignee ? toAgentDto(data.assignee) : null,

@@ -4,7 +4,6 @@ import type { AcceptanceResult } from "@/lib/db/schema";
 import {
   agents,
   artifacts,
-  goals,
   runs,
   steps,
   tasks,
@@ -21,6 +20,7 @@ import {
 } from "@/lib/domain/errors";
 import { checklistPassed, evaluateAcceptance } from "@/lib/domain/acceptance";
 import { clamp } from "../../shared/numbers";
+import { recalculateGoalProgress } from "../progress";
 
 export async function auditTask(taskId: string, userId: string) {
   try {
@@ -87,6 +87,8 @@ async function auditTaskInner(taskId: string, userId: string) {
     .orderBy(desc(artifacts.createdAt))
     .limit(1);
 
+  const userSubmitted = artifact?.submittedBy === "user";
+
   const result = await db.transaction(async (tx) => {
     const [locked] = await tx
       .update(tasks)
@@ -108,6 +110,7 @@ async function auditTaskInner(taskId: string, userId: string) {
       agentId: auditor.id,
       status: "running",
       mode: "demo",
+      sourceType: "system_event",
       startedAt: new Date(),
       replayKey: `audit_${taskId}_${taskRuns.length + 1}`,
     });
@@ -216,7 +219,9 @@ async function auditTaskInner(taskId: string, userId: string) {
         ...(pass
           ? {
               acceptedAt: new Date(),
-              acceptedAutonomyLevel: executor?.autonomyLevel ?? null,
+              acceptedAutonomyLevel: userSubmitted
+                ? null
+                : (executor?.autonomyLevel ?? null),
             }
           : {}),
       })
@@ -238,7 +243,7 @@ async function auditTaskInner(taskId: string, userId: string) {
         }
       | null = null;
 
-    if (executor) {
+    if (executor && !userSubmitted) {
       const nextRejectStreak = pass ? 0 : executor.rejectStreak + 1;
       const shouldPause =
         !pass &&
@@ -278,19 +283,12 @@ async function auditTaskInner(taskId: string, userId: string) {
     }
 
     if (pass && task.goalId) {
-      const [goal] = await tx
-        .select()
-        .from(goals)
-        .where(
-          and(eq(goals.id, task.goalId), eq(goals.userId, userId)),
-        )
-        .limit(1);
-      if (goal) {
-        await tx
-          .update(goals)
-          .set({ progress: clamp(goal.progress + 2, 0, 100) })
-          .where(eq(goals.id, goal.id));
-      }
+      await recalculateGoalProgress(
+        tx,
+        userId,
+        task.goalId,
+        config.learning,
+      );
     }
 
     if (pausedInfo) {

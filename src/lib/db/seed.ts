@@ -28,23 +28,38 @@ import {
 import { canonicalJson, sha256 } from "../ids";
 import { weekLabel } from "../format";
 import { SEED_POLICY_CONFIG } from "../domain/policy";
-import { startOfLocalWeek } from "../domain/time";
+import {
+  localDateKey,
+  localDateTimeParts,
+  startOfLocalWeek,
+  zonedTimeToUtc,
+} from "../domain/time";
 import { AGENT_TEMPLATES } from "@/contracts/templates";
 import { hashPassword } from "better-auth/crypto";
 
 const USER_ID = "usr_zhen";
+const DEMO_TIMEZONE = "Asia/Shanghai";
 
 function at(dayOffset: number, hour: number, minute = 0): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + dayOffset);
-  d.setHours(hour, minute, 0, 0);
-  return d;
+  // Demo data must mean the same wall-clock time on every machine, including
+  // CI (UTC), so resolve the demo timezone explicitly instead of using
+  // process-local setHours().
+  const now = localDateTimeParts(new Date(), DEMO_TIMEZONE);
+  const shifted = new Date(
+    Date.UTC(now.year, now.month - 1, now.day + dayOffset),
+  );
+  return zonedTimeToUtc(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth() + 1,
+    shifted.getUTCDate(),
+    hour,
+    minute,
+    DEMO_TIMEZONE,
+  );
 }
 
 function day(offset: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return d.toISOString().slice(0, 10);
+  return localDateKey(at(offset, 12), DEMO_TIMEZONE);
 }
 
 export async function seedDemo(): Promise<void> {
@@ -59,7 +74,7 @@ export async function seedDemo(): Promise<void> {
   `);
 
   const now = new Date();
-  const weekStart = startOfLocalWeek(now, "Asia/Shanghai");
+  const weekStart = startOfLocalWeek(now, DEMO_TIMEZONE);
 
   const demoPasswordHash = await hashPassword("cabinet-demo");
 
@@ -104,13 +119,23 @@ export async function seedDemo(): Promise<void> {
   });
 
   await db.insert(policyConfig).values(
-    (["autonomy", "audit", "budget", "management", "cost", "council", "reflection", "dissent"] as const).map(
-      (key) => ({
-        key,
-        valueJson: SEED_POLICY_CONFIG[key],
-        description: `Cabinet policy: ${key}`,
-      }),
-    ),
+    (
+      [
+        "autonomy",
+        "audit",
+        "budget",
+        "management",
+        "cost",
+        "council",
+        "reflection",
+        "dissent",
+        "learning",
+      ] as const
+    ).map((key) => ({
+      key,
+      valueJson: SEED_POLICY_CONFIG[key],
+      description: `Cabinet policy: ${key}`,
+    })),
   );
 
   await db.insert(agentTemplates).values(AGENT_TEMPLATES);
@@ -176,7 +201,7 @@ export async function seedDemo(): Promise<void> {
       trustScore: 66,
       lifecycleStage: "active",
       tools: ["read_notes", "write_task", "calendar_read", "quiz"],
-      memoryScope: ["learning", "health", "checkins"],
+      memoryScope: ["learning", "health", "checkins", "checkin"],
       budgetCents: 1200,
       spentCents: 340,
       successCount: 12,
@@ -441,6 +466,7 @@ export async function seedDemo(): Promise<void> {
         { type: "min_words", value: 50, required: true },
       ],
       estimateMin: 30,
+      template: "learning",
       createdBy: "agent",
     },
     {
@@ -1576,7 +1602,24 @@ Critic 认为免费资料已足够，建议先完成现有材料。
         { taskId: "tsk_exercise", done: false },
       ],
       note: "晚上太累，运动没做。",
+      studyMinutes: 40,
+      recallScore: 0.4,
+      errorTags: ["rerank"],
       createdAt: at(-1, 22, 0),
     },
   ]);
+
+  // Demo rows are explicit fixtures, never real user history.
+  await db.execute(sql`
+    UPDATE runs SET source_type = 'demo_fixture'
+    WHERE task_id IN (SELECT id FROM tasks WHERE user_id = ${USER_ID})
+  `);
+  await db.execute(sql`
+    UPDATE artifacts SET source_type = 'demo_fixture'
+    WHERE task_id IN (SELECT id FROM tasks WHERE user_id = ${USER_ID})
+  `);
+  await db.execute(sql`
+    UPDATE memories SET source_type = 'demo_fixture'
+    WHERE user_id = ${USER_ID}
+  `);
 }

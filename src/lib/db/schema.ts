@@ -320,6 +320,7 @@ export const runs = pgTable(
     agentId: text("agent_id").notNull().references(() => agents.id),
     status: text("status").notNull().default("queued"),
     mode: text("mode").notNull().default("demo"),
+    sourceType: text("source_type").notNull().default("legacy_unknown"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     costCents: real("cost_cents").notNull().default(0),
@@ -361,11 +362,13 @@ export const artifacts = pgTable(
   "artifacts",
   {
     id: text("id").primaryKey(),
-    runId: text("run_id").notNull().references(() => runs.id),
+    runId: text("run_id").references(() => runs.id),
     taskId: text("task_id").notNull().references(() => tasks.id),
     type: text("type").notNull(),
     title: text("title").notNull(),
     content: text("content").notNull(),
+    submittedBy: text("submitted_by").notNull().default("agent"),
+    sourceType: text("source_type").notNull().default("legacy_unknown"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -373,6 +376,15 @@ export const artifacts = pgTable(
   (t) => [
     index("artifacts_task_idx").on(t.taskId, t.createdAt),
     index("artifacts_run_idx").on(t.runId),
+    index("artifacts_task_source_idx").on(
+      t.taskId,
+      t.submittedBy,
+      t.createdAt,
+    ),
+    check(
+      "artifacts_submitted_by_check",
+      sql`${t.submittedBy} IN ('agent', 'user')`,
+    ),
   ],
 );
 
@@ -401,6 +413,7 @@ export const memories = pgTable(
     lastConfirmedAt: timestamp("last_confirmed_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     status: text("status").notNull().default("active"),
+    sourceType: text("source_type").notNull().default("legacy_unknown"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -458,6 +471,11 @@ export const reviews = pgTable(
 },
   (t) => [
     index("reviews_user_type_idx").on(t.userId, t.type, t.createdAt),
+    uniqueIndex("reviews_user_type_period_unique").on(
+      t.userId,
+      t.type,
+      t.period,
+    ),
   ],
 );
 
@@ -610,11 +628,25 @@ export const checkins = pgTable(
     .$type<Array<{ taskId: string; done: boolean }>>()
     .notNull(),
   note: text("note").notNull().default(""),
+  studyMinutes: integer("study_minutes").notNull().default(0),
+  recallScore: real("recall_score"),
+  errorTags: jsonb("error_tags").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 },
-  (t) => [uniqueIndex("checkins_user_date_idx").on(t.userId, t.date)],
+  (t) => [
+    uniqueIndex("checkins_user_date_idx").on(t.userId, t.date),
+    check("checkins_study_minutes_non_negative", sql`${t.studyMinutes} >= 0`),
+    check(
+      "checkins_recall_score_range",
+      sql`${t.recallScore} IS NULL OR (${t.recallScore} >= 0 AND ${t.recallScore} <= 1)`,
+    ),
+    check(
+      "checkins_error_tags_array",
+      sql`jsonb_typeof(${t.errorTags}) = 'array'`,
+    ),
+  ],
 );
 
 export const policyConfig = pgTable("policy_config", {

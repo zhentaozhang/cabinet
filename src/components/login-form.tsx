@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { Button, Card } from "@/components/ui";
+import { safeInternalPath } from "@/lib/safe-redirect";
 type Mode = "signin" | "signup";
 
 export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
@@ -33,7 +34,11 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
       typeof window !== "undefined"
         ? new URLSearchParams(window.location.search).get("next")
         : null;
-    router.push(next && next.startsWith("/") ? next : "/");
+    router.push(
+      typeof window !== "undefined"
+        ? safeInternalPath(next, window.location.origin)
+        : "/",
+    );
     router.refresh();
   }
 

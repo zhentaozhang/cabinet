@@ -1,4 +1,4 @@
-import { createApiClient, idempotencyKey } from "./client";
+import { createApiClient } from "./client";
 
 /**
  * Browser client. Same-origin by default; after the physical split point
@@ -9,5 +9,3 @@ export const browserApi = createApiClient({
   baseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? "",
   credentials: "same-origin",
 });
-
-export { idempotencyKey };

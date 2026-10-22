@@ -9,6 +9,7 @@ import {
   Play,
   RotateCcw,
   Sparkles,
+  Upload,
   X,
 } from "lucide-react";
 import { Button, Progress } from "@/components/ui";
@@ -60,10 +61,15 @@ export function TaskActions({
     router.refresh();
   }
 
-  const finished = ["accepted", "done"].includes(status);
-  const runnable = ["planned", "assigned", "approved", "rejected"].includes(
-    status,
-  );
+  const finished = status === "done";
+  const canMarkDone = status === "accepted";
+  const runnable = [
+    "planned",
+    "assigned",
+    "approved",
+    "rejected",
+    "failed",
+  ].includes(status);
   const runLabel = finished
     ? "已完成"
     : status === "submitted" || status === "auditing"
@@ -75,6 +81,21 @@ export function TaskActions({
           : status === "rejected"
             ? "重新执行"
             : "执行";
+
+  async function markDone() {
+    setBusy("done");
+    setMsg(null);
+    const data = await call(`/api/tasks/${taskId}/done`, "POST");
+    setBusy(null);
+    if (!data.ok) {
+      setMsg(data.error ?? "操作失败");
+      toast.error(data.error ?? "操作失败");
+      return;
+    }
+    setMsg("任务已完成");
+    toast.success("任务已完成");
+    router.refresh();
+  }
 
   async function promote() {
     setBusy("promote");
@@ -122,6 +143,21 @@ export function TaskActions({
         {runLabel}
       </Button>
       )}
+      {canMarkDone ? (
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={markDone}
+          disabled={busy !== null}
+        >
+          {busy === "done" ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <Check className="size-3" />
+          )}
+          标记完成
+        </Button>
+      ) : null}
       <Button
         size="sm"
         variant="primary"
@@ -280,6 +316,86 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
   );
 }
 
+export function ArtifactSubmitForm({
+  taskId,
+  status,
+  actionType,
+}: {
+  taskId: string;
+  status: string;
+  actionType: string;
+}) {
+  const router = useRouter();
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  if (
+    actionType !== "internal" ||
+    !["planned", "assigned", "submitted", "rejected"].includes(status)
+  ) {
+    return null;
+  }
+
+  async function submit() {
+    setBusy(true);
+    setMsg(null);
+    const data = await call(`/api/tasks/${taskId}/submit`, "POST", {
+      title: title.trim() || undefined,
+      content,
+    });
+    setBusy(false);
+    if (!data.ok) {
+      setMsg(data.error ?? "提交失败");
+      toast.error(data.error ?? "提交失败");
+      return;
+    }
+    setContent("");
+    setMsg("已提交，等待 Auditor 验收");
+    toast.success("已提交，等待 Auditor 验收");
+    router.refresh();
+  }
+
+  return (
+    <div className="rounded-lg border border-line bg-panel px-4 py-4">
+      <div className="mb-1 text-mini font-medium text-ink">提交我的答案</div>
+      <div className="mb-3 text-nano text-faint">
+        用自己的话写答案或产物；Auditor 会按验收标准逐条检查。
+      </div>
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="标题（可选）"
+        className="mb-2 w-full rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+      />
+      <textarea
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        rows={5}
+        placeholder="写下你的答案、代码、笔记或复盘…"
+        className="w-full resize-y rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+      />
+      <div className="mt-2 flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={submit}
+          disabled={busy || !content.trim()}
+        >
+          {busy ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <Upload className="size-3" />
+          )}
+          提交产物
+        </Button>
+        {msg ? <span className="text-mini text-muted">{msg}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 export function CheckinForm({
   tasks,
 }: {
@@ -290,6 +406,9 @@ export function CheckinForm({
   const [mood, setMood] = useState(3);
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [note, setNote] = useState("");
+  const [studyMinutes, setStudyMinutes] = useState(0);
+  const [recall, setRecall] = useState<number | null>(null);
+  const [errorTags, setErrorTags] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -299,6 +418,12 @@ export function CheckinForm({
       energy,
       mood,
       note,
+      studyMinutes,
+      recallScore: recall === null ? null : recall / 100,
+      errorTags: errorTags
+        .split(/[，,]/)
+        .map((tag) => tag.trim())
+        .filter(Boolean),
       completed: tasks.map((t) => ({ taskId: t.id, done: Boolean(done[t.id]) })),
     });
     setBusy(false);
@@ -315,11 +440,23 @@ export function CheckinForm({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <div className="mb-2 text-mini uppercase tracking-[0.16em] text-faint">energy</div>
-          <div className="flex gap-1">
+          <div
+            id="checkin-energy-label"
+            className="mb-2 text-mini uppercase tracking-[0.16em] text-faint"
+          >
+            energy
+          </div>
+          <div
+            role="group"
+            aria-labelledby="checkin-energy-label"
+            className="flex gap-1"
+          >
             {[1, 2, 3, 4, 5].map((n) => (
               <button
                 key={n}
+                type="button"
+                aria-pressed={energy === n}
+                aria-label={`Energy ${n}`}
                 onClick={() => setEnergy(n)}
                 className={cn(
                   "h-7 flex-1 rounded border text-micro transition-colors",
@@ -334,11 +471,23 @@ export function CheckinForm({
           </div>
         </div>
         <div>
-          <div className="mb-2 text-mini uppercase tracking-[0.16em] text-faint">mood</div>
-          <div className="flex gap-1">
+          <div
+            id="checkin-mood-label"
+            className="mb-2 text-mini uppercase tracking-[0.16em] text-faint"
+          >
+            mood
+          </div>
+          <div
+            role="group"
+            aria-labelledby="checkin-mood-label"
+            className="flex gap-1"
+          >
             {[1, 2, 3, 4, 5].map((n) => (
               <button
                 key={n}
+                type="button"
+                aria-pressed={mood === n}
+                aria-label={`Mood ${n}`}
                 onClick={() => setMood(n)}
                 className={cn(
                   "h-7 flex-1 rounded border text-micro transition-colors",
@@ -371,6 +520,45 @@ export function CheckinForm({
         ))}
       </div>
 
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="mb-2 block text-mini uppercase tracking-[0.16em] text-faint">
+            学习分钟
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={1440}
+            value={studyMinutes}
+            onChange={(e) => setStudyMinutes(Number(e.target.value) || 0)}
+            className="w-full rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-2 block text-mini uppercase tracking-[0.16em] text-faint">
+            回忆正确率 %
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={recall ?? ""}
+            onChange={(e) =>
+              setRecall(e.target.value === "" ? null : Number(e.target.value))
+            }
+            placeholder="可留空"
+            className="w-full rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+          />
+        </label>
+      </div>
+
+      <input
+        value={errorTags}
+        onChange={(e) => setErrorTags(e.target.value)}
+        placeholder="薄弱点标签，用逗号分隔，例如：rerank, precision"
+        className="w-full rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+      />
+
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
@@ -384,7 +572,9 @@ export function CheckinForm({
           {busy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
           {saved ? "已保存" : "完成 check-in"}
         </Button>
-        <span className="text-mini text-faint">会写入记忆，供明天使用</span>
+        <span className="text-mini text-faint" aria-live="polite">
+          会写入记忆，供明天使用
+        </span>
       </div>
     </div>
   );

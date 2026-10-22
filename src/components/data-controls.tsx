@@ -13,43 +13,64 @@ export function DataControls() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  async function readJson(response: Response): Promise<Record<string, unknown>> {
+    try {
+      const value = await response.json();
+      return value && typeof value === "object"
+        ? (value as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
   async function exportData() {
     setBusy("export");
-    const response = await fetch("/api/export");
-    const data = await response.json();
-    setBusy(null);
-    if (!response.ok || !data.ok) {
-      toast.error(data.error ?? "导出失败");
-      return;
+    try {
+      const response = await fetch("/api/export");
+      const data = await readJson(response);
+      if (!response.ok || data.ok !== true) {
+        toast.error(String(data.error ?? "导出失败"));
+        return;
+      }
+      const blob = new Blob([JSON.stringify(data.data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "cabinet-export.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success("数据导出成功");
+    } catch {
+      toast.error("网络异常，导出失败，请重试。");
+    } finally {
+      setBusy(null);
     }
-    const blob = new Blob([JSON.stringify(data.data, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "cabinet-export.json";
-    anchor.click();
-    URL.revokeObjectURL(url);
-    toast.success("数据导出成功");
   }
 
   async function deleteData() {
     setBusy("delete");
-    const response = await fetch("/api/account", {
-      method: "DELETE",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
-    });
-    const data = await response.json();
-    setBusy(null);
-    if (!response.ok || !data.ok) {
-      toast.error(data.error ?? "删除失败");
-      return;
+    try {
+      const response = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      });
+      const data = await readJson(response);
+      if (!response.ok || data.ok !== true) {
+        toast.error(String(data.error ?? "删除失败"));
+        return;
+      }
+      toast.success("账号已注销");
+      await authClient.signOut();
+      router.push("/login");
+      router.refresh();
+    } catch {
+      toast.error("网络异常，删除失败，请重试。");
+    } finally {
+      setBusy(null);
     }
-    toast.success("账号已注销");
-    await authClient.signOut();
-    router.push("/login");
-    router.refresh();
   }
 
   return (

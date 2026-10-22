@@ -38,6 +38,7 @@ export default async function AgentPage({
   const { id } = await params;
   const data = await fetchAgentPage(id);
   if (!data) notFound();
+  const tz = data.timezone;
   const { agent, runs, memories, skills, tasks } = data;
   const meta = roleMeta(agent.role);
   const rate = passRate(agent.successCount, agent.failCount);
@@ -159,7 +160,7 @@ export default async function AgentPage({
                   </div>
                   <div className="text-right">
                     <div className="mono text-mini text-muted">{money(run.costCents)}</div>
-                    <div className="text-nano text-faint">{timeOnly(run.createdAt)}</div>
+                    <div className="text-nano text-faint">{timeOnly(run.createdAt, tz)}</div>
                   </div>
                 </Link>
               ))}

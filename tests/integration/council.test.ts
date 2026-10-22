@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { ConflictError } from "@/lib/domain/errors";
+import { councilDecisionSchema } from "@/lib/validation/schemas";
 import { createCouncil, decideCouncil } from "@/server/services/engine";
 import { resetDb } from "../helpers/db";
 
@@ -19,9 +20,10 @@ beforeEach(async () => {
 
 describe("council closed loop", () => {
   it("generates five evidence-backed positions and a matrix", async () => {
+    const topic = "要不要报名 8 周系统设计训练营？";
     const council = await createCouncil(
       {
-        topic: "要不要报名 8 周系统设计训练营？",
+        topic,
         trigger: "单笔支出 > ¥200",
       },
       DEMO_USER_ID,
@@ -57,9 +59,55 @@ describe("council closed loop", () => {
       expect(position.evidence.every((item) => Boolean(item.ref))).toBe(true);
       expect(position.scores).not.toBeNull();
       expect(position.claim.length).toBeGreaterThan(0);
+      expect(position.claim).toContain(topic);
       expect(position.risk.length).toBeGreaterThan(0);
       expect(position.recommendation.length).toBeGreaterThan(0);
     }
+  });
+
+  it("always lets the Critic oppose and name the topic", async () => {
+    const topic = "要不要买 ¥899 年包会员？";
+    const council = await createCouncil(
+      {
+        topic,
+        trigger: "单笔支出 > ¥500",
+      },
+      DEMO_USER_ID,
+    );
+
+    const positions = await db
+      .select()
+      .from(councilPositions)
+      .where(eq(councilPositions.councilId, council.id));
+    const agentRows = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.userId, DEMO_USER_ID));
+    const criticId = agentRows.find((agent) => agent.role === "critic")?.id;
+    const critic = positions.find((position) => position.agentId === criticId);
+
+    expect(critic).toBeDefined();
+    expect(critic?.stance).toBe("oppose");
+    expect(critic?.isDissent).toBe(true);
+    expect(critic?.claim).toContain(topic);
+    expect(critic?.risk.length).toBeGreaterThan(0);
+    expect(critic?.recommendation.length).toBeGreaterThan(0);
+    expect(critic?.falsificationCondition).not.toBeNull();
+    expect((council.matrix?.oppose ?? 0)).toBeGreaterThanOrEqual(1);
+  });
+
+  it("requires a reason before rejecting a council decision", () => {
+    expect(
+      councilDecisionSchema.safeParse({ decision: "reject", note: "   " })
+        .success,
+    ).toBe(false);
+    expect(
+      councilDecisionSchema.safeParse({ decision: "reject", note: "预算不足" })
+        .success,
+    ).toBe(true);
+    expect(
+      councilDecisionSchema.safeParse({ decision: "approve", note: "" }).success,
+    ).toBe(true);
   });
 
   it("applies an approval to a task, memory and audit chain once", async () => {

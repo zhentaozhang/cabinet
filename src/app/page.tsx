@@ -19,6 +19,7 @@ import {
   ApprovalActions,
   BriefButton,
   CheckinForm,
+  NextLearningTaskButton,
   QuickCreate,
 } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
@@ -31,13 +32,21 @@ export const dynamic = "force-dynamic";
 
 export default async function TodayPage() {
   const data = await fetchTodayPage();
+  const tz = data.user.timezone;
   const primaryGoal = data.goals[0];
   const agentById = new Map(data.agents.map((a) => [a.id, a]));
   const today = new Intl.DateTimeFormat("zh-CN", {
     weekday: "long",
     month: "long",
     day: "numeric",
+    timeZone: tz,
   }).format(new Date());
+
+  const learningTask = data.tasks.find(
+    (task) =>
+      ["learning", "learning_retest"].includes(task.template ?? "") &&
+      ["planned", "assigned", "submitted", "rejected"].includes(task.status),
+  );
 
   const brief =
     data.brief?.narrative ??
@@ -61,20 +70,99 @@ export default async function TodayPage() {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <div className="text-mini uppercase tracking-[0.16em] text-faint">management</div>
+            <div className="text-mini uppercase tracking-[0.16em] text-faint">study / week</div>
             <div className="mono text-sm text-teal">
-              {data.weeklyMetrics.managementMinutes.toFixed(1)} min/day
+              {data.weeklyMetrics.studyMinutes} min
             </div>
           </div>
           <div className="h-8 w-px bg-line" />
           <div className="text-right">
-            <div className="text-mini uppercase tracking-[0.16em] text-faint">AAO / week</div>
+            <div className="text-mini uppercase tracking-[0.16em] text-faint">recall</div>
             <div className="mono text-sm text-accent">
-              {data.weeklyMetrics.aao}
+              {data.weeklyMetrics.recallAvg === null
+                ? "—"
+                : `${Math.round(data.weeklyMetrics.recallAvg * 100)}%`}
             </div>
           </div>
         </div>
       </div>
+
+      <Card className="mb-5">
+        <CardHeader
+          eyebrow="Coach · next step"
+          title={primaryGoal ? `围绕「${primaryGoal.title}」的下一步` : "先设定一个学习目标"}
+          right={<NextLearningTaskButton />}
+        />
+        <div className="px-5 py-4">
+          {learningTask ? (
+            <Link
+              href={`/tasks/${learningTask.id}`}
+              className="flex items-center gap-3 rounded-lg border border-line bg-panel2/40 px-4 py-3 transition-colors hover:border-line2"
+            >
+              <Brain className="size-4 text-accent" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-medium text-ink">
+                  {learningTask.title}
+                </div>
+                <div className="mt-1 text-mini text-faint">
+                  {learningTask.estimateMin} 分钟 · {statusLabel(learningTask.status)}
+                </div>
+              </div>
+              <ArrowRight className="size-3.5 text-faint" />
+            </Link>
+          ) : (
+            <div className="text-xs text-muted">
+              还没有进行中的学习任务。先完成今天的 Check-in，再让 Coach 根据 recall 和薄弱点安排下一步。
+            </div>
+          )}
+        </div>
+      </Card>
+
+          <Card className="mb-5">
+            <CardHeader eyebrow="Check-in" title="今天感觉如何？" />
+            <div className="px-5 py-4">
+              {data.checkin ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs text-teal">
+                    <CheckCircle2 className="size-3.5" /> 今天已 check-in
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Stat label="Energy" value={`${data.checkin.energy}/5`} />
+                    <Stat label="Mood" value={`${data.checkin.mood}/5`} />
+                    <Stat
+                      label="学习"
+                      value={`${data.checkin.studyMinutes} min`}
+                    />
+                    <Stat
+                      label="回忆"
+                      value={
+                        data.checkin.recallScore === null
+                          ? "—"
+                          : `${Math.round(data.checkin.recallScore * 100)}%`
+                      }
+                    />
+                  </div>
+                  {data.checkin.errorTags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {data.checkin.errorTags.map((tag) => (
+                        <Badge key={tag} tone="danger">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="rounded-md border border-line bg-panel2/50 px-3 py-2 text-micro text-muted">
+                    {data.checkin.note || "无备注"}
+                  </div>
+                </div>
+              ) : (
+                <CheckinForm
+                  tasks={data.tasks.map((t) => ({ id: t.id, title: t.title }))}
+                />
+              )}
+            </div>
+          </Card>
+
 
       <div className="grid gap-5 lg:grid-cols-[1.65fr_1fr]">
         <div className="space-y-5">
@@ -95,7 +183,7 @@ export default async function TodayPage() {
                 <Sparkles className="size-2.5" /> {data.counts.proposedInsights} 条洞察待采纳
               </Badge>
               <span className="ml-auto text-mini text-faint">
-                生成于 {dateTime(data.brief?.createdAt)}
+                生成于 {dateTime(data.brief?.createdAt, tz)}
               </span>
             </div>
           </Card>
@@ -142,7 +230,7 @@ export default async function TodayPage() {
                           <Clock3 className="size-2.5" /> {task.estimateMin} min
                         </span>
                         <span>·</span>
-                        <span>{timeOnly(task.dueAt)}</span>
+                        <span>{timeOnly(task.dueAt, tz)}</span>
                       </div>
                     </div>
                     <Badge tone={statusTone(task.status)}>{statusLabel(task.status)}</Badge>
@@ -177,24 +265,36 @@ export default async function TodayPage() {
               }
             />
             <div className="divide-y divide-line">
-              {data.approvals.map((approval) => (
-                <div key={approval.id} className="px-5 py-4">
-                  <div className="flex items-start gap-2">
-                    <CircleAlert className="mt-0.5 size-3.5 text-accent" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-medium text-ink">
-                        外部动作：{String(approval.payload.provider ?? "")}{" "}
-                        {String(approval.payload.time ?? "")}
+              {data.approvals.map((approval) => {
+                const payload = approval.payload;
+                const title = String(
+                  payload.title ?? payload.provider ?? "待批准动作",
+                );
+                const at =
+                  typeof payload.dueAt === "string"
+                    ? dateTime(payload.dueAt, tz)
+                    : String(payload.time ?? "");
+                const reason = String(payload.reason ?? payload.note ?? "");
+                const costCents = Number(
+                  payload.estimatedCostCents ?? payload.costCents ?? 0,
+                );
+                return (
+                  <div key={approval.id} className="px-5 py-4">
+                    <div className="flex items-start gap-2">
+                      <CircleAlert className="mt-0.5 size-3.5 text-accent" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium text-ink">
+                          {title} {at ? `· ${at}` : ""}
+                        </div>
+                        <div className="mt-1 text-micro text-muted">
+                          {reason} · 预计 ¥{(costCents / 100).toFixed(2)}
+                        </div>
                       </div>
-                      <div className="mt-1 text-micro text-muted">
-                        {String(approval.payload.note ?? "")} · 预计 ¥
-                        {Number(approval.payload.costCents ?? 0) / 100}
-                      </div>
+                      <ApprovalActions approvalId={approval.id} />
                     </div>
-                    <ApprovalActions approvalId={approval.id} />
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {data.council ? (
                 <Link
@@ -250,30 +350,6 @@ export default async function TodayPage() {
         </div>
 
         <div className="space-y-5">
-          <Card>
-            <CardHeader eyebrow="Check-in" title="今天感觉如何？" />
-            <div className="px-5 py-4">
-              {data.checkin ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-xs text-teal">
-                    <CheckCircle2 className="size-3.5" /> 今天已 check-in
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Stat label="Energy" value={`${data.checkin.energy}/5`} />
-                    <Stat label="Mood" value={`${data.checkin.mood}/5`} />
-                  </div>
-                  <div className="rounded-md border border-line bg-panel2/50 px-3 py-2 text-micro text-muted">
-                    {data.checkin.note || "无备注"}
-                  </div>
-                </div>
-              ) : (
-                <CheckinForm
-                  tasks={data.tasks.map((t) => ({ id: t.id, title: t.title }))}
-                />
-              )}
-            </div>
-          </Card>
-
           <Card>
             <CardHeader eyebrow="Cabinet pulse" title="Agent 动态" />
             <div className="divide-y divide-line">

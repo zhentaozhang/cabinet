@@ -70,6 +70,28 @@ describe("workspace setup", () => {
       setupWorkspace({ userId: NEW_USER, timezone: "Asia/Shanghai" }),
     ).rejects.toBeInstanceOf(ConflictError);
   });
+
+  it("serialises two concurrent setup calls into one workspace", async () => {
+    const results = await Promise.allSettled([
+      setupWorkspace({ userId: NEW_USER, timezone: "Asia/Shanghai" }),
+      setupWorkspace({ userId: NEW_USER, timezone: "Asia/Shanghai" }),
+    ]);
+
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(
+      ConflictError,
+    );
+
+    const createdAgents = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.userId, NEW_USER));
+    expect(createdAgents).toHaveLength(7);
+  });
 });
 
 describe("account export and deletion", () => {

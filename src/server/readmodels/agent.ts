@@ -19,6 +19,7 @@ export async function loadAgent(
   return asDto(
     agentPageSchema,
     {
+      timezone: data.timezone,
       agent: toAgentDto(data.agent),
       runs: data.runs.map(toRunDto),
       memories: data.memories.map(toMemoryDto),

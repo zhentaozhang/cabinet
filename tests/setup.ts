@@ -35,3 +35,4 @@ process.env.DATABASE_URL = resolveTestDatabaseUrl();
 process.env.BETTER_AUTH_SECRET = "test-only-secret";
 process.env.BETTER_AUTH_URL = "http://localhost:3000";
 process.env.AUTH_REQUIRED = "false";
+process.env.DEMO_MODE = "true";

@@ -28,6 +28,7 @@ jobs:
       BETTER_AUTH_SECRET: ci-only-secret-not-for-production
       BETTER_AUTH_URL: http://localhost:3000
       AUTH_REQUIRED: "false"
+      TZ: UTC
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

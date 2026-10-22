@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { Badge, Button, Card, CardHeader } from "@/components/ui";
 import { API_ROUTES } from "@/contracts";
-import { browserApi, idempotencyKey } from "@/lib/api/browser";
+import { browserApi } from "@/lib/api/browser";
 
 type AgentPreview = {
   role: string;
@@ -28,22 +28,17 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
     setError(null);
     const body = {
       timezone,
-      ...(title.trim() && target.trim()
-        ? {
-            goal: {
-              title,
-              why,
-              target,
-              horizon: "6 weeks",
-              domain: "learning",
-            },
-          }
-        : {}),
+      goal: {
+        title,
+        why,
+        target,
+        horizon: "6 weeks",
+        domain: "learning",
+      },
     };
     const result = await browserApi.mutate(API_ROUTES.setup, {
       method: "POST",
       body,
-      idempotencyKey: idempotencyKey(API_ROUTES.setup, body),
     });
     setBusy(false);
     if (!result.ok) {
@@ -89,7 +84,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
 
           <div className="border-t border-line pt-3">
             <div className="mb-2 text-mini uppercase tracking-[0.16em] text-faint">
-              Optional first goal
+              First goal · required
             </div>
             <label htmlFor="setup-goal-title" className="sr-only">
               目标标题
@@ -99,7 +94,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
               name="goalTitle"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="目标标题（可跳过）"
+              placeholder="你想改善什么？例如：六周完成 RAG 基础"
               className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <label htmlFor="setup-goal-why" className="sr-only">
@@ -136,7 +131,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
             type="submit"
             variant="primary"
             className="w-full"
-            disabled={busy}
+            disabled={busy || !title.trim() || !target.trim()}
           >
             {busy ? (
               <Loader2 className="size-3 animate-spin" />

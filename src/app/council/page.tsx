@@ -34,7 +34,7 @@ export default async function CouncilPage() {
       <div className="mx-auto max-w-xl py-12">
         <EmptyState
           title="没有进行中的内阁会议"
-          hint="当支出、时间冲突或目标变更触发时，会自动召开；也可以手动发起。"
+          hint="自动触发（支出、时间冲突、目标变更）尚未接入。你可以在下方手动发起一场会议。"
         />
         <Card className="mt-4">
           <CardHeader eyebrow="Manual" title="发起一场会议" />
@@ -46,6 +46,7 @@ export default async function CouncilPage() {
     );
   }
   const { council, positions, agents } = data;
+  const tz = data.timezone;
   const agentById = new Map(agents.map((a) => [a.id, a]));
   const support = positions.filter((p) => p.stance === "support").length;
   const oppose = positions.filter((p) => p.stance === "oppose").length;
@@ -90,11 +91,14 @@ export default async function CouncilPage() {
               <Users className="size-3" /> {positions.length} 位 Agent 提交立场
             </span>
             <span className="inline-flex items-center gap-1">
-              <Clock3 className="size-3" /> {dateTime(council.createdAt)}
+              <Clock3 className="size-3" /> {dateTime(council.createdAt, tz)}
             </span>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Badge tone="neutral" title="当前立场由确定性规则生成，不是独立模型研究">
+            规则生成
+          </Badge>
           <Badge tone="teal">{support} 支持</Badge>
           <Badge tone="danger">{oppose} 反对</Badge>
           <Badge tone="neutral">{positions.length - support - oppose} 中立</Badge>

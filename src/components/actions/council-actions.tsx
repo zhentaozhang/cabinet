@@ -14,6 +14,11 @@ export function CouncilActions({ councilId }: { councilId: string }) {
   const [msg, setMsg] = useState<string | null>(null);
 
   async function decide(decision: "approve" | "reject" | "conditions") {
+    if (decision === "reject" && !note.trim()) {
+      setMsg("否决必须填写理由（会写入审计）。");
+      toast.error("否决必须填写理由");
+      return;
+    }
     setBusy(decision);
     setMsg(null);
     const data = await call(`/api/council/${councilId}`, "PATCH", {
@@ -48,10 +53,11 @@ export function CouncilActions({ councilId }: { councilId: string }) {
         <Button size="sm" onClick={() => decide("conditions")} disabled={busy !== null}>
           有条件批准
         </Button>
-        <Button size="sm" variant="danger" onClick={() => decide("reject")} disabled={busy !== null}>
+        <Button size="sm" variant="danger" onClick={() => decide("reject")} disabled={busy !== null || !note.trim()}>
           否决
         </Button>
       </div>
+      <div className="text-mini text-faint">否决必须填写理由，理由会写入审计链。</div>
       {msg ? <div className="text-mini text-muted">{msg}</div> : null}
     </div>
   );
@@ -76,8 +82,8 @@ export function NewCouncilForm() {
     }
     setTopic("");
     setTrigger("");
-    setMsg("已发起，各方正在独立提交立场");
-    toast.success("会议已发起，各方正在提交立场");
+    setMsg("已发起，正在按规则生成立场");
+    toast.success("会议已发起，正在按规则生成立场");
     router.refresh();
   }
 

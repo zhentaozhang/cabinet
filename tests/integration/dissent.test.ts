@@ -6,6 +6,7 @@ import {
   auditEvents,
   dissents,
   memories,
+  runs,
   tasks,
 } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
@@ -362,5 +363,63 @@ describe("formal dissent ledger", () => {
 
     const result = await evaluateDissents(DEMO_USER_ID);
     expect(result).toEqual({ vindicated: 0, invalidated: 1 });
+  });
+
+  it("measures a task-scoped budget dissent against the user's whole week", async () => {
+    await db.insert(runs).values([
+      {
+        id: "run_budget_scope_1",
+        taskId: "tsk_read",
+        agentId: "ag_coach",
+        status: "succeeded",
+        costCents: 200,
+        createdAt: daysAgo(3),
+      },
+      {
+        id: "run_budget_scope_2",
+        taskId: "tsk_exercise",
+        agentId: "ag_coach",
+        status: "succeeded",
+        costCents: 150,
+        createdAt: daysAgo(2),
+      },
+      {
+        id: "run_budget_scope_old",
+        taskId: "tsk_read",
+        agentId: "ag_coach",
+        status: "succeeded",
+        costCents: 900,
+        createdAt: daysAgo(30),
+      },
+    ]);
+    await db.insert(dissents).values({
+      id: "dis_budget_scope",
+      userId: DEMO_USER_ID,
+      councilId: "ccl_course",
+      taskId: "tsk_read",
+      agentId: "ag_treasurer",
+      warning: "本周预算会超过 300 分。",
+      condition: {
+        metric: "budget_spend_cents",
+        operator: ">=",
+        threshold: 300,
+        windowDays: 7,
+      },
+      status: "pending",
+      evidence: [],
+      createdAt: daysAgo(8),
+    });
+
+    const result = await evaluateDissents(DEMO_USER_ID);
+    expect(result).toEqual({ vindicated: 1, invalidated: 0 });
+
+    const [row] = await db
+      .select()
+      .from(dissents)
+      .where(eq(dissents.id, "dis_budget_scope"));
+    expect(row.status).toBe("vindicated");
+    expect(
+      row.evidence.some((item) => item.quote === "budget_spend_cents = 350"),
+    ).toBe(true);
   });
 });

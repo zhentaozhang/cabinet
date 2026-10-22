@@ -1,6 +1,6 @@
 import { asc, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { agents, councilPositions, councils } from "@/lib/db/schema";
+import { agents, councilPositions, councils, users } from "@/lib/db/schema";
 export async function getCouncilData(userId: string) {
   const [council] = await db
     .select()
@@ -14,9 +14,17 @@ export async function getCouncilData(userId: string) {
     .from(councilPositions)
     .where(eq(councilPositions.councilId, council.id))
     .orderBy(asc(councilPositions.createdAt));
-  const allAgents = await db
-    .select()
-    .from(agents)
-    .where(eq(agents.userId, userId));
-  return { council, positions, agents: allAgents };
+  const [allAgents, userRows] = await Promise.all([
+    db.select().from(agents).where(eq(agents.userId, userId)),
+    db
+      .select({ timezone: users.timezone })
+      .from(users)
+      .where(eq(users.id, userId)),
+  ]);
+  return {
+    timezone: userRows[0]?.timezone ?? "UTC",
+    council,
+    positions,
+    agents: allAgents,
+  };
 }

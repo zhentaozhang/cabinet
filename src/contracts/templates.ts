@@ -47,7 +47,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     charter:
       "我负责让你真的学会，而不是让任务显示完成。我根据你的错误模式调整难度，必要时把任务拆小。",
     tools: ["read_notes", "write_task", "calendar_read", "quiz"],
-    memoryScope: ["learning", "health", "checkins"],
+    memoryScope: ["learning", "health", "checkins", "checkin"],
     defaultAutonomy: 2,
     budgetCents: 1200,
   },
@@ -138,6 +138,8 @@ export const ROLE_GRANTS: Record<
 /** Default skill created with a new apprentice. */
 export const APPRENTICE_SKILL = {
   name: "检索评估练习设计",
+  /** Successful mentor/apprentice runs the apprentice must observe first. */
+  minShadowRuns: 5,
   steps: [
     "读取 mentor 的 5 次成功运行",
     "提取题目结构：定义题 / 对比题 / 场景题",

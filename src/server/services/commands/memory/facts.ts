@@ -1,8 +1,27 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import type { Evidence, ProposedChange } from "@/lib/db/schema";
 import { memories } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
 import type { Tx } from "../../shared/tx";
+
+/**
+ * Conflict rule for an active `factKey` (no schema change required):
+ *
+ * - A conflicting write may supersede the active fact only when it carries
+ *   explicit user authority (an insight the user accepted) or when it is an
+ *   auto-generated write that is at least as confident as the incumbent and
+ *   clears `AUTO_SUPERSEDE_MIN_CONFIDENCE`.
+ * - Otherwise the active fact keeps its place and the conflicting claim is
+ *   stored as history (`validTo = now`, `status = "conflicted"`): it is never
+ *   retrieved, but the disagreement is still recorded instead of being
+ *   silently overwritten.
+ *
+ * `expiresAt` is intentionally not set here: policy_config has no episodic
+ * retention value, so choosing a TTL in code would hide policy in a constant.
+ */
+const AUTO_SUPERSEDE_MIN_CONFIDENCE = 0.8;
+
+export type MemoryWriteAuthority = "user" | "auto";
 
 export function factSlug(value: string): string {
   return (
@@ -47,6 +66,8 @@ export async function writeMemoryFact(
     sourceEventId: string;
     factKey: string | null;
     value: string | null;
+    /** `"user"` only when the user explicitly accepted the claim. */
+    authority?: MemoryWriteAuthority;
   },
 ): Promise<string> {
   const now = new Date();
@@ -79,6 +100,35 @@ export async function writeMemoryFact(
       }
 
       const nextId = newId("mem");
+      const canSupersede =
+        input.authority === "user" ||
+        (input.confidence >= AUTO_SUPERSEDE_MIN_CONFIDENCE &&
+          input.confidence >= existing.confidence);
+
+      if (!canSupersede) {
+        await tx.insert(memories).values({
+          id: nextId,
+          userId: input.userId,
+          agentId: input.agentId,
+          type: input.type,
+          domain: input.domain,
+          content: input.content,
+          factKey: input.factKey,
+          value: input.value,
+          validFrom: now,
+          // Closed immediately so the partial unique index stays one-active-per-
+          // fact and retrieval never surfaces the rejected claim.
+          validTo: now,
+          confidence: input.confidence,
+          salience: input.salience,
+          evidence: input.evidence,
+          sourceEventId: input.sourceEventId,
+          lastConfirmedAt: now,
+          status: "conflicted",
+        });
+        return nextId;
+      }
+
       await tx
         .update(memories)
         .set({
@@ -87,6 +137,7 @@ export async function writeMemoryFact(
           status: "superseded",
         })
         .where(eq(memories.id, existing.id));
+
       await tx.insert(memories).values({
         id: nextId,
         userId: input.userId,
@@ -127,4 +178,75 @@ export async function writeMemoryFact(
     status: "active",
   });
   return id;
+}
+
+/**
+ * Invalidate the memories an applied insight wrote, inside the rollback
+ * transaction. This is a soft invalidation: the row stays for history, but it
+ * stops being current so retrieval skips it.
+ *
+ * When the invalidated memory is still the current version of a `factKey` and
+ * it had superseded a previous version, that previous version becomes current
+ * again. It is only restored when it is still a plain `superseded` row and no
+ * newer version has taken over in the meantime.
+ */
+export async function rollbackMemoryForSource(
+  tx: Tx,
+  input: { userId: string; sourceEventId: string },
+): Promise<void> {
+  const now = new Date();
+  const rows = await tx
+    .select()
+    .from(memories)
+    .where(
+      and(
+        eq(memories.userId, input.userId),
+        eq(memories.sourceEventId, input.sourceEventId),
+      ),
+    );
+
+  for (const memory of rows) {
+    if (memory.status === "rolled_back") continue;
+    const wasCurrent = memory.validTo === null;
+
+    await tx
+      .update(memories)
+      .set({ validTo: memory.validTo ?? now, status: "rolled_back" })
+      .where(eq(memories.id, memory.id));
+
+    if (!wasCurrent || !memory.factKey) continue;
+
+    const [newer] = await tx
+      .select({ id: memories.id })
+      .from(memories)
+      .where(
+        and(
+          eq(memories.userId, input.userId),
+          eq(memories.factKey, memory.factKey),
+          isNull(memories.validTo),
+          ne(memories.id, memory.id),
+        ),
+      )
+      .limit(1);
+    if (newer) continue;
+
+    const [previous] = await tx
+      .select()
+      .from(memories)
+      .where(
+        and(
+          eq(memories.userId, input.userId),
+          eq(memories.factKey, memory.factKey),
+          eq(memories.supersededBy, memory.id),
+        ),
+      )
+      .orderBy(desc(memories.validFrom))
+      .limit(1);
+    if (!previous || previous.status !== "superseded") continue;
+
+    await tx
+      .update(memories)
+      .set({ validTo: null, supersededBy: null, status: "active" })
+      .where(eq(memories.id, previous.id));
+  }
 }

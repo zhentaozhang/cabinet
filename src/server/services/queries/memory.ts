@@ -1,6 +1,6 @@
 import { and, desc, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { memories } from "@/lib/db/schema";
+import { memories, users } from "@/lib/db/schema";
 
 export type MemoryView = "current" | "history";
 
@@ -22,7 +22,8 @@ export async function getMemoryData(
       ? isNotNull(memories.validTo)
       : isNull(memories.validTo);
 
-  const [countsRow] = await db
+  const [countsRows, userRows] = await Promise.all([
+    db
     .select({
       all: sql<number>`count(*)`,
       episodic: sql<number>`count(*) filter (where ${memories.type} = 'episodic')`,
@@ -33,7 +34,13 @@ export async function getMemoryData(
         : sql<number>`count(*)`,
     })
     .from(memories)
-    .where(and(eq(memories.userId, userId), viewFilter));
+    .where(and(eq(memories.userId, userId), viewFilter)),
+    db
+      .select({ timezone: users.timezone })
+      .from(users)
+      .where(eq(users.id, userId)),
+  ]);
+  const [countsRow] = countsRows;
 
   const [staleRow] = await db
     .select({ count: sql<number>`count(*)` })
@@ -69,6 +76,7 @@ export async function getMemoryData(
   const total = Number(countsRow?.selected ?? 0);
 
   return {
+    timezone: userRows[0]?.timezone ?? "UTC",
     memories: rows,
     counts,
     stale: Number(staleRow?.count ?? 0),

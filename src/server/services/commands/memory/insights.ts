@@ -5,7 +5,7 @@ import { logAuditTx } from "@/lib/audit";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
 import { localDateTimeParts, zonedTimeToUtc } from "@/lib/domain/time";
 import type { Tx } from "../../shared/tx";
-import { factForChange, writeMemoryFact } from "./facts";
+import { factForChange, rollbackMemoryForSource, writeMemoryFact } from "./facts";
 
 async function applyChange(
   tx: Tx,
@@ -251,6 +251,11 @@ export async function applyInsight(
         insight.beforeState,
       );
 
+      await rollbackMemoryForSource(tx, {
+        userId: insight.userId,
+        sourceEventId: insight.id,
+      });
+
       await logAuditTx(tx, {
         userId: insight.userId,
         actor: "user",
@@ -316,6 +321,9 @@ export async function applyInsight(
       sourceEventId: insight.id,
       factKey: fact?.factKey ?? null,
       value: fact?.value ?? null,
+      // The user explicitly accepted this insight, so it may replace an
+      // existing active fact (the old version stays as history).
+      authority: "user",
     });
 
     await logAuditTx(tx, {

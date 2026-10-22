@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { approvals, runs } from "@/lib/db/schema";
 import type { Tx } from "../../shared/tx";
@@ -11,7 +11,10 @@ export async function loadSpentCents(agentId: string, periodStart: Date): Promis
   return Number(row?.total ?? 0);
 }
 
-export async function loadLatestApproval(taskId: string, tx?: Tx) {
+export async function loadLatestApproval(
+  taskId: string,
+  tx?: Tx,
+): Promise<typeof approvals.$inferSelect | null> {
   const client = tx ?? db;
   const [row] = await client
     .select()
@@ -19,7 +22,11 @@ export async function loadLatestApproval(taskId: string, tx?: Tx) {
     .where(
       and(
         eq(approvals.taskId, taskId),
-        inArray(approvals.status, ["pending", "approved"]),
+        or(
+          eq(approvals.status, "pending"),
+          eq(approvals.status, "approved"),
+        ),
+        or(isNull(approvals.expiresAt), gt(approvals.expiresAt, new Date())),
       ),
     )
     .orderBy(desc(approvals.createdAt))

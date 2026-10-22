@@ -65,6 +65,22 @@ export type DissentConfig = {
   precedentSalience: number;
 };
 
+export type LearningConfig = {
+  progressWeights: {
+    acceptedTasks: number;
+    recall: number;
+    checkins: number;
+  };
+  targetCheckinsPerWeek: number;
+  nextTask: {
+    estimateMin: number;
+    minRecallScore: number;
+    minWords: number;
+    maxErrorTags: number;
+    retestAfterDays: number;
+  };
+};
+
 export type ReflectionConfig = {
   windowDays: number;
   minRejectEvents: number;
@@ -102,6 +118,7 @@ export type PolicyConfig = {
   council: CouncilConfig;
   reflection: ReflectionConfig;
   dissent: DissentConfig;
+  learning: LearningConfig;
 };
 
 /**
@@ -174,6 +191,21 @@ export const SEED_POLICY_CONFIG: PolicyConfig = {
     trustBonus: 15,
     chiefPenalty: 5,
     precedentSalience: 0.9,
+  },
+  learning: {
+    progressWeights: {
+      acceptedTasks: 0.5,
+      recall: 0.3,
+      checkins: 0.2,
+    },
+    targetCheckinsPerWeek: 5,
+    nextTask: {
+      estimateMin: 25,
+      minRecallScore: 0.6,
+      minWords: 60,
+      maxErrorTags: 3,
+      retestAfterDays: 3,
+    },
   },
 };
 

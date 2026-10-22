@@ -12,6 +12,7 @@ export async function loadCouncil(
   return asDto(
     councilPageSchema,
     {
+      timezone: data.timezone,
       council: toCouncilDto(data.council),
       positions: data.positions.map(toCouncilPositionDto),
       agents: data.agents.map(toAgentDto),

@@ -17,6 +17,7 @@ export async function loadMemory(
   return asDto(
     memoryPageSchema,
     {
+      timezone: data.timezone,
       memories: data.memories.map(toMemoryDto),
       counts: data.counts,
       stale: data.stale,

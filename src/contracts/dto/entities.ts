@@ -174,6 +174,7 @@ export const runDtoSchema = z.object({
   agentId: z.string(),
   status: z.string(),
   mode: z.string(),
+  sourceType: z.string(),
   startedAt: isoDateTime.nullable(),
   endedAt: isoDateTime.nullable(),
   costCents: z.number(),
@@ -202,11 +203,13 @@ export type StepDto = z.infer<typeof stepDtoSchema>;
 
 export const artifactDtoSchema = z.object({
   id: z.string(),
-  runId: z.string(),
+  runId: z.string().nullable(),
   taskId: z.string(),
   type: z.string(),
   title: z.string(),
   content: z.string(),
+  submittedBy: z.string(),
+  sourceType: z.string(),
   createdAt: isoDateTime,
 });
 export type ArtifactDto = z.infer<typeof artifactDtoSchema>;
@@ -230,6 +233,7 @@ export const memoryDtoSchema = z.object({
   lastConfirmedAt: isoDateTime.nullable(),
   expiresAt: isoDateTime.nullable(),
   status: z.string(),
+  sourceType: z.string(),
   createdAt: isoDateTime,
 });
 export type MemoryDto = z.infer<typeof memoryDtoSchema>;
@@ -453,6 +457,9 @@ export const checkinDtoSchema = z.object({
   mood: z.number(),
   completed: z.array(z.object({ taskId: z.string(), done: z.boolean() })),
   note: z.string(),
+  studyMinutes: z.number(),
+  recallScore: z.number().nullable(),
+  errorTags: z.array(z.string()),
   createdAt: isoDateTime,
 });
 export type CheckinDto = z.infer<typeof checkinDtoSchema>;

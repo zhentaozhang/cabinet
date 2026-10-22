@@ -43,7 +43,7 @@ describe("task state machine", () => {
 
   it("detects terminal states", () => {
     expect(isTerminal("task", "done")).toBe(true);
-    expect(isTerminal("task", "failed")).toBe(true);
+    expect(isTerminal("task", "failed")).toBe(false);
     expect(isTerminal("task", "running")).toBe(false);
   });
 });
