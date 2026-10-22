@@ -6,6 +6,7 @@ import {
   auditEvents,
   dissents,
   memories,
+  tasks,
 } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import {
@@ -297,6 +298,44 @@ describe("formal dissent ledger", () => {
       .from(dissents)
       .where(eq(dissents.id, "dis_scoped_hit"));
     expect(row.status).toBe("vindicated");
+  });
+
+  it("counts a failure by when it happened, not when the task was created", async () => {
+    await db.insert(tasks).values({
+      id: "tsk_failed_in_window",
+      userId: DEMO_USER_ID,
+      title: "失败发生在本周的任务",
+      description: "创建于窗口之前，失败在窗口之内。",
+      status: "failed",
+      acceptanceCriteria: "有产物",
+      estimateMin: 25,
+      actionType: "internal",
+      resource: "task",
+      estimatedCostCents: 0,
+      createdBy: "agent",
+      createdAt: daysAgo(20),
+      updatedAt: daysAgo(3),
+    });
+    await db.insert(dissents).values({
+      id: "dis_failure_window",
+      userId: DEMO_USER_ID,
+      councilId: "ccl_course",
+      taskId: "tsk_failed_in_window",
+      agentId: "ag_critic",
+      warning: "这个任务会失败。",
+      condition: {
+        metric: "task_failure_count",
+        operator: ">=",
+        threshold: 1,
+        windowDays: 7,
+      },
+      status: "pending",
+      evidence: [],
+      createdAt: daysAgo(8),
+    });
+
+    const result = await evaluateDissents(DEMO_USER_ID);
+    expect(result).toEqual({ vindicated: 1, invalidated: 0 });
   });
 
   it("does not treat a historical pause as a new vindication", async () => {

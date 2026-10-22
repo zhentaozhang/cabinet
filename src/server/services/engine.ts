@@ -3199,8 +3199,8 @@ async function measureDissent(
           eq(tasks.userId, userId),
           eq(tasks.status, "failed"),
           dissent.taskId ? eq(tasks.id, dissent.taskId) : undefined,
-          gte(tasks.createdAt, start),
-          lte(tasks.createdAt, end),
+          gte(tasks.updatedAt, start),
+          lte(tasks.updatedAt, end),
         ),
       );
     return Number(row?.count ?? 0);
