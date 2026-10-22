@@ -190,9 +190,11 @@ async function auditTaskInner(taskId: string, userId: string) {
       .set({
         status: "succeeded",
         endedAt: new Date(),
-        costCents: 0.4,
-        tokensIn: 160,
-        tokensOut: 80,
+        // The auditor is deterministic: no provider was involved, so this run
+        // carries no measured usage and no model cost.
+        costCents: 0,
+        tokensIn: null,
+        tokensOut: null,
       })
       .where(eq(runs.id, runId));
 

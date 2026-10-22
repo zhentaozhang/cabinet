@@ -1,5 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
+import { newId } from "@/lib/ids";
 
 export type ArtifactDraft = {
   title: string;
@@ -9,16 +10,35 @@ export type ArtifactDraft = {
 };
 
 export type ModelExecutionResult =
-  | { status: "success"; draft: ArtifactDraft }
-  | { status: "not_configured" }
-  | { status: "timeout" }
-  | { status: "provider_error"; error: string }
-  | { status: "empty_response" };
+  | {
+      status: "success";
+      /** One id per real provider call; unique across retries. */
+      attemptId: string;
+      provider: string;
+      model: string;
+      /** `actual` only when the provider reported usage for this attempt. */
+      costSource: "actual" | "unknown";
+      draft: ArtifactDraft;
+    }
+  | {
+      status: "not_configured";
+      attemptId: null;
+    }
+  | {
+      status: "timeout" | "provider_error" | "empty_response";
+      /** The call may have reached the provider, so usage is unknown. */
+      attemptId: string;
+      provider: string;
+      model: string;
+      costSource: "unknown";
+      error?: string;
+    };
 
 /**
  * Server-side model call. A missing key or provider failure is returned as a
  * typed non-success result; callers must not replace it with a template
- * artifact in a real workspace.
+ * artifact in a real workspace. Every attempt carries an id so failures stay
+ * attributable and are never recorded as measured zero usage.
  */
 export async function generateArtifact(input: {
   agentName: string;
@@ -31,7 +51,12 @@ export async function generateArtifact(input: {
   maxOutputTokens: number;
 }): Promise<ModelExecutionResult> {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return { status: "not_configured" };
+  if (!apiKey) return { status: "not_configured", attemptId: null };
+
+  // Created before the request so a failure still keeps its attempt identity.
+  const attemptId = newId("att");
+  const model = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+  const providerName = "openai";
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
@@ -44,7 +69,7 @@ export async function generateArtifact(input: {
     });
 
     const { text, usage } = await generateText({
-      model: provider(process.env.OPENAI_MODEL ?? "gpt-4.1-mini"),
+      model: provider(model),
       abortSignal: controller.signal,
       maxOutputTokens: input.maxOutputTokens,
       temperature: 0.2,
@@ -63,10 +88,23 @@ export async function generateArtifact(input: {
       ].join("\n"),
     });
 
-    if (!text.trim()) return { status: "empty_response" };
+    if (!text.trim()) {
+      return {
+        status: "empty_response",
+        attemptId,
+        provider: providerName,
+        model,
+        costSource: "unknown",
+      };
+    }
 
     return {
       status: "success",
+      attemptId,
+      provider: providerName,
+      model,
+      // Without a reported usage the attempt happened but its cost is unknown.
+      costSource: usage ? "actual" : "unknown",
       draft: {
         title: `${input.taskTitle} · ${input.agentName}`,
         content: text,
@@ -75,9 +113,21 @@ export async function generateArtifact(input: {
       },
     };
   } catch (error) {
-    if (controller.signal.aborted) return { status: "timeout" };
+    if (controller.signal.aborted) {
+      return {
+        status: "timeout",
+        attemptId,
+        provider: providerName,
+        model,
+        costSource: "unknown",
+      };
+    }
     return {
       status: "provider_error",
+      attemptId,
+      provider: providerName,
+      model,
+      costSource: "unknown",
       // Keep the category safe; provider payloads can contain request details.
       error: error instanceof Error ? error.name : "provider_error",
     };

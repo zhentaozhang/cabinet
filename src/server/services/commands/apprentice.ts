@@ -171,9 +171,10 @@ export async function runApprenticeExam(userId: string) {
       sourceType: "demo_fixture",
       startedAt: new Date(),
       endedAt: new Date(),
-      costCents: 0.6,
-      tokensIn: 400,
-      tokensOut: 220,
+      // The deterministic exam template never touches a provider.
+      costCents: 0,
+      tokensIn: null,
+      tokensOut: null,
       replayKey: `apprentice_exam_v1#${attempt}`,
     });
     await tx.insert(artifacts).values({

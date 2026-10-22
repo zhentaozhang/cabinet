@@ -155,7 +155,10 @@ export default async function AgentPage({
                   <div className="min-w-0 flex-1">
                     <div className="mono truncate text-label text-ink">{run.id}</div>
                     <div className="mt-0.5 text-label text-faint">
-                      {run.taskId} · {run.mode} · {run.tokensIn + run.tokensOut} tokens
+                      {run.taskId} · {run.mode} ·{" "}
+                      {run.tokensIn === null || run.tokensOut === null
+                        ? "用量未知"
+                        : `${run.tokensIn + run.tokensOut} tokens`}
                     </div>
                   </div>
                   <div className="text-right">

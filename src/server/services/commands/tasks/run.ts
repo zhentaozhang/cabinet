@@ -304,8 +304,13 @@ export async function runTask(taskId: string, userId: string) {
   });
 
   let idx = 0;
-  let tokensIn = 0;
-  let tokensOut = 0;
+  // Provider attempt identity for this run; set only after the model call.
+  let attempt: {
+    attemptId: string;
+    provider: string;
+    model: string;
+    costSource: "actual" | "unknown";
+  } | null = null;
   const addStep = async (input: {
     type: string;
     tool?: string;
@@ -316,8 +321,6 @@ export async function runTask(taskId: string, userId: string) {
     latency?: number;
   }) => {
     idx += 1;
-    tokensIn += input.ti ?? 0;
-    tokensOut += input.to ?? 0;
     await db.insert(steps).values({
       id: newId("stp"),
       runId,
@@ -418,6 +421,15 @@ export async function runTask(taskId: string, userId: string) {
       maxOutputTokens: config.cost.maxOutputTokens,
     });
 
+    if (modelResult.status !== "not_configured") {
+      attempt = {
+        attemptId: modelResult.attemptId,
+        provider: modelResult.provider,
+        model: modelResult.model,
+        costSource: modelResult.costSource,
+      };
+    }
+
     let draft: { title: string; content: string };
     let sourceMode: "live" | "demo";
     if (modelResult.status === "success") {
@@ -463,11 +475,23 @@ export async function runTask(taskId: string, userId: string) {
       latency: 40,
     });
 
-    const cost = Number(
-      (((tokensIn + tokensOut) / 1000) * config.cost.centsPer1kTokens).toFixed(
-        2,
-      ),
-    );
+    // Only provider-reported tokens count as measured model usage. Trace steps
+    // keep illustrative counters; they never become run usage or run cost.
+    const measured =
+      modelResult.status === "success" && modelResult.costSource === "actual"
+        ? {
+            tokensIn: modelResult.draft.tokensIn,
+            tokensOut: modelResult.draft.tokensOut,
+          }
+        : null;
+    const cost = measured
+      ? Number(
+          (
+            ((measured.tokensIn + measured.tokensOut) / 1000) *
+            config.cost.centsPer1kTokens
+          ).toFixed(2),
+        )
+      : 0;
     if (cost > config.cost.maxRunCents) {
       throw new PolicyDenied(
         `Run cost ${cost}c exceeds the configured cap of ${config.cost.maxRunCents}c.`,
@@ -500,8 +524,12 @@ export async function runTask(taskId: string, userId: string) {
           mode: sourceMode,
           endedAt: new Date(),
           costCents: cost,
-          tokensIn,
-          tokensOut,
+          tokensIn: measured?.tokensIn ?? null,
+          tokensOut: measured?.tokensOut ?? null,
+          provider: attempt?.provider ?? null,
+          model: attempt?.model ?? null,
+          providerAttemptId: attempt?.attemptId ?? null,
+          costSource: attempt?.costSource ?? null,
         })
         .where(eq(runs.id, runId));
 
@@ -545,6 +573,14 @@ export async function runTask(taskId: string, userId: string) {
           status: "failed",
           endedAt: new Date(),
           error: message,
+          // A failed attempt keeps its identity: it may have reached the
+          // provider, so usage stays unknown instead of a measured zero.
+          tokensIn: null,
+          tokensOut: null,
+          provider: attempt?.provider ?? null,
+          model: attempt?.model ?? null,
+          providerAttemptId: attempt?.attemptId ?? null,
+          costSource: attempt?.costSource ?? null,
         })
         .where(eq(runs.id, runId));
       await tx

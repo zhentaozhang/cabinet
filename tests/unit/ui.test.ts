@@ -17,8 +17,8 @@ describe("cn", () => {
   it("does not confuse a project font size with a project text colour", () => {
     // Both live under the `text-` prefix; without the extended merge config one
     // of them would be silently dropped.
-    expect(cn("text-micro text-muted")).toBe("text-micro text-muted");
-    expect(cn("text-caption", "text-faint")).toBe("text-caption text-faint");
+    expect(cn("text-label text-muted")).toBe("text-label text-muted");
+    expect(cn("text-eyebrow", "text-faint")).toBe("text-eyebrow text-faint");
   });
 
   it("still resolves genuine background and border conflicts", () => {

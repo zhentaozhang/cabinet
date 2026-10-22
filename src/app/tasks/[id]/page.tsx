@@ -199,7 +199,11 @@ export default async function TaskPage({
                           {run.agentId}
                         </Badge>
                         <span className="text-label text-faint">
-                          {run.status} · {run.mode} · {run.tokensIn + run.tokensOut} tokens ·{" "}
+                          {run.status} · {run.mode} ·{" "}
+                          {run.tokensIn === null || run.tokensOut === null
+                            ? "用量未知"
+                            : `${run.tokensIn + run.tokensOut} tokens`}{" "}
+                          ·{" "}
                           {money(run.costCents)}
                         </span>
                         <span className="ml-auto text-label text-faint">

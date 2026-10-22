@@ -323,9 +323,16 @@ export const runs = pgTable(
     sourceType: text("source_type").notNull().default("legacy_unknown"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    // Telemetry only. The weekly budget ledger is the accounting authority.
     costCents: real("cost_cents").notNull().default(0),
-    tokensIn: integer("tokens_in").notNull().default(0),
-    tokensOut: integer("tokens_out").notNull().default(0),
+    // Null means "usage unknown", which is not the same as a measured zero.
+    tokensIn: integer("tokens_in"),
+    tokensOut: integer("tokens_out"),
+    provider: text("provider"),
+    model: text("model"),
+    // One id per real provider call, unique across retries of the same task.
+    providerAttemptId: text("provider_attempt_id"),
+    costSource: text("cost_source"),
     error: text("error"),
     replayKey: text("replay_key"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -335,6 +342,11 @@ export const runs = pgTable(
   (t) => [
     index("runs_task_idx").on(t.taskId),
     index("runs_agent_idx").on(t.agentId),
+    index("runs_provider_attempt_idx").on(t.providerAttemptId),
+    check(
+      "runs_cost_source_check",
+      sql`${t.costSource} IS NULL OR ${t.costSource} IN ('actual', 'estimated', 'unknown')`,
+    ),
   ],
 );
 
