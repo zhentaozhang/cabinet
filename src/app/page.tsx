@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CircleAlert,
   Clock3,
+  Layers,
   Gavel,
   ShieldCheck,
   Sparkles,
@@ -41,6 +42,8 @@ export default async function TodayPage() {
     day: "numeric",
     timeZone: tz,
   }).format(new Date());
+
+  const pendingCount = data.approvals.length + (data.council ? 1 : 0);
 
   const learningTask = data.tasks.find(
     (task) =>
@@ -118,54 +121,125 @@ export default async function TodayPage() {
         </div>
       </Card>
 
-          <Card className="mb-5">
-            <CardHeader eyebrow="Check-in" title="今天感觉如何？" />
-            <div className="px-5 py-4">
-              {data.checkin ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-xs text-teal">
-                    <CheckCircle2 className="size-3.5" /> 今天已 check-in
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Stat label="Energy" value={`${data.checkin.energy}/5`} />
-                    <Stat label="Mood" value={`${data.checkin.mood}/5`} />
-                    <Stat
-                      label="学习"
-                      value={`${data.checkin.studyMinutes} min`}
-                    />
-                    <Stat
-                      label="回忆"
-                      value={
-                        data.checkin.recallScore === null
-                          ? "—"
-                          : `${Math.round(data.checkin.recallScore * 100)}%`
-                      }
-                    />
-                  </div>
-                  {data.checkin.errorTags.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {data.checkin.errorTags.map((tag) => (
-                        <Badge key={tag} tone="danger">
-                          {tag}
-                        </Badge>
-                      ))}
+      {pendingCount > 0 ? (
+            <Card>
+              <CardHeader
+                eyebrow="Decisions"
+                title="需要你决定"
+                right={
+                  <Badge tone={data.approvals.length + (data.council ? 1 : 0) > 0 ? "accent" : "neutral"}>
+                    {data.approvals.length + (data.council ? 1 : 0)} 待处理
+                  </Badge>
+                }
+              />
+              <div className="divide-y divide-line">
+                {data.approvals.map((approval) => {
+                  const payload = approval.payload;
+                  const title = String(
+                    payload.title ?? payload.provider ?? "待批准动作",
+                  );
+                  const at =
+                    typeof payload.dueAt === "string"
+                      ? dateTime(payload.dueAt, tz)
+                      : String(payload.time ?? "");
+                  const reason = String(payload.reason ?? payload.note ?? "");
+                  const costCents = Number(
+                    payload.estimatedCostCents ?? payload.costCents ?? 0,
+                  );
+                  return (
+                    <div key={approval.id} className="px-5 py-4">
+                      <div className="flex items-start gap-2">
+                        <CircleAlert className="mt-0.5 size-3.5 text-accent" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium text-ink">
+                            {title} {at ? `· ${at}` : ""}
+                          </div>
+                          <div className="mt-1 text-label text-muted">
+                            {reason} · 预计 ¥{(costCents / 100).toFixed(2)}
+                          </div>
+                        </div>
+                        <ApprovalActions approvalId={approval.id} />
+                      </div>
                     </div>
-                  ) : null}
-                  <div className="rounded-md border border-line bg-panel2/50 px-3 py-2 text-label text-muted">
-                    {data.checkin.note || "无备注"}
-                  </div>
-                </div>
-              ) : (
-                <CheckinForm
-                  tasks={data.tasks.map((t) => ({ id: t.id, title: t.title }))}
+                  );
+                })}
+  
+                {data.council ? (
+                  <Link
+                    href="/council"
+                    className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-white/[0.02]"
+                  >
+                    <Gavel className="size-3.5 text-violet" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium text-ink">
+                        内阁会议：{data.council.topic}
+                      </div>
+                      <div className="mt-1 text-label text-faint">
+                        触发：{data.council.trigger}
+                      </div>
+                    </div>
+                    <ArrowRight className="size-3.5 text-faint" />
+                  </Link>
+                ) : null}
+  
+              </div>
+            </Card>
+      ) : null}
+
+      <Card className="mb-5">
+        <CardHeader eyebrow="Check-in" title="今天感觉如何？" />
+        <div className="px-5 py-4">
+          {data.checkin ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-xs text-teal">
+                <CheckCircle2 className="size-3.5" /> 今天已 check-in
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Stat label="Energy" value={`${data.checkin.energy}/5`} />
+                <Stat label="Mood" value={`${data.checkin.mood}/5`} />
+                <Stat
+                  label="学习"
+                  value={`${data.checkin.studyMinutes} min`}
                 />
-              )}
+                <Stat
+                  label="回忆"
+                  value={
+                    data.checkin.recallScore === null
+                      ? "—"
+                      : `${Math.round(data.checkin.recallScore * 100)}%`
+                  }
+                />
+              </div>
+              {data.checkin.errorTags.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {data.checkin.errorTags.map((tag) => (
+                    <Badge key={tag} tone="danger">
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              <div className="rounded-md border border-line bg-panel2/50 px-3 py-2 text-label text-muted">
+                {data.checkin.note || "无备注"}
+              </div>
             </div>
-          </Card>
+          ) : (
+            <CheckinForm
+              tasks={data.tasks.map((t) => ({ id: t.id, title: t.title }))}
+            />
+          )}
+        </div>
+      </Card>
 
-
-      <div className="grid gap-5 lg:grid-cols-[1.65fr_1fr]">
-        <div className="space-y-5">
+      <details className="group mb-5 rounded-xl border border-line bg-panel/40">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3.5 text-label text-muted transition-colors hover:text-ink">
+          <Layers className="size-3.5 text-faint" />
+          更多：早报 · 计划 · 昨天的偏差 · 目标 · Agent 动态 · 快速创建
+          <span className="ml-auto text-label text-faint group-open:hidden">展开</span>
+          <span className="ml-auto hidden text-label text-faint group-open:inline">收起</span>
+        </summary>
+        <div className="grid gap-5 px-5 pt-2 pb-5 lg:grid-cols-[1.65fr_1fr]">
+          <div className="space-y-5">
           <Card>
             <CardHeader
               eyebrow="Morning brief · Atlas"
@@ -187,7 +261,6 @@ export default async function TodayPage() {
               </span>
             </div>
           </Card>
-
           <Card>
             <CardHeader
               eyebrow="Plan"
@@ -253,75 +326,6 @@ export default async function TodayPage() {
               ) : null}
             </div>
           </Card>
-
-          <Card>
-            <CardHeader
-              eyebrow="Decisions"
-              title="需要你决定"
-              right={
-                <Badge tone={data.approvals.length + (data.council ? 1 : 0) > 0 ? "accent" : "neutral"}>
-                  {data.approvals.length + (data.council ? 1 : 0)} 待处理
-                </Badge>
-              }
-            />
-            <div className="divide-y divide-line">
-              {data.approvals.map((approval) => {
-                const payload = approval.payload;
-                const title = String(
-                  payload.title ?? payload.provider ?? "待批准动作",
-                );
-                const at =
-                  typeof payload.dueAt === "string"
-                    ? dateTime(payload.dueAt, tz)
-                    : String(payload.time ?? "");
-                const reason = String(payload.reason ?? payload.note ?? "");
-                const costCents = Number(
-                  payload.estimatedCostCents ?? payload.costCents ?? 0,
-                );
-                return (
-                  <div key={approval.id} className="px-5 py-4">
-                    <div className="flex items-start gap-2">
-                      <CircleAlert className="mt-0.5 size-3.5 text-accent" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium text-ink">
-                          {title} {at ? `· ${at}` : ""}
-                        </div>
-                        <div className="mt-1 text-label text-muted">
-                          {reason} · 预计 ¥{(costCents / 100).toFixed(2)}
-                        </div>
-                      </div>
-                      <ApprovalActions approvalId={approval.id} />
-                    </div>
-                  </div>
-                );
-              })}
-
-              {data.council ? (
-                <Link
-                  href="/council"
-                  className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-white/[0.02]"
-                >
-                  <Gavel className="size-3.5 text-violet" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-medium text-ink">
-                      内阁会议：{data.council.topic}
-                    </div>
-                    <div className="mt-1 text-label text-faint">
-                      触发：{data.council.trigger}
-                    </div>
-                  </div>
-                  <ArrowRight className="size-3.5 text-faint" />
-                </Link>
-              ) : null}
-
-              {data.approvals.length === 0 && !data.council ? (
-                <div className="px-5 py-8 text-center text-xs text-faint">
-                  没有待决定事项。
-                </div>
-              ) : null}
-            </div>
-          </Card>
-
           <Card>
             <CardHeader eyebrow="Yesterday" title="昨天的偏差" />
             <div className="px-5 py-4">
@@ -347,9 +351,9 @@ export default async function TodayPage() {
               )}
             </div>
           </Card>
-        </div>
+          </div>
 
-        <div className="space-y-5">
+          <div className="space-y-5">
           <Card>
             <CardHeader eyebrow="Cabinet pulse" title="Agent 动态" />
             <div className="divide-y divide-line">
@@ -384,7 +388,6 @@ export default async function TodayPage() {
               })}
             </div>
           </Card>
-
           <Card>
             <CardHeader eyebrow="Goals" title="目标进度" />
             <div className="space-y-4 px-5 py-4">
@@ -400,7 +403,6 @@ export default async function TodayPage() {
               ))}
             </div>
           </Card>
-
           <Card>
             <CardHeader eyebrow="Create" title="快速创建" />
             <div className="px-5 py-4">
@@ -417,7 +419,6 @@ export default async function TodayPage() {
               />
             </div>
           </Card>
-
           <Card className="border-accent/20 bg-accent/[0.03]">
             <div className="flex items-start gap-3 px-5 py-4">
               <Brain className="mt-0.5 size-4 text-accent" />
@@ -429,8 +430,9 @@ export default async function TodayPage() {
               </div>
             </div>
           </Card>
+          </div>
         </div>
-      </div>
+      </details>
     </div>
   );
 }
