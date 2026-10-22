@@ -17,7 +17,7 @@ export async function setAutonomy(agentId: string, level: number, userId: string
   if (!agent || agent.userId !== userId) {
     throw new NotFoundError("Agent not found");
   }
-  if (level < 0 || level > 4) throw new ConflictError("Invalid autonomy level");
+  if (level < 0 || level > 3) throw new ConflictError("Invalid autonomy level");
 
   const config = await getPolicyConfig();
   const auditRows = await db

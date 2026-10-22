@@ -119,7 +119,7 @@ export const sessions = pgTable(
       .defaultNow(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
-    userId: text("user_id").notNull(),
+    userId: text("user_id").notNull().references(() => users.id),
   },
   (t) => [index("sessions_user_idx").on(t.userId)],
 );
@@ -130,7 +130,7 @@ export const accounts = pgTable(
     id: text("id").primaryKey(),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id").notNull().references(() => users.id),
     accessToken: text("access_token"),
     refreshToken: text("refresh_token"),
     idToken: text("id_token"),
@@ -170,7 +170,7 @@ export const verifications = pgTable(
 );
 
 export const profiles = pgTable("profiles", {
-  userId: text("user_id").primaryKey(),
+  userId: text("user_id").primaryKey().references(() => users.id),
   constraints: jsonb("constraints").$type<Record<string, unknown>>().notNull(),
   preferences: jsonb("preferences")
     .$type<Record<string, unknown>>()
@@ -188,7 +188,7 @@ export const agents = pgTable(
   "agents",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id").notNull().references(() => users.id),
     role: text("role").notNull(),
     name: text("name").notNull(),
     title: text("title").notNull(),
@@ -226,7 +226,7 @@ export const agents = pgTable(
 
 export const agentGrants = pgTable("agent_grants", {
   id: text("id").primaryKey(),
-  agentId: text("agent_id").notNull(),
+  agentId: text("agent_id").notNull().references(() => agents.id),
   resource: text("resource").notNull(),
   scope: text("scope").notNull(),
   config: jsonb("config").$type<Record<string, unknown>>().notNull(),
@@ -234,7 +234,7 @@ export const agentGrants = pgTable("agent_grants", {
 
 export const goals = pgTable("goals", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id),
   domain: text("domain").notNull(),
   title: text("title").notNull(),
   why: text("why").notNull(),
@@ -251,13 +251,13 @@ export const tasks = pgTable(
   "tasks",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
-    goalId: text("goal_id"),
+    userId: text("user_id").notNull().references(() => users.id),
+    goalId: text("goal_id").references(() => goals.id),
     parentId: text("parent_id"),
     title: text("title").notNull(),
     description: text("description").notNull(),
-    assigneeId: text("assignee_id"),
-    auditorId: text("auditor_id"),
+    assigneeId: text("assignee_id").references(() => agents.id),
+    auditorId: text("auditor_id").references(() => agents.id),
     status: text("status").notNull().default("planned"),
     priority: integer("priority").notNull().default(2),
     dueAt: timestamp("due_at", { withTimezone: true }),
@@ -303,8 +303,8 @@ export const runs = pgTable(
   "runs",
   {
     id: text("id").primaryKey(),
-    taskId: text("task_id").notNull(),
-    agentId: text("agent_id").notNull(),
+    taskId: text("task_id").notNull().references(() => tasks.id),
+    agentId: text("agent_id").notNull().references(() => agents.id),
     status: text("status").notNull().default("queued"),
     mode: text("mode").notNull().default("demo"),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -325,7 +325,7 @@ export const steps = pgTable(
   "steps",
   {
     id: text("id").primaryKey(),
-    runId: text("run_id").notNull(),
+    runId: text("run_id").notNull().references(() => runs.id),
     idx: integer("idx").notNull(),
     type: text("type").notNull(),
     tool: text("tool"),
@@ -343,8 +343,8 @@ export const steps = pgTable(
 
 export const artifacts = pgTable("artifacts", {
   id: text("id").primaryKey(),
-  runId: text("run_id").notNull(),
-  taskId: text("task_id").notNull(),
+  runId: text("run_id").notNull().references(() => runs.id),
+  taskId: text("task_id").notNull().references(() => tasks.id),
   type: text("type").notNull(),
   title: text("title").notNull(),
   content: text("content").notNull(),
@@ -357,8 +357,8 @@ export const memories = pgTable(
   "memories",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
-    agentId: text("agent_id"),
+    userId: text("user_id").notNull().references(() => users.id),
+    agentId: text("agent_id").references(() => agents.id),
     type: text("type").notNull(),
     domain: text("domain").notNull(),
     content: text("content").notNull(),
@@ -393,7 +393,7 @@ export const memories = pgTable(
 
 export const insights = pgTable("insights", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id),
   claim: text("claim").notNull(),
   rationale: text("rationale").notNull(),
   confidence: real("confidence").notNull().default(0.5),
@@ -412,7 +412,7 @@ export const insights = pgTable("insights", {
 
 export const reviews = pgTable("reviews", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id),
   period: text("period").notNull(),
   type: text("type").notNull(),
   narrative: text("narrative").notNull(),
@@ -427,8 +427,8 @@ export const reviews = pgTable("reviews", {
 
 export const approvals = pgTable("approvals", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
-  taskId: text("task_id"),
+  userId: text("user_id").notNull().references(() => users.id),
+  taskId: text("task_id").references(() => tasks.id),
   runId: text("run_id"),
   action: text("action").notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
@@ -447,7 +447,7 @@ export const auditEvents = pgTable(
   {
     id: text("id").primaryKey(),
     seq: bigserial("seq", { mode: "number" }).notNull(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id").notNull().references(() => users.id),
     actor: text("actor").notNull(),
     action: text("action").notNull(),
     target: text("target").notNull(),
@@ -467,7 +467,7 @@ export const auditEvents = pgTable(
 
 export const skills = pgTable("skills", {
   id: text("id").primaryKey(),
-  agentId: text("agent_id").notNull(),
+  agentId: text("agent_id").notNull().references(() => agents.id),
   name: text("name").notNull(),
   version: integer("version").notNull().default(1),
   steps: jsonb("steps").$type<string[]>().notNull(),
@@ -485,7 +485,7 @@ export const skills = pgTable("skills", {
 
 export const councils = pgTable("councils", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id),
   topic: text("topic").notNull(),
   trigger: text("trigger").notNull(),
   status: text("status").notNull().default("open"),
@@ -503,8 +503,8 @@ export const councils = pgTable("councils", {
 
 export const councilPositions = pgTable("council_positions", {
   id: text("id").primaryKey(),
-  councilId: text("council_id").notNull(),
-  agentId: text("agent_id").notNull(),
+  councilId: text("council_id").notNull().references(() => councils.id),
+  agentId: text("agent_id").notNull().references(() => agents.id),
   stance: text("stance").notNull(),
   claim: text("claim").notNull(),
   evidence: jsonb("evidence").$type<Evidence[]>().notNull(),
@@ -522,10 +522,10 @@ export const dissents = pgTable(
   "dissents",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
-    councilId: text("council_id").notNull(),
-    taskId: text("task_id"),
-    agentId: text("agent_id").notNull(),
+    userId: text("user_id").notNull().references(() => users.id),
+    councilId: text("council_id").notNull().references(() => councils.id),
+    taskId: text("task_id").references(() => tasks.id),
+    agentId: text("agent_id").notNull().references(() => agents.id),
     warning: text("warning").notNull(),
     condition: jsonb("condition").$type<FalsificationCondition>().notNull(),
     status: text("status").notNull().default("pending"),
@@ -569,7 +569,7 @@ export const idempotencyKeys = pgTable(
   "idempotency_keys",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id").notNull().references(() => users.id),
     key: text("key").notNull(),
     endpoint: text("endpoint").notNull(),
     requestHash: text("request_hash").notNull(),
@@ -586,7 +586,7 @@ export const idempotencyKeys = pgTable(
 
 export const userActions = pgTable("user_actions", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id),
   action: text("action").notNull(),
   durationMs: integer("duration_ms").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -613,7 +613,7 @@ export const rateLimits = pgTable(
   "rate_limits",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id").notNull().references(() => users.id),
     action: text("action").notNull(),
     windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
     count: integer("count").notNull().default(0),

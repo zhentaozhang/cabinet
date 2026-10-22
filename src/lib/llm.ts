@@ -32,8 +32,11 @@ export async function generateArtifact(input: {
         : {}),
     });
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
     const { text, usage } = await generateText({
       model: provider(process.env.OPENAI_MODEL ?? "gpt-4.1-mini"),
+      abortSignal: controller.signal,
       temperature: 0.2,
       system: [
         `你是 ${input.agentName}（${input.role}）。`,
@@ -48,7 +51,7 @@ export async function generateArtifact(input: {
         `可用记忆：${input.memories.join("；") || "无"}`,
         "请产出一份可验收的 Markdown 产物。",
       ].join("\n"),
-    });
+    }).finally(() => clearTimeout(timer));
 
     if (!text.trim()) return null;
 

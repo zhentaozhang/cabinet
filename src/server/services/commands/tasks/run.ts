@@ -396,6 +396,7 @@ export async function runTask(taskId: string, userId: string) {
         .update(runs)
         .set({
           status: "succeeded",
+          mode: generated ? "live" : "demo",
           endedAt: new Date(),
           costCents: cost,
           tokensIn,

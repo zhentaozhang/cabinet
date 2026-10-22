@@ -6,7 +6,7 @@ export const insightActionSchema = z.object({
 });
 
 export const autonomySchema = z.object({
-  level: z.number().int().min(0).max(4),
+  level: z.number().int().min(0).max(3),
 });
 
 export const approvalDecisionSchema = z.object({

@@ -186,7 +186,7 @@ export default async function TaskPage({
                           }
                         />
                         <span className="mono text-micro text-ink">{run.id}</span>
-                        <Badge tone={run.agentId === "ag_auditor" ? "danger" : "neutral"}>
+                        <Badge tone={run.agentId === auditor?.id ? "danger" : "neutral"}>
                           {run.agentId}
                         </Badge>
                         <span className="text-mini text-faint">

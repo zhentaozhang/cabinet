@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  agents,
   checkins,
   insights,
   memories,
@@ -15,6 +16,7 @@ import {
   getMemoryData,
   runReflection,
 } from "@/server/services/engine";
+import { setupWorkspace } from "@/lib/setup";
 import { resetDb } from "../helpers/db";
 
 beforeEach(async () => {
@@ -54,6 +56,25 @@ describe("real reflection", () => {
     });
 
     expect(await runReflection("usr_empty")).toBeNull();
+  });
+
+  it("does not treat cumulative spend as this week's budget", async () => {
+    const userId = "usr_budget_test";
+    await db.insert(users).values({
+      id: userId,
+      email: "budget-test@cabinet.local",
+      name: "Budget Test",
+      emailVerified: true,
+      timezone: "Asia/Shanghai",
+      updatedAt: new Date(),
+    });
+    await setupWorkspace({ userId, timezone: "Asia/Shanghai" });
+    await db
+      .update(agents)
+      .set({ spentCents: 60_000 })
+      .where(eq(agents.userId, userId));
+
+    expect(await runReflection(userId)).toBeNull();
   });
 
   it("uses low energy check-ins as a real signal", async () => {

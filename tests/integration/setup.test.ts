@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { agentGrants, agents, dissents, goals, profiles, users } from "@/lib/db/schema";
+import { agentGrants, agents, councils, dissents, goals, profiles, users } from "@/lib/db/schema";
 import { setupWorkspace } from "@/lib/setup";
 import { exportAccount, deleteAccount } from "@/lib/account";
 import { ConflictError } from "@/lib/domain/errors";
@@ -75,11 +75,24 @@ describe("workspace setup", () => {
 describe("account export and deletion", () => {
   it("exports and then deletes only the target user's data", async () => {
     await setupWorkspace({ userId: NEW_USER, timezone: "Asia/Shanghai" });
+    const [agent] = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.userId, NEW_USER))
+      .limit(1);
+    await db.insert(councils).values({
+      id: "ccl_account_test",
+      userId: NEW_USER,
+      topic: "account test",
+      trigger: "test",
+      status: "open",
+      memo: "test",
+    });
     await db.insert(dissents).values({
       id: "dis_account_test",
       userId: NEW_USER,
       councilId: "ccl_account_test",
-      agentId: "ag_account_test",
+      agentId: agent.id,
       warning: "account export/delete must include dissents",
       condition: {
         metric: "audit_reject_count",
