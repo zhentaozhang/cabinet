@@ -1,21 +1,23 @@
 import { revalidatePath } from "next/cache";
 import { promoteSuggestion } from "@/lib/engine";
-import { getApiUserId } from "@/lib/auth/context";
-import { toErrorResponse } from "@/lib/domain/errors";
+import { handleMutation } from "@/lib/api/mutation";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  try {
-    const userId = await getApiUserId();
-    await promoteSuggestion(id, userId);
-    revalidatePath("/");
-    revalidatePath(`/tasks/${id}`);
-    return Response.json({ ok: true });
-  } catch (error) {
-    const { status, body } = toErrorResponse(error);
-    return Response.json(body, { status });
-  }
+  const body = await req.json().catch(() => null);
+
+  return handleMutation({
+    request: req,
+    endpoint: `tasks.promote:${id}`,
+    body,
+    handler: async (userId) => {
+      await promoteSuggestion(id, userId);
+      revalidatePath("/");
+      revalidatePath(`/tasks/${id}`);
+      return { status: 200, body: { ok: true } };
+    },
+  });
 }

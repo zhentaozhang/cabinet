@@ -1,26 +1,27 @@
 import { revalidatePath } from "next/cache";
 import { applyInsight } from "@/lib/engine";
-import { getApiUserId } from "@/lib/auth/context";
-import { toErrorResponse } from "@/lib/domain/errors";
+import { handleMutation } from "@/lib/api/mutation";
+import { insightActionSchema } from "@/lib/validation/schemas";
+import { parseBody } from "@/lib/validation/parse";
 
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  try {
-    const body = (await req.json()) as {
-      action?: "accept" | "reject" | "rollback";
-    };
-    if (!body.action) throw new Error("action is required");
-    const userId = await getApiUserId();
-    await applyInsight(id, body.action, userId);
-    revalidatePath("/");
-    revalidatePath("/review");
-    revalidatePath("/memory");
-    return Response.json({ ok: true });
-  } catch (error) {
-    const { status, body } = toErrorResponse(error);
-    return Response.json(body, { status });
-  }
+  const body = await req.json().catch(() => null);
+
+  return handleMutation({
+    request: req,
+    endpoint: `insights.apply:${id}`,
+    body,
+    handler: async (userId) => {
+      const input = parseBody(insightActionSchema, body);
+      await applyInsight(id, input.action, userId);
+      revalidatePath("/");
+      revalidatePath("/review");
+      revalidatePath("/memory");
+      return { status: 200, body: { ok: true } };
+    },
+  });
 }

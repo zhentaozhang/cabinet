@@ -15,6 +15,13 @@
       "when": 1792644427792,
       "tag": "0001_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792644706412,
+      "tag": "0002_idempotency",
+      "breakpoints": true
     }
   ]
 }

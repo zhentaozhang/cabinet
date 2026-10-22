@@ -1,26 +1,26 @@
 import { revalidatePath } from "next/cache";
 import { decideApproval } from "@/lib/engine";
-import { getApiUserId } from "@/lib/auth/context";
-import { toErrorResponse } from "@/lib/domain/errors";
+import { handleMutation } from "@/lib/api/mutation";
+import { approvalDecisionSchema } from "@/lib/validation/schemas";
+import { parseBody } from "@/lib/validation/parse";
 
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  try {
-    const body = (await req.json()) as {
-      decision?: "approve" | "reject";
-      reason?: string;
-    };
-    if (!body.decision) throw new Error("decision is required");
-    const userId = await getApiUserId();
-    await decideApproval(id, body.decision, body.reason, userId);
-    revalidatePath("/");
-    revalidatePath("/review");
-    return Response.json({ ok: true });
-  } catch (error) {
-    const { status, body } = toErrorResponse(error);
-    return Response.json(body, { status });
-  }
+  const body = await req.json().catch(() => null);
+
+  return handleMutation({
+    request: req,
+    endpoint: `approvals.decide:${id}`,
+    body,
+    handler: async (userId) => {
+      const input = parseBody(approvalDecisionSchema, body);
+      await decideApproval(id, input.decision, input.reason, userId);
+      revalidatePath("/");
+      revalidatePath("/review");
+      return { status: 200, body: { ok: true } };
+    },
+  });
 }

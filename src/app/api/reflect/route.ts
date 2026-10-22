@@ -1,18 +1,16 @@
 import { revalidatePath } from "next/cache";
 import { runReflection } from "@/lib/engine";
-import { getApiUserId } from "@/lib/auth/context";
+import { handleMutation } from "@/lib/api/mutation";
 
-export async function POST() {
-  try {
-    const userId = await getApiUserId();
-    const insight = await runReflection(userId);
-    revalidatePath("/review");
-    revalidatePath("/");
-    return Response.json({ ok: true, insightId: insight.id });
-  } catch (error) {
-    return Response.json(
-      { ok: false, error: error instanceof Error ? error.message : "failed" },
-      { status: 400 },
-    );
-  }
+export async function POST(req: Request) {
+  return handleMutation({
+    request: req,
+    endpoint: "reflection.run",
+    handler: async (userId) => {
+      const insight = await runReflection(userId);
+      revalidatePath("/review");
+      revalidatePath("/");
+      return { status: 200, body: { ok: true, insightId: insight.id } };
+    },
+  });
 }

@@ -1,17 +1,15 @@
 import { revalidatePath } from "next/cache";
 import { regenerateBrief } from "@/lib/engine";
-import { getApiUserId } from "@/lib/auth/context";
+import { handleMutation } from "@/lib/api/mutation";
 
-export async function POST() {
-  try {
-    const userId = await getApiUserId();
-    const brief = await regenerateBrief(userId);
-    revalidatePath("/");
-    return Response.json({ ok: true, brief });
-  } catch (error) {
-    return Response.json(
-      { ok: false, error: error instanceof Error ? error.message : "failed" },
-      { status: 400 },
-    );
-  }
+export async function POST(req: Request) {
+  return handleMutation({
+    request: req,
+    endpoint: "brief.regenerate",
+    handler: async (userId) => {
+      const brief = await regenerateBrief(userId);
+      revalidatePath("/");
+      return { status: 200, body: { ok: true, brief } };
+    },
+  });
 }

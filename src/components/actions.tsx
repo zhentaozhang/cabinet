@@ -25,7 +25,10 @@ async function call(
 ): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> {
   const res = await fetch(url, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": crypto.randomUUID(),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   return res.json();
