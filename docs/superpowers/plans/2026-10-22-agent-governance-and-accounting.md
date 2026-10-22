@@ -10,6 +10,37 @@
 
 ---
 
+---
+
+## Implementation status (2026-10-22)
+
+All six tasks are implemented. Evidence lives in the integration suites named per task; this
+section records what actually landed and where the implementation deviates from the steps above.
+
+| Task | Commit | Migration | Tests |
+|---|---|---|---|
+| 0 — provider attempt identity | `76c35a7` | `0017_provider_attempt` | `provider-attempt.test.ts` (5) |
+| 1 — weekly budget ledger | `6550489` | `0018_agent_budget` | `agent-budget.test.ts` (11), `unit/agent-budget.test.ts` (10), `agent-governance-migration.test.ts` |
+| 2 — usage telemetry + budget view | `7340b38` | — | `model-usage-accounting.test.ts` (8) |
+| 3 — autonomy evidence | `06acc93` | `0019_autonomy_min_samples` (data-only) | `autonomy-evidence.test.ts` (10), `policy-config.test.ts`, `autonomy-min-samples-migration.test.ts` |
+| 4 — apprentice training evidence | `2f37a06` | `0020_apprentice_observations` | `apprentice-training-evidence.test.ts` (10), `unit/provenance.test.ts` (7) |
+| 5 — docs + verification | `2f37a06` | — | full suite 58 files / 328 tests, `tsc`, `eslint`, `next build` |
+
+Deviations, each deliberate:
+
+1. **A hold is created before every attempt**, not only when a provider is configured, and it
+   settles `released` when no provider was contacted. The original `!demoMode` gate was dead code:
+   `tests/setup.ts` sets `DEMO_MODE=true`, and a successful generation rewrites `runs.mode` to
+   `live`, so the gate silently skipped reservations.
+2. **`queries/apprenticeship.ts` holds the read helpers** (`loadApprentice`, `resolveMentor`,
+   `readLatestSkill`, `eligibleMentorRuns`, `loadObservations`, `loadApprenticeshipEvidence`)
+   because `tests/unit/service-boundaries.test.ts` forbids `queries/*` importing `commands/*`.
+   `commands/apprentice.ts` imports them and keeps only the writing paths.
+3. **Step 6 of Task 5 was executed as scratch-database tests, not `pnpm db:migrate`.** The
+   `DATABASE_URL` lives in `.env`, which this sandbox blocks; `agent-governance-migration.test.ts`
+   applies `0017`→`0018` and `0019`→`0020` over populated databases instead, including the
+   duplicate-run index and the state check constraint.
+
 ## Revision notes (rev 2, 2026-10-22)
 
 Rev 1 was reviewed line by line against the current source. The following were wrong, unbuildable, or silently breaking. Each note names the verified reason, so future readers do not re-litigate it.
