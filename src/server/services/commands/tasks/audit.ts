@@ -4,6 +4,7 @@ import type { AcceptanceResult } from "@/lib/db/schema";
 import {
   agents,
   artifacts,
+  evidence,
   runs,
   steps,
   tasks,
@@ -148,9 +149,21 @@ async function auditTaskInner(taskId: string, userId: string) {
     let acceptanceReport: AcceptanceResult[] | null = null;
 
     if (artifact && task.acceptanceChecklist?.length) {
+      // Evidence is read from the run that produced the artifact, so a draft
+      // cannot borrow citations from another run or invent them.
+      const evidenceRows = artifact.runId
+        ? await tx
+            .select({ id: evidence.id })
+            .from(evidence)
+            .where(eq(evidence.runId, artifact.runId))
+        : [];
       acceptanceReport = evaluateAcceptance(
         artifact.content,
         task.acceptanceChecklist,
+        {
+          evidenceCount: evidenceRows.length,
+          evidenceIds: new Set(evidenceRows.map((row) => row.id)),
+        },
       );
       pass = checklistPassed(acceptanceReport);
       const failed = acceptanceReport.filter(

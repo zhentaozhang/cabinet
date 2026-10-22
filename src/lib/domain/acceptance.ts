@@ -17,6 +17,13 @@ function countSources(content: string): number {
   return (content.match(/https?:\/\/[^\s)\]>]+/g) ?? []).length;
 }
 
+/** Citation marker a draft must use: `[cite:evd_xxx]`. */
+const CITE_PATTERN = /\[cite:(evd_[A-Za-z0-9_-]+)\]/g;
+
+function citedEvidenceIds(content: string): string[] {
+  return Array.from(content.matchAll(CITE_PATTERN), (match) => match[1] as string);
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -28,6 +35,12 @@ function escapeRegExp(value: string): string {
  */
 export type AcceptanceContext = {
   evidenceCount?: number;
+  /**
+   * Ids persisted for this run. When present, `min_evidence` counts only
+   * citations that resolve to a real row, so a fabricated `[cite:…]` fails
+   * instead of inflating the score.
+   */
+  evidenceIds?: Set<string>;
 };
 
 /**
@@ -72,14 +85,30 @@ export function evaluateAcceptance(
     }
 
     if (item.type === "min_evidence") {
-      const count = context.evidenceCount ?? 0;
-      const passed = count >= item.value;
+      const known = context.evidenceIds;
+      if (!known) {
+        const count = context.evidenceCount ?? 0;
+        const passed = count >= item.value;
+        return {
+          item,
+          passed,
+          reason: passed
+            ? `已落库证据 ${count} 条，要求至少 ${item.value}`
+            : `已落库证据 ${count} 条，少于要求的 ${item.value} 条（正文里的链接不算证据）`,
+        };
+      }
+      const cited = citedEvidenceIds(content);
+      const valid = Array.from(new Set(cited.filter((id) => known.has(id))));
+      const dangling = cited.filter((id) => !known.has(id)).length;
+      const enough = valid.length >= item.value;
+      const passed = enough && dangling === 0;
+      const detail = dangling > 0 ? `，另有 ${dangling} 处引用指向不存在的证据` : "";
       return {
         item,
         passed,
         reason: passed
-          ? `已落库证据 ${count} 条，要求至少 ${item.value}`
-          : `已落库证据 ${count} 条，少于要求的 ${item.value} 条（正文里的链接不算证据）`,
+          ? `引用了 ${valid.length} 条已落库证据，要求至少 ${item.value}`
+          : `引用了 ${valid.length} 条已落库证据，要求至少 ${item.value}${detail}`,
       };
     }
 

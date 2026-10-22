@@ -1,4 +1,7 @@
 import type {
+  EvidenceRow,
+} from "@/lib/db/schema";
+import type {
   agents,
   approvals,
   artifacts,
@@ -29,6 +32,7 @@ import type {
   CouncilDto,
   CouncilPositionDto,
   DissentDto,
+  RetrievedEvidenceDto,
   GoalDto,
   InsightDto,
   MemoryDto,
@@ -151,6 +155,13 @@ export function toArtifactDto(
   return {
     ...row,
     createdAt: toIso(row.createdAt),
+  };
+}
+
+export function toRetrievedEvidenceDto(row: EvidenceRow): RetrievedEvidenceDto {
+  return {
+    ...row,
+    retrievedAt: toIso(row.retrievedAt),
   };
 }
 

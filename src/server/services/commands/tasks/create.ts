@@ -39,6 +39,28 @@ export async function promoteSuggestion(taskId: string, userId: string) {
   });
 }
 
+const WEB_TOOLS = ["web_search", "web_fetch"];
+
+/**
+ * Default checklist for research work. Returned only when the assignee can
+ * actually reach the web; other tasks keep the caller's (possibly empty) list.
+ */
+async function defaultEvidenceChecklist(
+  assigneeId: string,
+  userId: string,
+): Promise<AcceptanceItem[] | null> {
+  const [agent] = await db
+    .select({ tools: agents.tools })
+    .from(agents)
+    .where(and(eq(agents.id, assigneeId), eq(agents.userId, userId)));
+  if (!agent) return null;
+  if (!agent.tools.some((tool) => WEB_TOOLS.includes(tool))) return null;
+  return [
+    { type: "min_evidence", value: 3, required: true },
+    { type: "section", value: "来源", required: true },
+  ];
+}
+
 export async function createTask(
   input: {
     goalId?: string | null;
@@ -105,6 +127,11 @@ export async function createTask(
 
   const id = newId("tsk");
   const policy = input.goalId ? await getPolicyConfig() : null;
+  // A task handed to a web-capable Agent is a research task: without an
+  // evidence requirement the Auditor could accept prose with no sources.
+  const checklist =
+    input.acceptanceChecklist ??
+    (await defaultEvidenceChecklist(input.assigneeId, userId));
   return db.transaction(async (tx) => {
     const [created] = await tx
       .insert(tasks)
@@ -120,7 +147,7 @@ export async function createTask(
         priority: 2,
         dueAt,
         acceptanceCriteria,
-        acceptanceChecklist: input.acceptanceChecklist ?? null,
+        acceptanceChecklist: checklist,
         estimateMin: Math.max(1, input.estimateMin),
         actionType: input.actionType,
         resource: input.resource,

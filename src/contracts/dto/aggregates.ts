@@ -10,6 +10,7 @@ import {
   councilDtoSchema,
   councilPositionDtoSchema,
   dissentDtoSchema,
+  retrievedEvidenceDtoSchema,
   goalDtoSchema,
   insightDtoSchema,
   memoryDtoSchema,
@@ -241,6 +242,7 @@ export const taskPageSchema = z.object({
   runs: z.array(runDtoSchema),
   steps: z.array(stepDtoSchema),
   artifacts: z.array(artifactDtoSchema),
+  evidence: z.array(retrievedEvidenceDtoSchema),
   approvals: z.array(approvalDtoSchema),
   audit: z.array(auditEventDtoSchema),
 });

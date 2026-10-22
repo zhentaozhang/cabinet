@@ -5,6 +5,7 @@ import {
   approvals,
   artifacts,
   auditEvents,
+  evidence,
   goals,
   runs,
   steps,
@@ -28,6 +29,7 @@ export async function getTaskData(taskId: string, userId: string) {
     taskApprovals,
     taskAudit,
     userRows,
+    taskEvidence,
   ] = await Promise.all([
     db
       .select()
@@ -61,6 +63,11 @@ export async function getTaskData(taskId: string, userId: string) {
       .select({ timezone: users.timezone })
       .from(users)
       .where(eq(users.id, userId)),
+    db
+      .select()
+      .from(evidence)
+      .where(eq(evidence.taskId, taskId))
+      .orderBy(asc(evidence.createdAt)),
   ]);
 
   const runIds = taskRuns.map((run) => run.id);
@@ -81,6 +88,7 @@ export async function getTaskData(taskId: string, userId: string) {
     runs: taskRuns,
     steps: runSteps,
     artifacts: taskArtifacts,
+    evidence: taskEvidence,
     approvals: taskApprovals,
     audit: taskAudit,
   };

@@ -245,6 +245,24 @@ export const artifactDtoSchema = z.object({
 });
 export type ArtifactDto = z.infer<typeof artifactDtoSchema>;
 
+/**
+ * A retrieved source. `quote` is verbatim provider text and `retrievedAt` is
+ * required: an undated, unquoted URL is not evidence.
+ */
+export const retrievedEvidenceDtoSchema = z.object({
+  id: z.string(),
+  taskId: z.string().nullable(),
+  runId: z.string().nullable(),
+  kind: z.string(),
+  url: z.string(),
+  title: z.string(),
+  publisher: z.string().nullable(),
+  quote: z.string(),
+  provider: z.string(),
+  retrievedAt: isoDateTime,
+});
+export type RetrievedEvidenceDto = z.infer<typeof retrievedEvidenceDtoSchema>;
+
 export const memoryDtoSchema = z.object({
   id: z.string(),
   userId: z.string(),

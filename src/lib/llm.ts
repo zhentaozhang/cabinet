@@ -9,6 +9,15 @@ export type ArtifactDraft = {
   tokensOut: number;
 };
 
+/** A source the model is allowed to cite, already persisted server-side. */
+export type EvidenceForPrompt = {
+  id: string;
+  title: string;
+  url: string;
+  publisher: string | null;
+  quote: string;
+};
+
 export type ModelExecutionResult =
   | {
       status: "success";
@@ -48,6 +57,8 @@ export async function generateArtifact(input: {
   taskDescription: string;
   acceptanceCriteria: string;
   memories: string[];
+  /** Retrieved sources the draft may cite; empty when nothing was retrieved. */
+  evidence?: EvidenceForPrompt[];
   maxOutputTokens: number;
 }): Promise<ModelExecutionResult> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -57,6 +68,28 @@ export async function generateArtifact(input: {
   const attemptId = newId("att");
   const model = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
   const providerName = "openai";
+
+  const evidence = input.evidence ?? [];
+  const citationRule =
+    evidence.length > 0
+      ? [
+          "引用规则：只能引用下面列出的来源，每处引用写成 `[cite:<id>]`。",
+          "不要引用未列出的 URL，不要编造 id。",
+          "无法被来源支持的说法，必须写明「无证据」。",
+        ]
+      : [
+          "本次没有检索到任何外部来源。",
+          "不要编造引用或 URL；需要证据的结论请写明「无证据」。",
+        ];
+  const evidenceBlock =
+    evidence.length > 0
+      ? evidence
+          .map(
+            (item) =>
+              `- [cite:${item.id}] ${item.title} — ${item.url}\n  原文：${item.quote}`,
+          )
+          .join("\n")
+      : "无";
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
@@ -78,12 +111,14 @@ export async function generateArtifact(input: {
         `你的宪章：${input.charter}`,
         "只输出 Markdown，不要解释你是谁。",
         "如果任务要求评分标准，必须包含 `## 评分标准` 和评分表。",
+        ...citationRule,
       ].join("\n"),
       prompt: [
         `任务：${input.taskTitle}`,
         `描述：${input.taskDescription}`,
         `验收标准：${input.acceptanceCriteria}`,
         `可用记忆：${input.memories.join("；") || "无"}`,
+        `可用来源：\n${evidenceBlock}`,
         "请产出一份可验收的 Markdown 产物。",
       ].join("\n"),
     });

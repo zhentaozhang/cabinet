@@ -7,6 +7,7 @@ import {
   CircleAlert,
   Clock3,
   FileText,
+  Link2,
   Play,
   ShieldCheck,
   XCircle,
@@ -49,7 +50,15 @@ export default async function TaskPage({
   const data = await fetchTaskPage(id);
   if (!data) notFound();
   const tz = data.timezone;
-  const { task, goal, assignee, auditor, runs, steps, artifacts, approvals, audit } = data;
+  const { task, goal, assignee, auditor, runs, steps, artifacts, evidence, approvals, audit } = data;
+
+  // Why there is no evidence is a fact recorded on the tool step, not a guess.
+  const toolStep = steps.find((step) => step.type === "tool");
+  const toolOutput = (toolStep?.output ?? {}) as { reason?: unknown };
+  const toolReason =
+    typeof toolOutput.reason === "string"
+      ? toolOutput.reason
+      : "这次运行没有调用检索工具。";
   const stepsByRun = new Map<string, typeof steps>();
   for (const step of steps) {
     const list = stepsByRun.get(step.runId) ?? [];
@@ -324,6 +333,60 @@ export default async function TaskPage({
                   );
                 })}
               </div>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader
+              eyebrow="Evidence"
+              title="外部证据"
+              right={
+                evidence.length > 0 ? (
+                  <Badge tone="teal">{evidence.length} 条</Badge>
+                ) : (
+                  <Badge tone="neutral">无</Badge>
+                )
+              }
+            />
+            {evidence.length === 0 ? (
+              <div className="px-5 py-6 text-center text-caption leading-relaxed text-faint">
+                这次运行没有获取任何外部来源。
+                <br />
+                {toolReason}
+              </div>
+            ) : (
+              <ul className="divide-y divide-line">
+                {evidence.map((item) => (
+                  <li key={item.id} className="px-5 py-3.5">
+                    <div className="flex items-start gap-2">
+                      <Link2 className="mt-0.5 size-3.5 shrink-0 text-teal" />
+                      <div className="min-w-0 flex-1">
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="text-label font-medium text-ink underline decoration-line2 underline-offset-2 hover:text-accent"
+                        >
+                          {item.title}
+                        </a>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-label text-faint">
+                          <span className="mono truncate">{item.publisher ?? item.url}</span>
+                          <span>·</span>
+                          <span>{item.provider}</span>
+                          <span>·</span>
+                          <span>{dateTime(item.retrievedAt, data.timezone)}</span>
+                        </div>
+                        <p className="mt-1.5 border-l border-line2 pl-2.5 text-caption leading-relaxed text-muted">
+                          {item.quote}
+                        </p>
+                        <div className="mt-1 text-label text-faint">
+                          产物引用：<span className="mono">[cite:{item.id}]</span>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
           </Card>
 

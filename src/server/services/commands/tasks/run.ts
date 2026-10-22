@@ -15,6 +15,7 @@ import {
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { generateArtifact } from "@/lib/llm";
+import { searchAndPersist } from "@/server/services/connectors/search";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { planTools, type ToolStepStatus } from "@/lib/domain/tool-plan";
@@ -421,9 +422,32 @@ export async function runTask(taskId: string, userId: string) {
       actionType: task.actionType,
     });
     const toolStartedAt = performance.now();
-    const toolStatus: ToolStepStatus = toolPlan.planned
-      ? "not_connected"
-      : "unauthorized";
+    let toolStatus: ToolStepStatus;
+    let toolReason: string;
+    let search: Awaited<ReturnType<typeof searchAndPersist>> | null = null;
+
+    if (!toolPlan.planned) {
+      toolStatus = "unauthorized";
+      toolReason = toolPlan.reason;
+    } else if (
+      toolPlan.planned.tool === "web_search" ||
+      toolPlan.planned.tool === "web_fetch"
+    ) {
+      // A real external call. Its outcome is recorded as-is; a failure stays a
+      // failure instead of being papered over by a template draft.
+      search = await searchAndPersist({
+        userId: task.userId,
+        taskId,
+        runId,
+        query: `${task.title} ${task.description}`.trim(),
+      });
+      toolStatus = search.status;
+      toolReason =
+        search.message ?? `检索到 ${search.hits.length} 条可引用来源，已落库。`;
+    } else {
+      toolStatus = "not_connected";
+      toolReason = "No external connector is configured for this tool.";
+    }
 
     await addStep({
       type: "tool",
@@ -432,12 +456,18 @@ export async function runTask(taskId: string, userId: string) {
       output: {
         status: toolStatus,
         tool: toolPlan.planned?.tool ?? null,
-        provider: null,
+        provider: search?.provider ?? null,
         resource: toolPlan.planned?.resource ?? null,
-        reason: toolPlan.planned
-          ? "No external connector is configured for this tool."
-          : toolPlan.reason,
+        reason: toolReason,
         considered: toolPlan.considered,
+        hits: search?.hits.length ?? 0,
+        evidence: (search?.evidence ?? []).map((item) => ({
+          id: item.id,
+          url: item.url,
+          title: item.title,
+          publisher: item.publisher,
+        })),
+        latencyMs: search?.latencyMs ?? null,
       },
       latency: Math.max(1, Math.round(performance.now() - toolStartedAt)),
     });
@@ -461,6 +491,13 @@ export async function runTask(taskId: string, userId: string) {
       taskDescription: task.description,
       acceptanceCriteria: task.acceptanceCriteria,
       memories: agentMemories.map((m) => m.content),
+      evidence: (search?.evidence ?? []).map((item) => ({
+        id: item.id,
+        title: item.title,
+        url: item.url,
+        publisher: item.publisher,
+        quote: item.quote,
+      })),
       maxOutputTokens: config.cost.maxOutputTokens,
     });
 
