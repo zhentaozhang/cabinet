@@ -4,5 +4,6 @@ export { loadCabinet } from "./cabinet";
 export { loadMemory } from "./memory";
 export { loadCouncil } from "./council";
 export { loadAgent } from "./agent";
+export { loadAgentCard } from "./agent-card";
 export { loadTask } from "./task";
 export { loadShell } from "./shell";

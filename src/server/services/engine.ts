@@ -3024,6 +3024,7 @@ export async function runApprenticeExam(userId: string) {
       .update(skills)
       .set({
         status: "active",
+        label: "production",
         successCount: 1,
         eval: { status: "passed", required: 5, passed: 5 },
       })

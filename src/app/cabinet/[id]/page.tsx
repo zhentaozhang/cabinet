@@ -63,6 +63,13 @@ export default async function AgentPage({
               {agent.lifecycleStage !== "active" ? (
                 <Badge tone="accent">{agent.lifecycleStage}</Badge>
               ) : null}
+              <Link
+                href={`/api/agents/${agent.id}/card`}
+                target="_blank"
+                className="rounded-md border border-line bg-panel2 px-2 py-0.5 text-[10px] text-muted hover:border-line2"
+              >
+                Agent Card
+              </Link>
             </div>
             <div className="mt-1 text-xs text-muted">
               {agent.title} · {meta.objective}
@@ -172,7 +179,7 @@ export default async function AgentPage({
                       <div>
                         <div className="text-xs font-medium text-ink">{skill.name}</div>
                         <div className="mt-0.5 text-[10px] text-faint">
-                          v{skill.version} · {skill.status} · {skill.successCount} 通过 / {skill.failCount} 失败
+                          v{skill.version} · {skill.label} · {skill.successCount} 通过 / {skill.failCount} 失败
                         </div>
                       </div>
                       <Badge tone={skill.status === "active" ? "teal" : "accent"}>{skill.status}</Badge>

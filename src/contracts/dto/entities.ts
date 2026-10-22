@@ -301,12 +301,51 @@ export const skillDtoSchema = z.object({
   steps: z.array(z.string()),
   tools: z.array(z.string()),
   status: z.string(),
+  label: z.string(),
+  evalSet: z.array(acceptanceItemSchema).nullable(),
   successCount: z.number(),
   failCount: z.number(),
   eval: jsonObject.nullable(),
   createdAt: isoDateTime,
 });
 export type SkillDto = z.infer<typeof skillDtoSchema>;
+
+export const agentCardSchema = z.object({
+  schemaVersion: z.literal("1.0"),
+  id: z.string(),
+  name: z.string(),
+  role: z.string(),
+  title: z.string(),
+  charter: z.string(),
+  objective: z.string(),
+  status: z.string(),
+  lifecycleStage: z.string(),
+  autonomyLevel: z.number(),
+  trustScore: z.number(),
+  successCount: z.number(),
+  failCount: z.number(),
+  tools: z.array(z.string()),
+  skills: z.array(
+    z.object({
+      name: z.string(),
+      version: z.number(),
+      label: z.string(),
+      status: z.string(),
+      successCount: z.number(),
+      failCount: z.number(),
+    }),
+  ),
+  outcomes: z.array(
+    z.object({
+      taskId: z.string(),
+      title: z.string(),
+      status: z.string(),
+      acceptedAt: isoDateTime.nullable(),
+    }),
+  ),
+  generatedAt: isoDateTime,
+});
+export type AgentCardDto = z.infer<typeof agentCardSchema>;
 
 export const councilScoreSchema = z.object({
   feasibility: z.number(),

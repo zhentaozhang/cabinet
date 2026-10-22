@@ -15,6 +15,7 @@ export const API_ROUTES = {
 
   // Per-entity read models.
   agentDetail: (id: string) => `/api/agents/${id}`,
+  agentCard: (id: string) => `/api/agents/${id}/card`,
   taskDetail: (id: string) => `/api/tasks/${id}`,
   councilDetail: (id: string) => `/api/council/${id}`,
 

@@ -470,6 +470,8 @@ export const skills = pgTable("skills", {
   steps: jsonb("steps").$type<string[]>().notNull(),
   tools: jsonb("tools").$type<string[]>().notNull(),
   status: text("status").notNull().default("draft"),
+  label: text("label").notNull().default("draft"),
+  evalSet: jsonb("eval_set").$type<AcceptanceItem[]>(),
   successCount: integer("success_count").notNull().default(0),
   failCount: integer("fail_count").notNull().default(0),
   eval: jsonb("eval").$type<Record<string, unknown>>(),
