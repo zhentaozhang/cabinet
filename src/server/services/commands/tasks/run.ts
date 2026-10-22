@@ -49,8 +49,7 @@ export async function runTask(taskId: string, userId: string) {
     .select()
     .from(agentGrants)
     .where(eq(agentGrants.agentId, agent.id));
-  const periodStart =
-    agent.budgetPeriodStart ?? startOfLocalWeek(new Date(), timezone);
+  const periodStart = startOfLocalWeek(new Date(), timezone);
   const spentCents = await loadSpentCents(agent.id, periodStart);
   const approval = await loadLatestApproval(taskId);
 

@@ -1,8 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { insights, memories, profiles, tasks } from "@/lib/db/schema";
+import { agents, insights, memories, profiles, tasks, users } from "@/lib/db/schema";
 import { logAudit } from "@/lib/audit";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
+import { localDateTimeParts, zonedTimeToUtc } from "@/lib/domain/time";
 import type { Tx } from "../../shared/tx";
 import { factForChange, writeMemoryFact } from "./facts";
 
@@ -24,15 +25,41 @@ async function applyChange(
     const [task] = await tx
       .select()
       .from(tasks)
-      .where(eq(tasks.id, change.taskId));
+      .where(
+        and(
+          eq(tasks.id, change.taskId),
+          eq(tasks.userId, userId),
+        ),
+      );
     if (!task) throw new NotFoundError("Task not found");
     const [h, m] = change.to.split(":").map(Number);
-    const next = new Date();
-    next.setHours(h, m, 0, 0);
+    if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+      throw new ConflictError(`Invalid reschedule time: ${change.to}`);
+    }
+    const [user] = await tx
+      .select({ timezone: users.timezone })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const timeZone = user?.timezone ?? "UTC";
+    const today = localDateTimeParts(new Date(), timeZone);
+    const next = zonedTimeToUtc(
+      today.year,
+      today.month,
+      today.day,
+      h,
+      m,
+      timeZone,
+    );
     await tx
       .update(tasks)
       .set({ dueAt: next, updatedAt: new Date() })
-      .where(eq(tasks.id, change.taskId));
+      .where(
+        and(
+          eq(tasks.id, change.taskId),
+          eq(tasks.userId, userId),
+        ),
+      );
     return {
       before: { dueAt: task.dueAt ? task.dueAt.toISOString() : null },
       after: { dueAt: next.toISOString() },
@@ -43,12 +70,22 @@ async function applyChange(
     const [task] = await tx
       .select()
       .from(tasks)
-      .where(eq(tasks.id, change.taskId));
+      .where(
+        and(
+          eq(tasks.id, change.taskId),
+          eq(tasks.userId, userId),
+        ),
+      );
     if (!task) throw new NotFoundError("Task not found");
     await tx
       .update(tasks)
       .set({ estimateMin: change.minutes, updatedAt: new Date() })
-      .where(eq(tasks.id, change.taskId));
+      .where(
+        and(
+          eq(tasks.id, change.taskId),
+          eq(tasks.userId, userId),
+        ),
+      );
     return {
       before: { estimateMin: task.estimateMin },
       after: { estimateMin: change.minutes },
@@ -108,7 +145,12 @@ async function reverseChange(
     await tx
       .update(tasks)
       .set({ dueAt: new Date(dueAt), updatedAt: new Date() })
-      .where(eq(tasks.id, change.taskId));
+      .where(
+        and(
+          eq(tasks.id, change.taskId),
+          eq(tasks.userId, userId),
+        ),
+      );
     return;
   }
 
@@ -120,7 +162,12 @@ async function reverseChange(
     await tx
       .update(tasks)
       .set({ estimateMin, updatedAt: new Date() })
-      .where(eq(tasks.id, change.taskId));
+      .where(
+        and(
+          eq(tasks.id, change.taskId),
+          eq(tasks.userId, userId),
+        ),
+      );
     return;
   }
 
@@ -248,9 +295,16 @@ export async function applyInsight(
     const domain =
       insight.proposedChange.type === "reschedule" ? "health" : "learning";
     const fact = factForChange(insight.proposedChange);
+    const [chief] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(eq(agents.userId, insight.userId), eq(agents.role, "chief")),
+      )
+      .limit(1);
     await writeMemoryFact(tx, {
       userId: insight.userId,
-      agentId: "ag_chief",
+      agentId: chief?.id ?? null,
       type: "semantic",
       domain,
       content: insight.claim,

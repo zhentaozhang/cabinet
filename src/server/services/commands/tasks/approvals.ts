@@ -54,33 +54,45 @@ export async function decideApproval(
     throw new ConflictError(`Approval is already ${approval.status}.`);
   }
 
-  const [updated] = await db
-    .update(approvals)
-    .set({
-      status: decision === "approve" ? "approved" : "rejected",
-      reason: reason ?? null,
-      decidedAt: new Date(),
-    })
-    .where(and(eq(approvals.id, approvalId), eq(approvals.status, "pending")))
-    .returning();
-  if (!updated) throw new ConflictError("Approval state changed; retry.");
+  await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(approvals)
+      .set({
+        status: decision === "approve" ? "approved" : "rejected",
+        reason: reason ?? null,
+        decidedAt: new Date(),
+      })
+      .where(and(eq(approvals.id, approvalId), eq(approvals.status, "pending")))
+      .returning();
+    if (!updated) throw new ConflictError("Approval state changed; retry.");
 
-  if (approval.taskId) {
-    const [task] = await db
-      .select()
-      .from(tasks)
-      .where(eq(tasks.id, approval.taskId));
-    if (task) {
+    if (approval.taskId) {
+      const [task] = await tx
+        .select()
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.id, approval.taskId),
+            eq(tasks.userId, approval.userId),
+          ),
+        );
+      if (!task) throw new NotFoundError("Task not found");
       const target = decision === "approve" ? "approved" : "cancelled";
       assertTransition("task", task.status, target);
-      const [taskUpdated] = await db
+      const [taskUpdated] = await tx
         .update(tasks)
         .set({ status: target, updatedAt: new Date() })
-        .where(and(eq(tasks.id, task.id), eq(tasks.status, task.status)))
+        .where(
+          and(
+            eq(tasks.id, task.id),
+            eq(tasks.userId, approval.userId),
+            eq(tasks.status, task.status),
+          ),
+        )
         .returning();
       if (!taskUpdated) throw new ConflictError("Task state changed; retry.");
     }
-  }
+  });
 
   await logAudit({
     userId: approval.userId,

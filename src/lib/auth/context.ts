@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { UnauthorizedError } from "@/lib/domain/errors";
+import { isAuthRequired } from "./mode";
 
 async function resolveUserId(): Promise<string | null> {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -31,7 +32,7 @@ export async function getPageUserId(options?: {
   const userId = await resolveUserId();
   const resolved =
     userId ??
-    (process.env.AUTH_REQUIRED === "true" ? null : DEMO_USER_ID);
+    (isAuthRequired() ? null : DEMO_USER_ID);
 
   if (!resolved) redirect("/login");
   if (!options?.allowMissingWorkspace && !(await hasWorkspace(resolved))) {
@@ -46,6 +47,6 @@ export async function getPageUserId(options?: {
 export async function getApiUserId(): Promise<string> {
   const userId = await resolveUserId();
   if (userId) return userId;
-  if (process.env.AUTH_REQUIRED === "true") throw new UnauthorizedError();
+  if (isAuthRequired()) throw new UnauthorizedError();
   return DEMO_USER_ID;
 }

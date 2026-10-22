@@ -10,6 +10,7 @@ import {
   checkins,
   councilPositions,
   councils,
+  dissents,
   goals,
   idempotencyKeys,
   insights,
@@ -40,6 +41,7 @@ export async function exportAccount(userId: string) {
     councilRows,
     checkinRows,
     auditRows,
+    dissentRows,
   ] = await Promise.all([
     db.select().from(users).where(eq(users.id, userId)),
     db.select().from(profiles).where(eq(profiles.userId, userId)),
@@ -53,6 +55,7 @@ export async function exportAccount(userId: string) {
     db.select().from(councils).where(eq(councils.userId, userId)),
     db.select().from(checkins).where(eq(checkins.userId, userId)),
     db.select().from(auditEvents).where(eq(auditEvents.userId, userId)),
+    db.select().from(dissents).where(eq(dissents.userId, userId)),
   ]);
 
   const agentIds = agentRows.map((row) => row.id);
@@ -96,6 +99,7 @@ export async function exportAccount(userId: string) {
     checkins: checkinRows,
     artifacts: artifactRows,
     auditEvents: auditRows,
+    dissents: dissentRows,
   };
 }
 
@@ -151,6 +155,7 @@ export async function deleteAccount(userId: string): Promise<void> {
 
     await tx.delete(approvals).where(eq(approvals.userId, userId));
     await tx.delete(auditEvents).where(eq(auditEvents.userId, userId));
+    await tx.delete(dissents).where(eq(dissents.userId, userId));
     await tx.delete(reviews).where(eq(reviews.userId, userId));
     await tx.delete(insights).where(eq(insights.userId, userId));
     await tx.delete(memories).where(eq(memories.userId, userId));

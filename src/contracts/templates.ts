@@ -134,3 +134,23 @@ export const ROLE_GRANTS: Record<
   apprentice: [{ resource: "task", scope: "read" }],
   critic: [{ resource: "plan", scope: "read" }],
 };
+
+/** Default skill created with a new apprentice. */
+export const APPRENTICE_SKILL = {
+  name: "检索评估练习设计",
+  steps: [
+    "读取 mentor 的 5 次成功运行",
+    "提取题目结构：定义题 / 对比题 / 场景题",
+    "为每题生成参考答案",
+    "生成评分标准（rubric）",
+    "自检：是否覆盖 recall / precision / rerank",
+  ],
+  tools: ["read_runs", "sandbox_execute"],
+  evalSet: [
+    { type: "section", value: "步骤", required: true },
+    { type: "section", value: "护栏", required: true },
+    { type: "contains", value: "评分标准", required: true },
+    { type: "contains", value: "recall", required: true },
+    { type: "min_words", value: 20, required: true },
+  ],
+} as const;

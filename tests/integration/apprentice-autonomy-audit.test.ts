@@ -1,11 +1,12 @@
 import { DEMO_USER_ID } from "@/lib/demo";
 import { beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { agents, auditEvents, tasks } from "@/lib/db/schema";
+import { agents, auditEvents, skills, tasks, users } from "@/lib/db/schema";
 import { runApprenticeExam, setAutonomy } from "@/lib/engine";
 import { verifyAuditChain } from "@/lib/audit";
 import { ConflictError, PolicyDenied } from "@/lib/domain/errors";
+import { setupWorkspace } from "@/lib/setup";
 import { resetDb } from "../helpers/db";
 
 beforeEach(async () => {
@@ -24,6 +25,34 @@ describe("apprenticeship lifecycle", () => {
     expect(agent.lifecycleStage).toBe("active");
 
     await expect(runApprenticeExam(DEMO_USER_ID)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("promotes a newly registered workspace with random agent ids", async () => {
+    const userId = "usr_apprentice_new";
+    await db.insert(users).values({
+      id: userId,
+      email: "apprentice-new@cabinet.local",
+      name: "New Apprentice",
+      emailVerified: true,
+      timezone: "Asia/Shanghai",
+      updatedAt: new Date(),
+    });
+    await setupWorkspace({ userId, timezone: "Asia/Shanghai" });
+
+    const result = await runApprenticeExam(userId);
+    expect(result).toMatchObject({ passed: 5, required: 5 });
+
+    const [agent] = await db
+      .select()
+      .from(agents)
+      .where(and(eq(agents.userId, userId), eq(agents.role, "apprentice")));
+    expect(agent.lifecycleStage).toBe("active");
+
+    const [skill] = await db
+      .select()
+      .from(skills)
+      .where(eq(skills.agentId, agent.id));
+    expect(skill.label).toBe("production");
   });
 
   it("records the exam on a synthetic task, not on a real task", async () => {

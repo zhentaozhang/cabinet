@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
@@ -9,9 +9,12 @@ import {
   memories,
   profiles,
   tasks,
+  users,
 } from "@/lib/db/schema";
 import type { FalsificationCondition } from "@/lib/db/schema";
 import { getPolicyConfig } from "@/lib/policy/config";
+import { startOfLocalWeek } from "@/lib/domain/time";
+import { loadSpentCents } from "../tasks/execution";
 import type {
   CouncilPositionDraft,
 } from "@/lib/domain/council";
@@ -45,10 +48,11 @@ export async function loadCouncilContext(
     .from(goals)
     .where(eq(goals.userId, userId))
     .orderBy(desc(goals.createdAt));
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const recentTasks = await db
     .select()
     .from(tasks)
-    .where(eq(tasks.userId, userId))
+    .where(and(eq(tasks.userId, userId), gte(tasks.createdAt, since)))
     .orderBy(desc(tasks.createdAt))
     .limit(12);
   const recentCheckins = await db
@@ -70,15 +74,23 @@ export async function loadCouncilContext(
       and(
         eq(auditEvents.userId, userId),
         eq(auditEvents.action, "audit.reject"),
+        gte(auditEvents.createdAt, since),
       ),
     )
     .orderBy(desc(auditEvents.seq))
     .limit(10);
 
-  const spentCents = allAgents.reduce(
-    (sum, agent) => sum + Number(agent.spentCents ?? 0),
-    0,
-  );
+  const [user] = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const weekStart = startOfLocalWeek(new Date(), user?.timezone ?? "UTC");
+  const spentCents = (
+    await Promise.all(
+      allAgents.map((agent) => loadSpentCents(agent.id, weekStart)),
+    )
+  ).reduce((sum, value) => sum + value, 0);
 
   return {
     agents: allAgents,

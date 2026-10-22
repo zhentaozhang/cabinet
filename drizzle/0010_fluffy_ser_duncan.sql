@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "memories_fact_active_unique" ON "memories" USING btree ("user_id","fact_key") WHERE "memories"."valid_to" IS NULL;

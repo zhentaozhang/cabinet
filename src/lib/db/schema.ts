@@ -385,6 +385,9 @@ export const memories = pgTable(
   (t) => [
     index("memories_user_idx").on(t.userId),
     index("memories_fact_idx").on(t.userId, t.factKey),
+    uniqueIndex("memories_fact_active_unique")
+      .on(t.userId, t.factKey)
+      .where(sql`${t.validTo} IS NULL`),
   ],
 );
 

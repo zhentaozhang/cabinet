@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Evidence, ProposedChange } from "@/lib/db/schema";
 import { memories } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
@@ -37,7 +37,7 @@ export async function writeMemoryFact(
   tx: Tx,
   input: {
     userId: string;
-    agentId: string;
+    agentId: string | null;
     type: "semantic" | "procedural";
     domain: string;
     content: string;
@@ -51,6 +51,11 @@ export async function writeMemoryFact(
 ): Promise<string> {
   const now = new Date();
   if (input.factKey) {
+    // Serialize writers for the same active fact. The partial unique index is a
+    // second line of defense, but this keeps the read-then-write path simple.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`${input.userId}:${input.factKey}`}))`,
+    );
     const [existing] = await tx
       .select()
       .from(memories)

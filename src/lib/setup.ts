@@ -7,9 +7,14 @@ import {
   goals,
   policyConfig,
   profiles,
+  skills,
   users,
 } from "@/lib/db/schema";
-import { AGENT_TEMPLATES, ROLE_GRANTS } from "@/contracts/templates";
+import {
+  AGENT_TEMPLATES,
+  APPRENTICE_SKILL,
+  ROLE_GRANTS,
+} from "@/contracts/templates";
 import { SEED_POLICY_CONFIG } from "@/lib/domain/policy";
 import { newId } from "@/lib/ids";
 import { startOfLocalWeek } from "@/lib/domain/time";
@@ -146,7 +151,8 @@ export async function setupWorkspace(input: SetupInput) {
         status: "active",
         autonomyLevel: template.defaultAutonomy,
         trustScore: 50,
-        lifecycleStage: "active",
+        lifecycleStage:
+          template.role === "apprentice" ? "shadowing" : "active",
         tools: template.tools,
         memoryScope: template.memoryScope,
         budgetCents: template.budgetCents,
@@ -172,6 +178,24 @@ export async function setupWorkspace(input: SetupInput) {
         .update(agents)
         .set({ mentorId: coach.id })
         .where(eq(agents.id, apprentice.id));
+      await tx.insert(skills).values({
+        id: newId("sk"),
+        agentId: apprentice.id,
+        name: APPRENTICE_SKILL.name,
+        version: 1,
+        steps: [...APPRENTICE_SKILL.steps],
+        tools: [...APPRENTICE_SKILL.tools],
+        status: "draft",
+        label: "draft",
+        evalSet: APPRENTICE_SKILL.evalSet.map((item) => ({ ...item })),
+        successCount: 0,
+        failCount: 0,
+        eval: {
+          status: "not_started",
+          required: APPRENTICE_SKILL.evalSet.length,
+          passed: 0,
+        },
+      });
     }
 
     let goalId: string | null = null;

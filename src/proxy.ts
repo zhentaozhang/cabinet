@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
+import { isAuthRequired } from "@/lib/auth/mode";
 
 export function proxy(request: NextRequest) {
-  if (process.env.AUTH_REQUIRED !== "true") {
+  if (!isAuthRequired()) {
     return NextResponse.next();
   }
 

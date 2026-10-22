@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { agentGrants, agents, goals, profiles, users } from "@/lib/db/schema";
+import { agentGrants, agents, dissents, goals, profiles, users } from "@/lib/db/schema";
 import { setupWorkspace } from "@/lib/setup";
 import { exportAccount, deleteAccount } from "@/lib/account";
 import { ConflictError } from "@/lib/domain/errors";
@@ -75,8 +75,24 @@ describe("workspace setup", () => {
 describe("account export and deletion", () => {
   it("exports and then deletes only the target user's data", async () => {
     await setupWorkspace({ userId: NEW_USER, timezone: "Asia/Shanghai" });
+    await db.insert(dissents).values({
+      id: "dis_account_test",
+      userId: NEW_USER,
+      councilId: "ccl_account_test",
+      agentId: "ag_account_test",
+      warning: "account export/delete must include dissents",
+      condition: {
+        metric: "audit_reject_count",
+        operator: ">=",
+        threshold: 1,
+        windowDays: 7,
+      },
+      status: "pending",
+      evidence: [],
+    });
 
     const exported = await exportAccount(NEW_USER);
+    expect(exported.dissents).toHaveLength(1);
     expect(exported.agents).toHaveLength(7);
     expect(exported.user?.id).toBe(NEW_USER);
 
@@ -93,6 +109,12 @@ describe("account export and deletion", () => {
       .from(agents)
       .where(eq(agents.userId, NEW_USER));
     expect(remainingAgents).toHaveLength(0);
+
+    const remainingDissents = await db
+      .select()
+      .from(dissents)
+      .where(eq(dissents.userId, NEW_USER));
+    expect(remainingDissents).toHaveLength(0);
 
     const demoUser = await db
       .select()

@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, runs, skills, steps, tasks } from "@/lib/db/schema";
+import { APPRENTICE_SKILL } from "@/contracts/templates";
 import { logAudit } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { evaluateAcceptance } from "@/lib/domain/acceptance";
@@ -17,8 +18,9 @@ export async function runApprenticeExam(userId: string) {
   const [apprentice] = await db
     .select()
     .from(agents)
-    .where(eq(agents.id, "ag_apprentice"));
-  if (!apprentice || apprentice.userId !== userId) {
+    .where(and(eq(agents.userId, userId), eq(agents.role, "apprentice")))
+    .limit(1);
+  if (!apprentice) {
     throw new NotFoundError("Apprentice not found");
   }
 
@@ -28,14 +30,59 @@ export async function runApprenticeExam(userId: string) {
     );
   }
 
-  const [skill] = await db
+  const [auditor] = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.userId, userId), eq(agents.role, "auditor")))
+    .limit(1);
+  if (!auditor) {
+    throw new ValidationError("Auditor not found for this workspace.");
+  }
+
+  const [coach] = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.userId, userId), eq(agents.role, "coach")))
+    .limit(1);
+
+  let [skill] = await db
     .select()
     .from(skills)
-    .where(eq(skills.agentId, "ag_apprentice"))
+    .where(eq(skills.agentId, apprentice.id))
     .orderBy(desc(skills.createdAt))
     .limit(1);
 
-  const examChecklist = skill?.evalSet ?? [];
+  if (!skill) {
+    await db.insert(skills).values({
+      id: newId("sk"),
+      agentId: apprentice.id,
+      name: APPRENTICE_SKILL.name,
+      version: 1,
+      steps: [...APPRENTICE_SKILL.steps],
+      tools: [...APPRENTICE_SKILL.tools],
+      status: "draft",
+      label: "draft",
+      evalSet: APPRENTICE_SKILL.evalSet.map((item) => ({ ...item })),
+      successCount: 0,
+      failCount: 0,
+      eval: {
+        status: "not_started",
+        required: APPRENTICE_SKILL.evalSet.length,
+        passed: 0,
+      },
+    });
+    [skill] = await db
+      .select()
+      .from(skills)
+      .where(eq(skills.agentId, apprentice.id))
+      .orderBy(desc(skills.createdAt))
+      .limit(1);
+  }
+
+  const examChecklist =
+    skill?.evalSet && skill.evalSet.length > 0
+      ? skill.evalSet
+      : APPRENTICE_SKILL.evalSet.map((item) => ({ ...item }));
   if (examChecklist.length === 0) {
     throw new ValidationError("Skill has no eval set; cannot run the exam.");
   }
@@ -62,7 +109,7 @@ export async function runApprenticeExam(userId: string) {
       title: "学徒结业考试",
       description: "5 个留出任务，覆盖检索评估练习设计。",
       assigneeId: apprentice.id,
-      auditorId: "ag_auditor",
+      auditorId: auditor.id,
       status: "done",
       priority: 2,
       acceptanceCriteria: "按技能 eval set 逐项验收；Auditor 监考。",
@@ -87,7 +134,7 @@ export async function runApprenticeExam(userId: string) {
   await db.insert(runs).values({
     id: runId,
     taskId: examTaskId,
-    agentId: "ag_apprentice",
+    agentId: apprentice.id,
     status: "succeeded",
     mode: "demo",
     startedAt: new Date(),
@@ -104,7 +151,7 @@ export async function runApprenticeExam(userId: string) {
       idx: 1,
       type: "tool",
       tool: "read_runs",
-      input: { mentor: apprentice.mentorId ?? "ag_coach", runs: 5 },
+      input: { mentor: apprentice.mentorId ?? coach?.id ?? null, runs: 5 },
       output: { loaded: 5 },
       tokensIn: 200,
       tokensOut: 0,
@@ -145,7 +192,7 @@ export async function runApprenticeExam(userId: string) {
     }
     await logAudit({
       userId: apprentice.userId,
-      actor: "agent:ag_auditor",
+      actor: `agent:${auditor.id}`,
       action: "apprentice.exam_failed",
       target: apprentice.id,
       before: { stage: apprentice.lifecycleStage },
@@ -193,7 +240,7 @@ export async function runApprenticeExam(userId: string) {
 
   await logAudit({
     userId: apprentice.userId,
-    actor: "agent:ag_auditor",
+    actor: `agent:${auditor.id}`,
     action: "apprentice.promote",
     target: apprentice.id,
     before: { stage: apprentice.lifecycleStage },
