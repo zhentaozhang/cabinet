@@ -720,6 +720,22 @@ export function QuickCreate({
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDesc, setTaskDesc] = useState("");
+  const [taskCriteria, setTaskCriteria] = useState("");
+  const [taskAssignee, setTaskAssignee] = useState(
+    agents.find((agent) => agent.role !== "auditor")?.id ?? agents[0]?.id ?? "",
+  );
+  const [taskAuditor, setTaskAuditor] = useState(
+    agents.find((agent) => agent.role === "auditor")?.id ?? "",
+  );
+  const [taskAction, setTaskAction] = useState("internal");
+  const [taskGoal, setTaskGoal] = useState("");
+  const [goalTitle, setGoalTitle] = useState("");
+  const [goalWhy, setGoalWhy] = useState("");
+  const [goalTarget, setGoalTarget] = useState("");
+  const [goalHorizon, setGoalHorizon] = useState("6 weeks");
+  const [goalDomain, setGoalDomain] = useState("learning");
 
   async function submit(
     url: string,
@@ -731,7 +747,19 @@ export function QuickCreate({
     const data = await call(url, "POST", body);
     setBusy(null);
     setMsg(data.ok ? "已创建" : (data.error ?? "创建失败"));
-    if (data.ok) router.refresh();
+    if (data.ok) {
+      if (label === "task") {
+        setTaskTitle("");
+        setTaskDesc("");
+        setTaskCriteria("");
+        setTaskGoal("");
+      } else {
+        setGoalTitle("");
+        setGoalWhy("");
+        setGoalTarget("");
+      }
+      router.refresh();
+    }
   }
 
   return (
@@ -742,25 +770,29 @@ export function QuickCreate({
         </summary>
         <div className="mt-3 space-y-2">
           <input
-            id="qc-task-title"
+            value={taskTitle}
+            onChange={(event) => setTaskTitle(event.target.value)}
             placeholder="任务标题"
             className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <textarea
-            id="qc-task-desc"
+            value={taskDesc}
+            onChange={(event) => setTaskDesc(event.target.value)}
             placeholder="描述"
             rows={2}
             className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <textarea
-            id="qc-task-criteria"
+            value={taskCriteria}
+            onChange={(event) => setTaskCriteria(event.target.value)}
             placeholder="验收标准"
             rows={2}
             className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <div className="grid grid-cols-2 gap-2">
             <select
-              id="qc-task-assignee"
+              value={taskAssignee}
+              onChange={(event) => setTaskAssignee(event.target.value)}
               className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
             >
               {agents.map((agent) => (
@@ -770,7 +802,8 @@ export function QuickCreate({
               ))}
             </select>
             <select
-              id="qc-task-auditor"
+              value={taskAuditor}
+              onChange={(event) => setTaskAuditor(event.target.value)}
               className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
             >
               {agents
@@ -784,7 +817,8 @@ export function QuickCreate({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <select
-              id="qc-task-action"
+              value={taskAction}
+              onChange={(event) => setTaskAction(event.target.value)}
               className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
             >
               <option value="internal">内部动作</option>
@@ -792,7 +826,8 @@ export function QuickCreate({
               <option value="spend">支出</option>
             </select>
             <select
-              id="qc-task-goal"
+              value={taskGoal}
+              onChange={(event) => setTaskGoal(event.target.value)}
               className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
             >
               <option value="">无目标</option>
@@ -806,51 +841,32 @@ export function QuickCreate({
           <Button
             size="sm"
             variant="primary"
-            disabled={busy !== null}
-            onClick={() => {
-              const title = (
-                document.getElementById("qc-task-title") as HTMLInputElement
-              )?.value;
-              const description = (
-                document.getElementById("qc-task-desc") as HTMLTextAreaElement
-              )?.value;
-              const criteria = (
-                document.getElementById(
-                  "qc-task-criteria",
-                ) as HTMLTextAreaElement
-              )?.value;
-              const assigneeId = (
-                document.getElementById(
-                  "qc-task-assignee",
-                ) as HTMLSelectElement
-              )?.value;
-              const auditorId = (
-                document.getElementById(
-                  "qc-task-auditor",
-                ) as HTMLSelectElement
-              )?.value;
-              const actionType = (
-                document.getElementById("qc-task-action") as HTMLSelectElement
-              )?.value;
-              const goalId = (
-                document.getElementById("qc-task-goal") as HTMLSelectElement
-              )?.value;
+            disabled={
+              busy !== null ||
+              !taskTitle.trim() ||
+              !taskDesc.trim() ||
+              !taskCriteria.trim() ||
+              !taskAssignee ||
+              !taskAuditor ||
+              taskAssignee === taskAuditor
+            }
+            onClick={() =>
               submit(
                 "/api/tasks",
                 {
-                  title,
-                  description,
-                  acceptanceCriteria: criteria,
-                  assigneeId,
-                  auditorId,
-                  actionType,
-                  resource: actionType === "external" ? "calendar" : "task",
-                  goalId: goalId || null,
+                  title: taskTitle,
+                  description: taskDesc,
+                  acceptanceCriteria: taskCriteria,
+                  assigneeId: taskAssignee,
+                  auditorId: taskAuditor,
+                  actionType: taskAction,
+                  resource: taskAction === "external" ? "calendar" : "task",
+                  goalId: taskGoal || null,
                   estimateMin: 25,
                 },
                 "task",
-              );
-            }}
+              )
+            }
           >
             创建任务
           </Button>
@@ -863,28 +879,32 @@ export function QuickCreate({
         </summary>
         <div className="mt-3 space-y-2">
           <input
-            id="qc-goal-title"
+            value={goalTitle}
+            onChange={(event) => setGoalTitle(event.target.value)}
             placeholder="目标标题"
             className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
-            id="qc-goal-why"
+            value={goalWhy}
+            onChange={(event) => setGoalWhy(event.target.value)}
             placeholder="为什么（一句话）"
             className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
-            id="qc-goal-target"
+            value={goalTarget}
+            onChange={(event) => setGoalTarget(event.target.value)}
             placeholder="可验收的目标"
             className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <div className="grid grid-cols-2 gap-2">
             <input
-              id="qc-goal-horizon"
-              defaultValue="6 weeks"
+              value={goalHorizon}
+              onChange={(event) => setGoalHorizon(event.target.value)}
               className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <select
-              id="qc-goal-domain"
+              value={goalDomain}
+              onChange={(event) => setGoalDomain(event.target.value)}
               className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
             >
               <option value="learning">学习</option>
@@ -896,22 +916,25 @@ export function QuickCreate({
           <Button
             size="sm"
             variant="primary"
-            disabled={busy !== null}
-            onClick={() => {
-              const get = (id: string) =>
-                (document.getElementById(id) as HTMLInputElement)?.value ?? "";
+            disabled={
+              busy !== null ||
+              !goalTitle.trim() ||
+              !goalWhy.trim() ||
+              !goalTarget.trim()
+            }
+            onClick={() =>
               submit(
                 "/api/goals",
                 {
-                  title: get("qc-goal-title"),
-                  why: get("qc-goal-why"),
-                  target: get("qc-goal-target"),
-                  horizon: get("qc-goal-horizon"),
-                  domain: get("qc-goal-domain"),
+                  title: goalTitle,
+                  why: goalWhy,
+                  target: goalTarget,
+                  horizon: goalHorizon,
+                  domain: goalDomain,
                 },
                 "goal",
-              );
-            }}
+              )
+            }
           >
             创建目标
           </Button>
