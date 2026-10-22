@@ -38,18 +38,18 @@ function Mark() {
   );
 }
 
-function NavLinks({ compact = false }: { compact?: boolean }) {
+function useActiveHref() {
   const pathname = usePathname();
+  return (href: string) =>
+    href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
+function NavLinks() {
+  const isActive = useActiveHref();
   return (
-    <nav
-      aria-label="主导航"
-      className={cn("flex gap-1", compact ? "flex-row overflow-x-auto" : "flex-col")}
-    >
+    <nav aria-label="主导航" className={cn("flex flex-col gap-1")}>
       {NAV.map((item) => {
-        const active =
-          item.href === "/"
-            ? pathname === "/"
-            : pathname.startsWith(item.href);
+        const active = isActive(item.href);
         const Icon = item.icon;
         return (
           <Link
@@ -60,7 +60,6 @@ function NavLinks({ compact = false }: { compact?: boolean }) {
             className={cn(
               "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs transition-colors",
               FOCUS_RING,
-              compact ? "shrink-0" : "",
               active
                 ? "bg-white/[0.06] text-ink"
                 : "text-muted hover:bg-white/[0.03] hover:text-ink",
@@ -74,17 +73,48 @@ function NavLinks({ compact = false }: { compact?: boolean }) {
               )}
             />
             <span className="font-medium">{item.label}</span>
-            {!compact ? (
-              <span
-                aria-hidden="true"
-                className="ml-auto hidden text-mini text-faint lg:block"
-              >
-                {active ? "●" : ""}
-              </span>
-            ) : null}
+            <span
+              aria-hidden="true"
+              className="ml-auto hidden text-mini text-faint lg:block"
+            >
+              {active ? "●" : ""}
+            </span>
           </Link>
         );
       })}
+    </nav>
+  );
+}
+
+function MobileTabs() {
+  const isActive = useActiveHref();
+  return (
+    <nav
+      aria-label="主导航"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden"
+    >
+      <ul className="grid grid-cols-5">
+        {NAV.map((item) => {
+          const active = isActive(item.href);
+          const Icon = item.icon;
+          return (
+            <li key={item.href}>
+              <Link
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex flex-col items-center gap-1 py-2.5 transition-colors",
+                  FOCUS_RING,
+                  active ? "text-accent" : "text-faint hover:text-muted",
+                )}
+              >
+                <Icon aria-hidden="true" className="size-[18px]" />
+                <span className="text-nano font-medium">{item.label}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 }
@@ -288,13 +318,12 @@ export function Shell({
           <Mark />
           <div className="text-caption font-semibold tracking-[0.16em]">CABINET</div>
         </div>
-        <div className="px-3 pb-2">
-          <NavLinks compact />
-        </div>
       </header>
 
+      <MobileTabs />
+
       <main id="main" className="md:ml-[232px]">
-        <div className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 md:px-8 md:py-8">
+        <div className="mx-auto w-full max-w-[1180px] px-4 pt-6 pb-24 sm:px-6 md:px-8 md:py-8">
           {children}
         </div>
       </main>
