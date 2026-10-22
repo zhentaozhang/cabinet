@@ -2,6 +2,8 @@ import { handleQuery } from "@/lib/api/read";
 import { loadMemory } from "@/server/readmodels";
 
 export async function GET(request: Request) {
-  const type = new URL(request.url).searchParams.get("type") ?? undefined;
-  return handleQuery((userId) => loadMemory(userId, type));
+  const params = new URL(request.url).searchParams;
+  const type = params.get("type") ?? undefined;
+  const view = params.get("view") === "history" ? "history" : "current";
+  return handleQuery((userId) => loadMemory(userId, type, view));
 }

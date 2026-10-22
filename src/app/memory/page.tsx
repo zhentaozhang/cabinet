@@ -42,16 +42,25 @@ function typeTone(type: string) {
 export default async function MemoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string }>;
+  searchParams: Promise<{ type?: string; view?: string }>;
 }) {
-  const { type } = await searchParams;
-  const data = await fetchMemoryPage(type);
+  const params = await searchParams;
+  const type = params.type;
+  const view = params.view === "history" ? "history" : "current";
+  const data = await fetchMemoryPage(type, view);
   const avgConfidence =
     data.memories.length > 0
       ? data.memories.reduce((sum, m) => sum + m.confidence, 0) / data.memories.length
       : 0;
   const conflicts = data.memories.filter((m) => m.status === "conflicted").length;
   const stale = data.stale;
+  const hrefFor = (nextType: string) => {
+    const query = new URLSearchParams();
+    if (nextType) query.set("type", nextType);
+    if (view === "history") query.set("view", "history");
+    const qs = query.toString();
+    return qs ? `/memory?${qs}` : "/memory";
+  };
 
   return (
     <div>
@@ -78,7 +87,11 @@ export default async function MemoryPage({
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Card className="px-4 py-3">
-          <Stat label="Memories" value={data.counts.all} hint="条活跃记忆" />
+          <Stat
+            label="Memories"
+            value={data.counts.all}
+            hint={view === "history" ? "条历史事实" : "条当前事实"}
+          />
         </Card>
         <Card className="px-4 py-3">
           <Stat label="Avg confidence" value={pct(avgConfidence * 100)} hint="平均置信度" />
@@ -97,7 +110,7 @@ export default async function MemoryPage({
           return (
             <Link
               key={tab.key || "all"}
-              href={tab.key ? `/memory?type=${tab.key}` : "/memory"}
+              href={hrefFor(tab.key)}
               className={
                 active
                   ? "rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1 text-[11px] text-accent"
@@ -113,17 +126,58 @@ export default async function MemoryPage({
         })}
       </div>
 
+      <div className="mb-5 flex items-center gap-1.5">
+        <Link
+          href={hrefFor(type ?? "")}
+          className={
+            view === "current"
+              ? "rounded-md border border-teal/40 bg-teal/10 px-2.5 py-1 text-[11px] text-teal"
+              : "rounded-md border border-line bg-panel2 px-2.5 py-1 text-[11px] text-muted hover:border-line2"
+          }
+        >
+          当前事实
+        </Link>
+        <Link
+          href={`/memory?${new URLSearchParams({
+            ...(type ? { type } : {}),
+            view: "history",
+          }).toString()}`}
+          className={
+            view === "history"
+              ? "rounded-md border border-violet/40 bg-violet/10 px-2.5 py-1 text-[11px] text-violet"
+              : "rounded-md border border-line bg-panel2 px-2.5 py-1 text-[11px] text-muted hover:border-line2"
+          }
+        >
+          历史版本
+        </Link>
+      </div>
+
       <div className="grid gap-5 lg:grid-cols-[1.7fr_1fr]">
         <div className="space-y-3">
           {data.memories.length === 0 ? (
-            <EmptyState title="没有匹配的记忆" hint="换个类型，或完成一次 check-in。" />
+            <EmptyState
+              title={view === "history" ? "没有历史版本" : "没有匹配的记忆"}
+              hint={
+                view === "history"
+                  ? "事实被新版本取代后会保留在这里。"
+                  : "换个类型，或完成一次 check-in。"
+              }
+            />
           ) : (
             data.memories.map((memory) => (
-              <Card key={memory.id} className="px-5 py-4">
+              <Card
+                key={memory.id}
+                className={
+                  view === "history" ? "px-5 py-4 opacity-70" : "px-5 py-4"
+                }
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge tone={typeTone(memory.type)}>{memory.type}</Badge>
                     <Badge tone="neutral">{memory.domain}</Badge>
+                    {memory.factKey ? (
+                      <Badge tone="blue">{memory.factKey}</Badge>
+                    ) : null}
                     {memory.status !== "active" ? (
                       <Badge tone="danger">{memory.status}</Badge>
                     ) : null}
@@ -132,11 +186,18 @@ export default async function MemoryPage({
                     <span className="mono text-[10px] text-muted">
                       {Math.round(memory.confidence * 100)}%
                     </span>
-                    <MemoryActions memoryId={memory.id} />
+                    {view === "current" ? (
+                      <MemoryActions memoryId={memory.id} />
+                    ) : null}
                   </div>
                 </div>
 
                 <p className="mt-2.5 text-xs leading-relaxed text-[#c6ccd8]">{memory.content}</p>
+                {memory.value ? (
+                  <p className="mt-1 text-[10px] text-accent">
+                    事实值：{memory.value}
+                  </p>
+                ) : null}
 
                 <div className="mt-3">
                   <Progress value={memory.confidence * 100} tone={memory.confidence >= 0.8 ? "teal" : "accent"} />
@@ -167,7 +228,14 @@ export default async function MemoryPage({
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-[9px] text-faint">
+                  <span>生效 {dateTime(memory.validFrom)}</span>
+                  {memory.validTo ? (
+                    <span>失效 {dateTime(memory.validTo)}</span>
+                  ) : null}
                   <span>最后确认 {dateTime(memory.lastConfirmedAt)}</span>
+                  {memory.supersededBy ? (
+                    <span className="mono">被 {memory.supersededBy} 取代</span>
+                  ) : null}
                   {memory.sourceEventId ? (
                     <span className="mono">source: {memory.sourceEventId}</span>
                   ) : null}

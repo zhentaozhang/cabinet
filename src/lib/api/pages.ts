@@ -65,8 +65,12 @@ export async function fetchCabinetPage(): Promise<CabinetPageDto> {
 
 export async function fetchMemoryPage(
   type?: string,
+  view: "current" | "history" = "current",
 ): Promise<MemoryPageDto> {
-  const query = type ? `?type=${encodeURIComponent(type)}` : "";
+  const params = new URLSearchParams();
+  if (type) params.set("type", type);
+  if (view === "history") params.set("view", "history");
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   const result = await loadPage(`/api/memory${query}`, memoryPageSchema);
   if ("missing" in result) redirect("/setup");
   return result.data;

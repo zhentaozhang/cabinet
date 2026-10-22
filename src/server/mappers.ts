@@ -129,6 +129,8 @@ export function toArtifactDto(
 export function toMemoryDto(row: typeof memories.$inferSelect): MemoryDto {
   return {
     ...row,
+    validFrom: toIso(row.validFrom),
+    validTo: toIsoOrNull(row.validTo),
     lastConfirmedAt: toIsoOrNull(row.lastConfirmedAt),
     expiresAt: toIsoOrNull(row.expiresAt),
     createdAt: toIso(row.createdAt),

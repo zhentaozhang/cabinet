@@ -103,7 +103,7 @@ export async function seedDemo(): Promise<void> {
   });
 
   await db.insert(policyConfig).values(
-    (["autonomy", "audit", "budget", "management", "cost", "council"] as const).map(
+    (["autonomy", "audit", "budget", "management", "cost", "council", "reflection"] as const).map(
       (key) => ({
         key,
         valueJson: SEED_POLICY_CONFIG[key],

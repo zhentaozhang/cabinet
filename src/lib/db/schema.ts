@@ -345,6 +345,15 @@ export const memories = pgTable(
     type: text("type").notNull(),
     domain: text("domain").notNull(),
     content: text("content").notNull(),
+    /** Stable key for a fact that can be superseded, e.g. schedule:tsk_1. */
+    factKey: text("fact_key"),
+    /** The fact's value at this point on the timeline. */
+    value: text("value"),
+    validFrom: timestamp("valid_from", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    validTo: timestamp("valid_to", { withTimezone: true }),
+    supersededBy: text("superseded_by"),
     confidence: real("confidence").notNull().default(0.5),
     salience: real("salience").notNull().default(0.5),
     evidence: jsonb("evidence").$type<Evidence[]>().notNull(),
@@ -356,7 +365,10 @@ export const memories = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [index("memories_user_idx").on(t.userId)],
+  (t) => [
+    index("memories_user_idx").on(t.userId),
+    index("memories_fact_idx").on(t.userId, t.factKey),
+  ],
 );
 
 export const insights = pgTable("insights", {

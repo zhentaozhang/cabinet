@@ -10,7 +10,16 @@ export async function POST(req: Request) {
       const insight = await runReflection(userId);
       revalidatePath("/review");
       revalidatePath("/");
-      return { status: 200, body: { ok: true, insightId: insight.id } };
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          insightId: insight?.id ?? null,
+          message: insight
+            ? "已生成新洞察"
+            : "本周没有新的可执行信号",
+        },
+      };
     },
   });
 }

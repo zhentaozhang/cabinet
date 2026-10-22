@@ -59,6 +59,17 @@ export type CouncilConfig = {
   dissentBudgetRatio: number;
 };
 
+export type ReflectionConfig = {
+  windowDays: number;
+  minRejectEvents: number;
+  minTaskSample: number;
+  eveningHour: number;
+  eveningCompletionThreshold: number;
+  lowEnergyThreshold: number;
+  budgetPressureRatio: number;
+  confidence: number;
+};
+
 export type PolicyConfig = {
   autonomy: {
     minTrust: number;
@@ -81,6 +92,7 @@ export type PolicyConfig = {
     centsPer1kTokens: number;
   };
   council: CouncilConfig;
+  reflection: ReflectionConfig;
 };
 
 /**
@@ -136,6 +148,16 @@ export const SEED_POLICY_CONFIG: PolicyConfig = {
     minEnergy: 3,
     dissentWindowDays: 7,
     dissentBudgetRatio: 0.8,
+  },
+  reflection: {
+    windowDays: 7,
+    minRejectEvents: 1,
+    minTaskSample: 2,
+    eveningHour: 20,
+    eveningCompletionThreshold: 0.5,
+    lowEnergyThreshold: 2,
+    budgetPressureRatio: 0.8,
+    confidence: 0.72,
   },
 };
 

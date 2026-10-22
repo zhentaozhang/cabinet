@@ -522,7 +522,14 @@ export function ReflectButton() {
     setBusy(true);
     const data = await call("/api/reflect", "POST");
     setBusy(false);
-    setMsg(data.ok ? "已生成新洞察" : (data.error ?? "失败"));
+    setMsg(
+      data.ok
+        ? String(
+            data.message ??
+              (data.insightId ? "已生成新洞察" : "没有新的可执行信号"),
+          )
+        : (data.error ?? "失败"),
+    );
     router.refresh();
   }
 

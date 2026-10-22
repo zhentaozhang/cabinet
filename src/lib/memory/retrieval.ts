@@ -112,6 +112,7 @@ export async function retrieveMemories(
       and(
         eq(memories.userId, userId),
         eq(memories.status, "active"),
+        isNull(memories.validTo),
         or(isNull(memories.expiresAt), gt(memories.expiresAt, now)),
       ),
     )
