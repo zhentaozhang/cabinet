@@ -2912,6 +2912,19 @@ export async function runApprenticeExam(userId: string) {
     .orderBy(desc(skills.createdAt))
     .limit(1);
 
+  const examChecklist = skill?.evalSet ?? [];
+  if (examChecklist.length === 0) {
+    throw new ValidationError("Skill has no eval set; cannot run the exam.");
+  }
+  const examDraft = draftFor(
+    "apprentice",
+    skill?.name ?? "检索评估练习设计",
+    0,
+  );
+  const examResults = evaluateAcceptance(examDraft.content, examChecklist);
+  const required = examChecklist.length;
+  const passed = examResults.filter((result) => result.passed).length;
+
   const examTaskId = `exam_${apprentice.id}`;
   const [existingExamTask] = await db
     .select({ id: tasks.id })
@@ -2929,7 +2942,9 @@ export async function runApprenticeExam(userId: string) {
       auditorId: "ag_auditor",
       status: "done",
       priority: 2,
-      acceptanceCriteria: "5 题留出考试，≥4/5 通过；Auditor 监考。",
+      acceptanceCriteria: "按技能 eval set 逐项验收；Auditor 监考。",
+      acceptanceChecklist: examChecklist,
+      acceptanceReport: examResults,
       estimateMin: 30,
       actionType: "internal",
       resource: "task",
@@ -2988,13 +3003,33 @@ export async function runApprenticeExam(userId: string) {
       runId,
       idx: 3,
       type: "audit",
-      input: { heldOutTasks: 5 },
-      output: { passed: 5, required: 4 },
+      input: { heldOutTasks: required },
+      output: { passed, required, results: examResults },
       tokensIn: 80,
       tokensOut: 60,
       latencyMs: 300,
     },
   ]);
+
+  if (passed < required) {
+    if (skill) {
+      await db
+        .update(skills)
+        .set({
+          eval: { status: "failed", required, passed, results: examResults },
+        })
+        .where(eq(skills.id, skill.id));
+    }
+    await logAudit({
+      userId: apprentice.userId,
+      actor: "agent:ag_auditor",
+      action: "apprentice.exam_failed",
+      target: apprentice.id,
+      before: { stage: apprentice.lifecycleStage },
+      after: { stage: apprentice.lifecycleStage, passed, required },
+    });
+    return { runId, passed, required, promoted: false };
+  }
 
   const [promoted] = await db
     .update(agents)
@@ -3026,7 +3061,7 @@ export async function runApprenticeExam(userId: string) {
         status: "active",
         label: "production",
         successCount: 1,
-        eval: { status: "passed", required: 5, passed: 5 },
+        eval: { status: "passed", required, passed, results: examResults },
       })
       .where(
         and(eq(skills.id, skill.id), inArray(skills.status, ["draft", "exam"])),
@@ -3039,10 +3074,14 @@ export async function runApprenticeExam(userId: string) {
     action: "apprentice.promote",
     target: apprentice.id,
     before: { stage: apprentice.lifecycleStage },
-    after: { stage: "active", exam: "5/5", skill: "active" },
+    after: {
+      stage: "active",
+      exam: `${passed}/${required}`,
+      skill: "active",
+    },
   });
 
-  return { runId, passed: 5, required: 5 };
+  return { runId, passed, required };
 }
 
 export async function regenerateBrief(userId: string) {
