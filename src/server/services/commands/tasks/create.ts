@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import type { AcceptanceItem } from "@/lib/db/schema";
 import { agents, goals, tasks } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
@@ -16,23 +16,25 @@ export async function promoteSuggestion(taskId: string, userId: string) {
     throw new ConflictError(`Task is ${task.status}, not a suggestion.`);
   }
   assertTransition("task", "suggested", "planned");
-  const [updated] = await db
-    .update(tasks)
-    .set({ status: "planned", updatedAt: new Date() })
-    .where(and(eq(tasks.id, taskId), eq(tasks.status, "suggested")))
-    .returning();
-  if (!updated) throw new ConflictError("Task state changed; retry.");
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(tasks)
+      .set({ status: "planned", updatedAt: new Date() })
+      .where(and(eq(tasks.id, taskId), eq(tasks.status, "suggested")))
+      .returning();
+    if (!updated) throw new ConflictError("Task state changed; retry.");
 
-  await logAudit({
-    userId: task.userId,
-    actor: "user",
-    action: "task.promote",
-    target: taskId,
-    before: { status: "suggested" },
-    after: { status: "planned" },
+    await logAuditTx(tx, {
+      userId: task.userId,
+      actor: "user",
+      action: "task.promote",
+      target: taskId,
+      before: { status: "suggested" },
+      after: { status: "planned" },
+    });
+
+    return updated;
   });
-
-  return updated;
 }
 
 export async function createTask(
@@ -95,43 +97,45 @@ export async function createTask(
   }
 
   const id = newId("tsk");
-  const [created] = await db
-    .insert(tasks)
-    .values({
-      id,
+  return db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(tasks)
+      .values({
+        id,
+        userId: userId,
+        goalId: input.goalId ?? null,
+        title,
+        description,
+        assigneeId: input.assigneeId,
+        auditorId: input.auditorId,
+        status: "planned",
+        priority: 2,
+        dueAt,
+        acceptanceCriteria,
+        acceptanceChecklist: input.acceptanceChecklist ?? null,
+        estimateMin: Math.max(1, input.estimateMin),
+        actionType: input.actionType,
+        resource: input.resource,
+        estimatedCostCents: Math.max(0, input.estimatedCostCents),
+        createdBy: "user",
+      })
+      .returning();
+
+    await logAuditTx(tx, {
       userId: userId,
-      goalId: input.goalId ?? null,
-      title,
-      description,
-      assigneeId: input.assigneeId,
-      auditorId: input.auditorId,
-      status: "planned",
-      priority: 2,
-      dueAt,
-      acceptanceCriteria,
-      acceptanceChecklist: input.acceptanceChecklist ?? null,
-      estimateMin: Math.max(1, input.estimateMin),
-      actionType: input.actionType,
-      resource: input.resource,
-      estimatedCostCents: Math.max(0, input.estimatedCostCents),
-      createdBy: "user",
-    })
-    .returning();
+      actor: "user",
+      action: "task.create",
+      target: id,
+      before: null,
+      after: {
+        title,
+        assigneeId: input.assigneeId,
+        auditorId: input.auditorId,
+        actionType: input.actionType,
+        resource: input.resource,
+      },
+    });
 
-  await logAudit({
-    userId: userId,
-    actor: "user",
-    action: "task.create",
-    target: id,
-    before: null,
-    after: {
-      title,
-      assigneeId: input.assigneeId,
-      auditorId: input.auditorId,
-      actionType: input.actionType,
-      resource: input.resource,
-    },
+    return created;
   });
-
-  return created;
 }

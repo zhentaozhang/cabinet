@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { policyConfig } from "@/lib/db/schema";
 import type { PolicyConfig } from "@/lib/domain/policy";
@@ -27,6 +28,69 @@ const DESCRIPTIONS: Record<ConfigKey, string> = {
   dissent: "Dissent vindication trust bonus and chief deviation penalty",
 };
 
+
+const scoreSchema = z.object({
+  feasibility: z.number(),
+  costEfficiency: z.number(),
+  evidenceQuality: z.number(),
+  robustness: z.number(),
+});
+
+const policyConfigSchema = z.object({
+  autonomy: z.object({
+    minTrust: z.number(),
+    minSuccesses: z.number(),
+    minAuditPassRate: z.number(),
+  }),
+  audit: z.object({
+    rejectStreakLimit: z.number(),
+    passRateWindow: z.number(),
+  }),
+  budget: z.object({
+    weeklyLimitCents: z.number(),
+    approvalThresholdCents: z.number(),
+  }),
+  management: z.object({ minutesPerDecision: z.number() }),
+  cost: z.object({
+    perMinuteCents: z.number(),
+    centsPer1kTokens: z.number(),
+    maxOutputTokens: z.number().int().positive(),
+    maxRunCents: z.number().nonnegative(),
+  }),
+  council: z.object({
+    roleWeights: z.record(z.string(), z.number()),
+    dimensionWeights: scoreSchema,
+    score: z.object({
+      base: z.number(),
+      goalWeight: z.number(),
+      trustWeight: z.number(),
+      evidencePoints: z.number(),
+      rejectPenalty: z.number(),
+      pausePenalty: z.number(),
+      budgetPressureWeight: z.number(),
+    }),
+    minPositions: z.number().int().positive(),
+    minEnergy: z.number(),
+    dissentWindowDays: z.number().int().positive(),
+    dissentBudgetRatio: z.number(),
+  }),
+  reflection: z.object({
+    windowDays: z.number().int().positive(),
+    minRejectEvents: z.number().int().nonnegative(),
+    minTaskSample: z.number().int().nonnegative(),
+    eveningHour: z.number().int().min(0).max(23),
+    eveningCompletionThreshold: z.number(),
+    lowEnergyThreshold: z.number(),
+    budgetPressureRatio: z.number(),
+    confidence: z.number(),
+  }),
+  dissent: z.object({
+    trustBonus: z.number(),
+    chiefPenalty: z.number(),
+    precedentSalience: z.number(),
+  }),
+});
+
 /**
  * Runtime loader. Fails closed when configuration is missing.
  * There is deliberately no code fallback here: seed data must provide it.
@@ -40,16 +104,25 @@ export async function getPolicyConfig(): Promise<PolicyConfig> {
     throw new Error(`Missing policy_config keys: ${missing.join(", ")}`);
   }
 
-  return {
-    autonomy: map.get("autonomy") as PolicyConfig["autonomy"],
-    audit: map.get("audit") as PolicyConfig["audit"],
-    budget: map.get("budget") as PolicyConfig["budget"],
-    management: map.get("management") as PolicyConfig["management"],
-    cost: map.get("cost") as PolicyConfig["cost"],
-    council: map.get("council") as PolicyConfig["council"],
-    reflection: map.get("reflection") as PolicyConfig["reflection"],
-    dissent: map.get("dissent") as PolicyConfig["dissent"],
+  const candidate = {
+    autonomy: map.get("autonomy"),
+    audit: map.get("audit"),
+    budget: map.get("budget"),
+    management: map.get("management"),
+    cost: map.get("cost"),
+    council: map.get("council"),
+    reflection: map.get("reflection"),
+    dissent: map.get("dissent"),
   };
+  const parsed = policyConfigSchema.safeParse(candidate);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .slice(0, 5)
+      .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("; ");
+    throw new Error(`Invalid policy_config: ${detail}`);
+  }
+  return parsed.data as PolicyConfig;
 }
 
 /** Seed/test helper only. */

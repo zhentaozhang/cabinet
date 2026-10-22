@@ -1,23 +1,28 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { approvals, tasks } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
+import type { Tx } from "../../shared/tx";
 import { loadLatestApproval } from "./execution";
 
-export async function requestApproval(input: {
-  userId: string;
-  taskId: string;
-  action: string;
-  reason: string;
-  estimatedCostCents: number;
-}) {
-  const existing = await loadLatestApproval(input.taskId);
+export async function requestApproval(
+  input: {
+    userId: string;
+    taskId: string;
+    action: string;
+    reason: string;
+    estimatedCostCents: number;
+  },
+  tx?: Tx,
+) {
+  const client = tx ?? db;
+  const existing = await loadLatestApproval(input.taskId, tx);
   if (existing?.status === "pending") return existing;
 
-  const [created] = await db
+  const [created] = await client
     .insert(approvals)
     .values({
       id: newId("appr"),
@@ -92,14 +97,14 @@ export async function decideApproval(
         .returning();
       if (!taskUpdated) throw new ConflictError("Task state changed; retry.");
     }
-  });
 
-  await logAudit({
-    userId: approval.userId,
-    actor: "user",
-    action: decision === "approve" ? "approval.grant" : "approval.deny",
-    target: approval.id,
-    before: { status: "pending" },
-    after: { status: decision, reason: reason ?? null },
+    await logAuditTx(tx, {
+      userId: approval.userId,
+      actor: "user",
+      action: decision === "approve" ? "approval.grant" : "approval.deny",
+      target: approval.id,
+      before: { status: "pending" },
+      after: { status: decision, reason: reason ?? null },
+    });
   });
 }

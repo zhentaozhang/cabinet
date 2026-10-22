@@ -2,7 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, checkins, memories, tasks } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { assertTransition } from "@/lib/domain/state";
 import { localDateKey } from "@/lib/domain/time";
 import { ValidationError } from "@/lib/domain/errors";
@@ -86,18 +86,18 @@ export async function saveCheckin(
         lastConfirmedAt: new Date(),
       });
     }
-  });
 
-  await logAudit({
-    userId,
-    actor: "user",
-    action: "checkin.save",
-    target: today,
-    before: null,
-    after: {
-      energy: input.energy,
-      mood: input.mood,
-      completed: input.completed.filter((item) => item.done).length,
-    },
+    await logAuditTx(tx, {
+      userId,
+      actor: "user",
+      action: "checkin.save",
+      target: today,
+      before: null,
+      after: {
+        energy: input.energy,
+        mood: input.mood,
+        completed: input.completed.filter((item) => item.done).length,
+      },
+    });
   });
 }

@@ -9,7 +9,7 @@ import {
   tasks,
 } from "@/lib/db/schema";
 import type { Evidence, FalsificationCondition } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { assertTransition } from "@/lib/domain/state";
 import { factSlug, writeMemoryFact } from "../memory/facts";
@@ -135,32 +135,36 @@ export async function evaluateDissents(userId: string): Promise<{
 
     if (!met) {
       assertTransition("dissent", dissent.status, "invalidated");
-      const [updated] = await db
-        .update(dissents)
-        .set({
-          status: "invalidated",
-          evidence,
-          evaluatedAt: new Date(),
-        })
-        .where(
-          and(eq(dissents.id, dissent.id), eq(dissents.status, "pending")),
-        )
-        .returning();
-      if (!updated) continue;
-      invalidated += 1;
-      await logAudit({
-        userId,
-        actor: "system:auditor",
-        action: "dissent.invalidated",
-        target: dissent.id,
-        before: { status: "pending" },
-        after: {
-          status: "invalidated",
-          metric: dissent.condition.metric,
-          value,
-          threshold: dissent.condition.threshold,
-        },
+      let changed = false;
+      await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(dissents)
+          .set({
+            status: "invalidated",
+            evidence,
+            evaluatedAt: new Date(),
+          })
+          .where(
+            and(eq(dissents.id, dissent.id), eq(dissents.status, "pending")),
+          )
+          .returning();
+        if (!updated) return;
+        changed = true;
+        await logAuditTx(tx, {
+          userId,
+          actor: "system:auditor",
+          action: "dissent.invalidated",
+          target: dissent.id,
+          before: { status: "pending" },
+          after: {
+            status: "invalidated",
+            metric: dissent.condition.metric,
+            value,
+            threshold: dissent.condition.threshold,
+          },
+        });
       });
+      if (changed) invalidated += 1;
       continue;
     }
 
@@ -237,41 +241,41 @@ export async function evaluateDissents(userId: string): Promise<{
         factKey: `precedent:${factSlug(topic)}`,
         value: `vindicated:${value}`,
       });
+
+      await logAuditTx(tx, {
+        userId,
+        actor: "system:auditor",
+        action: "dissent.vindicated",
+        target: dissent.id,
+        before: { status: "pending" },
+        after: {
+          status: "vindicated",
+          metric: dissent.condition.metric,
+          value,
+          threshold: dissent.condition.threshold,
+          trustBonus: config.dissent.trustBonus,
+          chiefPenalty: config.dissent.chiefPenalty,
+        },
+      });
+
+      if (chief && chiefBefore !== null) {
+        await logAuditTx(tx, {
+          userId,
+          actor: "system:auditor",
+          action: "chief.deviation",
+          target: chief.id,
+          before: { trustScore: chiefBefore },
+          after: {
+            trustScore: chiefAfter,
+            dissentId: dissent.id,
+            councilId: dissent.councilId,
+          },
+        });
+      }
     });
 
     if (!updatedDissent) continue;
     vindicated += 1;
-
-    await logAudit({
-      userId,
-      actor: "system:auditor",
-      action: "dissent.vindicated",
-      target: dissent.id,
-      before: { status: "pending" },
-      after: {
-        status: "vindicated",
-        metric: dissent.condition.metric,
-        value,
-        threshold: dissent.condition.threshold,
-        trustBonus: config.dissent.trustBonus,
-        chiefPenalty: config.dissent.chiefPenalty,
-      },
-    });
-
-    if (chief && chiefBefore !== null) {
-      await logAudit({
-        userId,
-        actor: "system:auditor",
-        action: "chief.deviation",
-        target: chief.id,
-        before: { trustScore: chiefBefore },
-        after: {
-          trustScore: chiefAfter,
-          dissentId: dissent.id,
-          councilId: dissent.councilId,
-        },
-      });
-    }
   }
 
   return { vindicated, invalidated };

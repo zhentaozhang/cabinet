@@ -34,47 +34,58 @@ function hashEvent(input: {
   );
 }
 
-export async function logAudit(input: AuditInput): Promise<string> {
-  return db.transaction(async (tx) => {
-    // Serialize chain appends per user.
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${input.userId}))`,
-    );
+export type AuditTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-    const [last] = await tx
-      .select({ hash: auditEvents.hash })
-      .from(auditEvents)
-      .where(eq(auditEvents.userId, input.userId))
-      .orderBy(desc(auditEvents.seq))
-      .limit(1);
+/**
+ * Append to the hash chain inside an existing business transaction. This keeps
+ * the state change and its audit event atomic.
+ */
+export async function logAuditTx(
+  tx: AuditTx,
+  input: AuditInput,
+): Promise<string> {
+  // Serialize chain appends per user.
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${input.userId}))`,
+  );
 
-    const prevHash = last?.hash ?? null;
-    const createdAt = new Date();
-    const hash = hashEvent({
-      prevHash,
-      actor: input.actor,
-      action: input.action,
-      target: input.target,
-      before: input.before ?? null,
-      after: input.after ?? null,
-      createdAt,
-    });
+  const [last] = await tx
+    .select({ hash: auditEvents.hash })
+    .from(auditEvents)
+    .where(eq(auditEvents.userId, input.userId))
+    .orderBy(desc(auditEvents.seq))
+    .limit(1);
 
-    await tx.insert(auditEvents).values({
-      id: newId("aud"),
-      userId: input.userId,
-      actor: input.actor,
-      action: input.action,
-      target: input.target,
-      before: input.before ?? null,
-      after: input.after ?? null,
-      hash,
-      prevHash,
-      createdAt,
-    });
-
-    return hash;
+  const prevHash = last?.hash ?? null;
+  const createdAt = new Date();
+  const hash = hashEvent({
+    prevHash,
+    actor: input.actor,
+    action: input.action,
+    target: input.target,
+    before: input.before ?? null,
+    after: input.after ?? null,
+    createdAt,
   });
+
+  await tx.insert(auditEvents).values({
+    id: newId("aud"),
+    userId: input.userId,
+    actor: input.actor,
+    action: input.action,
+    target: input.target,
+    before: input.before ?? null,
+    after: input.after ?? null,
+    hash,
+    prevHash,
+    createdAt,
+  });
+
+  return hash;
+}
+
+export async function logAudit(input: AuditInput): Promise<string> {
+  return db.transaction((tx) => logAuditTx(tx, input));
 }
 
 export async function verifyAuditChain(userId: string): Promise<{

@@ -10,10 +10,16 @@ import {
   toTaskDto,
   toUserDto,
 } from "@/server/mappers";
-import { getReviewData } from "@/server/services/queries/review";
+import {
+  getReviewData,
+  type ReviewPageOptions,
+} from "@/server/services/queries/review";
 
-export async function loadReview(userId: string): Promise<ReviewPageDto> {
-  const data = await getReviewData(userId);
+export async function loadReview(
+  userId: string,
+  options: ReviewPageOptions = {},
+): Promise<ReviewPageDto> {
+  const data = await getReviewData(userId, options);
 
   return asDto(
     reviewPageSchema,
@@ -26,6 +32,13 @@ export async function loadReview(userId: string): Promise<ReviewPageDto> {
       tasks: data.tasks.map(toTaskDto),
       audit: data.audit.map(toAuditEventDto),
       dissents: data.dissents.map(toDissentDto),
+      insightTotal: data.insightTotal,
+      insightProposedTotal: data.insightProposedTotal,
+      dissentTotal: data.dissentTotal,
+      dissentPendingTotal: data.dissentPendingTotal,
+      insightOffset: data.insightOffset,
+      dissentOffset: data.dissentOffset,
+      limit: data.limit,
       auditStats: data.auditStats,
       config: data.config,
       weeklyMetrics: data.weeklyMetrics,

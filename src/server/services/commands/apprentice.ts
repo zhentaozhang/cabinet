@@ -2,7 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, runs, skills, steps, tasks } from "@/lib/db/schema";
 import { APPRENTICE_SKILL } from "@/contracts/templates";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { evaluateAcceptance } from "@/lib/domain/acceptance";
 import { assertTransition } from "@/lib/domain/state";
@@ -102,27 +102,6 @@ export async function runApprenticeExam(userId: string) {
     .where(eq(tasks.id, examTaskId))
     .limit(1);
 
-  if (!existingExamTask) {
-    await db.insert(tasks).values({
-      id: examTaskId,
-      userId: apprentice.userId,
-      title: "学徒结业考试",
-      description: "5 个留出任务，覆盖检索评估练习设计。",
-      assigneeId: apprentice.id,
-      auditorId: auditor.id,
-      status: "done",
-      priority: 2,
-      acceptanceCriteria: "按技能 eval set 逐项验收；Auditor 监考。",
-      acceptanceChecklist: examChecklist,
-      acceptanceReport: examResults,
-      estimateMin: 30,
-      actionType: "internal",
-      resource: "task",
-      estimatedCostCents: 0,
-      createdBy: "system",
-    });
-  }
-
   if (apprentice.lifecycleStage === "shadowing") {
     assertTransition("apprentice", "shadowing", "drafting");
   }
@@ -131,125 +110,155 @@ export async function runApprenticeExam(userId: string) {
   }
 
   const runId = newId("run");
-  await db.insert(runs).values({
-    id: runId,
-    taskId: examTaskId,
-    agentId: apprentice.id,
-    status: "succeeded",
-    mode: "demo",
-    startedAt: new Date(),
-    endedAt: new Date(),
-    costCents: 0.6,
-    tokensIn: 400,
-    tokensOut: 220,
-    replayKey: "apprentice_exam_v1",
-  });
-  await db.insert(steps).values([
-    {
-      id: newId("stp"),
-      runId,
-      idx: 1,
-      type: "tool",
-      tool: "read_runs",
-      input: { mentor: apprentice.mentorId ?? coach?.id ?? null, runs: 5 },
-      output: { loaded: 5 },
-      tokensIn: 200,
-      tokensOut: 0,
-      latencyMs: 120,
-    },
-    {
-      id: newId("stp"),
-      runId,
-      idx: 2,
-      type: "draft",
-      input: { skill: skill?.name ?? "检索评估练习设计" },
-      output: { rubric: true },
-      tokensIn: 120,
-      tokensOut: 160,
-      latencyMs: 500,
-    },
-    {
-      id: newId("stp"),
-      runId,
-      idx: 3,
-      type: "audit",
-      input: { heldOutTasks: required },
-      output: { passed, required, results: examResults },
-      tokensIn: 80,
-      tokensOut: 60,
-      latencyMs: 300,
-    },
-  ]);
-
-  if (passed < required) {
-    if (skill) {
-      await db
-        .update(skills)
-        .set({
-          eval: { status: "failed", required, passed, results: examResults },
-        })
-        .where(eq(skills.id, skill.id));
+  const result = await db.transaction(async (tx) => {
+    if (!existingExamTask) {
+      await tx.insert(tasks).values({
+        id: examTaskId,
+        userId: apprentice.userId,
+        title: "学徒结业考试",
+        description: "5 个留出任务，覆盖检索评估练习设计。",
+        assigneeId: apprentice.id,
+        auditorId: auditor.id,
+        status: "done",
+        priority: 2,
+        acceptanceCriteria: "按技能 eval set 逐项验收；Auditor 监考。",
+        acceptanceChecklist: examChecklist,
+        acceptanceReport: examResults,
+        estimateMin: 30,
+        actionType: "internal",
+        resource: "task",
+        estimatedCostCents: 0,
+        createdBy: "system",
+      });
     }
-    await logAudit({
-      userId: apprentice.userId,
-      actor: `agent:${auditor.id}`,
-      action: "apprentice.exam_failed",
-      target: apprentice.id,
-      before: { stage: apprentice.lifecycleStage },
-      after: { stage: apprentice.lifecycleStage, passed, required },
+
+    await tx.insert(runs).values({
+      id: runId,
+      taskId: examTaskId,
+      agentId: apprentice.id,
+      status: "succeeded",
+      mode: "demo",
+      startedAt: new Date(),
+      endedAt: new Date(),
+      costCents: 0.6,
+      tokensIn: 400,
+      tokensOut: 220,
+      replayKey: "apprentice_exam_v1",
     });
-    return { runId, passed, required, promoted: false };
-  }
+    await tx.insert(steps).values([
+      {
+        id: newId("stp"),
+        runId,
+        idx: 1,
+        type: "tool",
+        tool: "read_runs",
+        input: { mentor: apprentice.mentorId ?? coach?.id ?? null, runs: 5 },
+        output: { loaded: 5 },
+        tokensIn: 200,
+        tokensOut: 0,
+        latencyMs: 120,
+      },
+      {
+        id: newId("stp"),
+        runId,
+        idx: 2,
+        type: "draft",
+        input: { skill: skill?.name ?? "检索评估练习设计" },
+        output: { rubric: true },
+        tokensIn: 120,
+        tokensOut: 160,
+        latencyMs: 500,
+      },
+      {
+        id: newId("stp"),
+        runId,
+        idx: 3,
+        type: "audit",
+        input: { heldOutTasks: required },
+        output: { passed, required, results: examResults },
+        tokensIn: 80,
+        tokensOut: 60,
+        latencyMs: 300,
+      },
+    ]);
 
-  const [promoted] = await db
-    .update(agents)
-    .set({
-      lifecycleStage: "active",
-      status: "active",
-      trustScore: clamp(apprentice.trustScore + 10),
-      successCount: apprentice.successCount + 1,
-      autonomyLevel: 2,
-      rejectStreak: 0,
-    })
-    .where(
-      and(
-        eq(agents.id, apprentice.id),
-        inArray(agents.lifecycleStage, [
-          "shadowing",
-          "drafting",
-          "examining",
-        ]),
-      ),
-    )
-    .returning();
-  if (!promoted) throw new ConflictError("Apprentice was already promoted.");
+    if (passed < required) {
+      if (skill) {
+        await tx
+          .update(skills)
+          .set({
+            eval: { status: "failed", required, passed, results: examResults },
+          })
+          .where(eq(skills.id, skill.id));
+      }
+      await logAuditTx(tx, {
+        userId: apprentice.userId,
+        actor: `agent:${auditor.id}`,
+        action: "apprentice.exam_failed",
+        target: apprentice.id,
+        before: { stage: apprentice.lifecycleStage },
+        after: { stage: apprentice.lifecycleStage, passed, required },
+      });
+      return { promoted: false };
+    }
 
-  if (skill) {
-    await db
-      .update(skills)
+    const [promoted] = await tx
+      .update(agents)
       .set({
+        lifecycleStage: "active",
         status: "active",
-        label: "production",
-        successCount: 1,
-        eval: { status: "passed", required, passed, results: examResults },
+        trustScore: clamp(apprentice.trustScore + 10),
+        successCount: apprentice.successCount + 1,
+        autonomyLevel: 2,
+        rejectStreak: 0,
       })
       .where(
-        and(eq(skills.id, skill.id), inArray(skills.status, ["draft", "exam"])),
-      );
-  }
+        and(
+          eq(agents.id, apprentice.id),
+          inArray(agents.lifecycleStage, [
+            "shadowing",
+            "drafting",
+            "examining",
+          ]),
+        ),
+      )
+      .returning();
+    if (!promoted) throw new ConflictError("Apprentice was already promoted.");
 
-  await logAudit({
-    userId: apprentice.userId,
-    actor: `agent:${auditor.id}`,
-    action: "apprentice.promote",
-    target: apprentice.id,
-    before: { stage: apprentice.lifecycleStage },
-    after: {
-      stage: "active",
-      exam: `${passed}/${required}`,
-      skill: "active",
-    },
+    if (skill) {
+      await tx
+        .update(skills)
+        .set({
+          status: "active",
+          label: "production",
+          successCount: 1,
+          eval: { status: "passed", required, passed, results: examResults },
+        })
+        .where(
+          and(
+            eq(skills.id, skill.id),
+            inArray(skills.status, ["draft", "exam"]),
+          ),
+        );
+    }
+
+    await logAuditTx(tx, {
+      userId: apprentice.userId,
+      actor: `agent:${auditor.id}`,
+      action: "apprentice.promote",
+      target: apprentice.id,
+      before: { stage: apprentice.lifecycleStage },
+      after: {
+        stage: "active",
+        exam: `${passed}/${required}`,
+        skill: "active",
+      },
+    });
+    return { promoted: true };
   });
 
-  return { runId, passed, required };
+  if (result.promoted) {
+    return { runId, passed, required };
+  }
+  return { runId, passed, required, promoted: false };
 }

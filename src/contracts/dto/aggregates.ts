@@ -85,6 +85,13 @@ export const reviewPageSchema = z.object({
   tasks: z.array(taskDtoSchema),
   audit: z.array(auditEventDtoSchema),
   dissents: z.array(dissentDtoSchema),
+  insightTotal: z.number(),
+  insightProposedTotal: z.number(),
+  dissentTotal: z.number(),
+  dissentPendingTotal: z.number(),
+  insightOffset: z.number(),
+  dissentOffset: z.number(),
+  limit: z.number(),
   auditStats: z.record(
     z.string(),
     z.object({
@@ -107,6 +114,10 @@ export const memoryPageSchema = z.object({
     procedural: z.number(),
   }),
   stale: z.number(),
+  total: z.number(),
+  offset: z.number(),
+  limit: z.number(),
+  hasMore: z.boolean(),
 });
 export type MemoryPageDto = z.infer<typeof memoryPageSchema>;
 

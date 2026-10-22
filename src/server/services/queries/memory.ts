@@ -1,35 +1,81 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { memories } from "@/lib/db/schema";
+
 export type MemoryView = "current" | "history";
+
+export type MemoryPageOptions = {
+  limit?: number;
+  offset?: number;
+};
 
 export async function getMemoryData(
   userId: string,
   type?: string,
   view: MemoryView = "current",
+  options: MemoryPageOptions = {},
 ) {
-  const all = await db
+  const limit = Math.min(Math.max(options.limit ?? 25, 1), 100);
+  const offset = Math.max(options.offset ?? 0, 0);
+  const viewFilter =
+    view === "history"
+      ? isNotNull(memories.validTo)
+      : isNull(memories.validTo);
+
+  const [countsRow] = await db
+    .select({
+      all: sql<number>`count(*)`,
+      episodic: sql<number>`count(*) filter (where ${memories.type} = 'episodic')`,
+      semantic: sql<number>`count(*) filter (where ${memories.type} = 'semantic')`,
+      procedural: sql<number>`count(*) filter (where ${memories.type} = 'procedural')`,
+      selected: type
+        ? sql<number>`count(*) filter (where ${memories.type} = ${type})`
+        : sql<number>`count(*)`,
+    })
+    .from(memories)
+    .where(and(eq(memories.userId, userId), viewFilter));
+
+  const [staleRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(memories)
+    .where(
+      and(
+        eq(memories.userId, userId),
+        viewFilter,
+        lt(memories.expiresAt, new Date()),
+      ),
+    );
+
+  const rows = await db
     .select()
     .from(memories)
     .where(
       and(
         eq(memories.userId, userId),
-        view === "history"
-          ? isNotNull(memories.validTo)
-          : isNull(memories.validTo),
+        viewFilter,
+        type ? eq(memories.type, type) : undefined,
       ),
     )
-    .orderBy(desc(memories.salience));
-  const filtered = type ? all.filter((m) => m.type === type) : all;
+    .orderBy(desc(memories.createdAt), desc(memories.id))
+    .limit(limit)
+    .offset(offset);
+
   const counts = {
-    all: all.length,
-    episodic: all.filter((m) => m.type === "episodic").length,
-    semantic: all.filter((m) => m.type === "semantic").length,
-    procedural: all.filter((m) => m.type === "procedural").length,
+    all: Number(countsRow?.all ?? 0),
+    episodic: Number(countsRow?.episodic ?? 0),
+    semantic: Number(countsRow?.semantic ?? 0),
+    procedural: Number(countsRow?.procedural ?? 0),
   };
-  const now = Date.now();
-  const stale = all.filter(
-    (m) => m.expiresAt && new Date(m.expiresAt).getTime() < now,
-  ).length;
-  return { memories: filtered, counts, stale, view };
+  const total = Number(countsRow?.selected ?? 0);
+
+  return {
+    memories: rows,
+    counts,
+    stale: Number(staleRow?.count ?? 0),
+    total,
+    offset,
+    limit,
+    hasMore: offset + rows.length < total,
+    view,
+  };
 }

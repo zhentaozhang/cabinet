@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
@@ -11,7 +11,19 @@ import {
 import { getPolicyConfig } from "@/lib/policy/config";
 import { getWeeklyMetrics } from "./metrics";
 import { getWorkspace } from "./workspace";
-export async function getReviewData(userId: string) {
+export type ReviewPageOptions = {
+  insightOffset?: number;
+  dissentOffset?: number;
+  limit?: number;
+};
+
+export async function getReviewData(
+  userId: string,
+  options: ReviewPageOptions = {},
+) {
+  const limit = Math.min(Math.max(options.limit ?? 20, 1), 50);
+  const insightOffset = Math.max(options.insightOffset ?? 0, 0);
+  const dissentOffset = Math.max(options.dissentOffset ?? 0, 0);
   const { user, profile } = await getWorkspace(userId);
   const [weekly] = await db
     .select()
@@ -19,11 +31,21 @@ export async function getReviewData(userId: string) {
     .where(and(eq(reviews.userId, userId), eq(reviews.type, "weekly")))
     .orderBy(desc(reviews.createdAt))
     .limit(1);
+  const [insightCounts] = await db
+    .select({
+      total: sql<number>`count(*)`,
+      proposed: sql<number>`count(*) filter (where ${insights.status} = 'proposed')`,
+      applied: sql<number>`count(*) filter (where ${insights.status} = 'applied')`,
+    })
+    .from(insights)
+    .where(eq(insights.userId, userId));
   const allInsights = await db
     .select()
     .from(insights)
     .where(eq(insights.userId, userId))
-    .orderBy(desc(insights.createdAt));
+    .orderBy(desc(insights.createdAt), desc(insights.id))
+    .limit(limit)
+    .offset(insightOffset);
   const allAgents = await db
     .select()
     .from(agents)
@@ -32,18 +54,29 @@ export async function getReviewData(userId: string) {
   const allTasks = await db
     .select()
     .from(tasks)
-    .where(eq(tasks.userId, userId));
+    .where(eq(tasks.userId, userId))
+    .orderBy(desc(tasks.updatedAt))
+    .limit(200);
   const recentAudit = await db
     .select()
     .from(auditEvents)
     .where(eq(auditEvents.userId, userId))
     .orderBy(desc(auditEvents.createdAt))
     .limit(12);
+  const [dissentCounts] = await db
+    .select({
+      total: sql<number>`count(*)`,
+      pending: sql<number>`count(*) filter (where ${dissents.status} = 'pending')`,
+    })
+    .from(dissents)
+    .where(eq(dissents.userId, userId));
   const allDissents = await db
     .select()
     .from(dissents)
     .where(eq(dissents.userId, userId))
-    .orderBy(desc(dissents.createdAt));
+    .orderBy(desc(dissents.createdAt), desc(dissents.id))
+    .limit(limit)
+    .offset(dissentOffset);
 
   const config = await getPolicyConfig();
   const auditRows = await db
@@ -88,6 +121,13 @@ export async function getReviewData(userId: string) {
     tasks: allTasks,
     audit: recentAudit,
     dissents: allDissents,
+    insightTotal: Number(insightCounts?.total ?? 0),
+    insightProposedTotal: Number(insightCounts?.proposed ?? 0),
+    dissentTotal: Number(dissentCounts?.total ?? 0),
+    dissentPendingTotal: Number(dissentCounts?.pending ?? 0),
+    insightOffset,
+    dissentOffset,
+    limit,
     auditStats,
     config,
     weeklyMetrics: await getWeeklyMetrics(userId),

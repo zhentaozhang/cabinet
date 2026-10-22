@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { goals } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { ValidationError } from "@/lib/domain/errors";
 
 export async function createGoal(
@@ -24,29 +24,31 @@ export async function createGoal(
   }
 
   const id = newId("goal");
-  const [created] = await db
-    .insert(goals)
-    .values({
-      id,
+  return db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(goals)
+      .values({
+        id,
+        userId: userId,
+        domain,
+        title,
+        why,
+        target,
+        horizon,
+        status: "active",
+        progress: 0,
+      })
+      .returning();
+
+    await logAuditTx(tx, {
       userId: userId,
-      domain,
-      title,
-      why,
-      target,
-      horizon,
-      status: "active",
-      progress: 0,
-    })
-    .returning();
+      actor: "user",
+      action: "goal.create",
+      target: id,
+      before: null,
+      after: { title, domain, horizon },
+    });
 
-  await logAudit({
-    userId: userId,
-    actor: "user",
-    action: "goal.create",
-    target: id,
-    before: null,
-    after: { title, domain, horizon },
+    return created;
   });
-
-  return created;
 }

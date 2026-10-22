@@ -51,8 +51,21 @@ export async function fetchTodayPage(): Promise<TodayPageDto> {
   return result.data;
 }
 
-export async function fetchReviewPage(): Promise<ReviewPageDto> {
-  const result = await loadPage("/api/review", reviewPageSchema);
+export async function fetchReviewPage(options: {
+  limit?: number;
+  insightOffset?: number;
+  dissentOffset?: number;
+} = {}): Promise<ReviewPageDto> {
+  const params = new URLSearchParams();
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.insightOffset) {
+    params.set("insightOffset", String(options.insightOffset));
+  }
+  if (options.dissentOffset) {
+    params.set("dissentOffset", String(options.dissentOffset));
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  const result = await loadPage(`/api/review${query}`, reviewPageSchema);
   if ("missing" in result) redirect("/setup");
   return result.data;
 }
@@ -66,10 +79,13 @@ export async function fetchCabinetPage(): Promise<CabinetPageDto> {
 export async function fetchMemoryPage(
   type?: string,
   view: "current" | "history" = "current",
+  options: { limit?: number; offset?: number } = {},
 ): Promise<MemoryPageDto> {
   const params = new URLSearchParams();
   if (type) params.set("type", type);
   if (view === "history") params.set("view", "history");
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.offset) params.set("offset", String(options.offset));
   const query = params.size > 0 ? `?${params.toString()}` : "";
   const result = await loadPage(`/api/memory${query}`, memoryPageSchema);
   if ("missing" in result) redirect("/setup");

@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, insights, memories, profiles, tasks, users } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
 import { localDateTimeParts, zonedTimeToUtc } from "@/lib/domain/time";
 import type { Tx } from "../../shared/tx";
@@ -208,19 +208,21 @@ export async function applyInsight(
     if (insight.status !== "proposed") {
       throw new ConflictError(`Cannot reject an insight in ${insight.status}.`);
     }
-    const [updated] = await db
-      .update(insights)
-      .set({ status: "rejected", decidedAt: new Date() })
-      .where(and(eq(insights.id, insightId), eq(insights.status, "proposed")))
-      .returning();
-    if (!updated) throw new ConflictError("Insight state changed; retry.");
-    await logAudit({
-      userId: insight.userId,
-      actor: "user",
-      action: "insight.reject",
-      target: insightId,
-      before: { status: insight.status },
-      after: { status: "rejected" },
+    await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(insights)
+        .set({ status: "rejected", decidedAt: new Date() })
+        .where(and(eq(insights.id, insightId), eq(insights.status, "proposed")))
+        .returning();
+      if (!updated) throw new ConflictError("Insight state changed; retry.");
+      await logAuditTx(tx, {
+        userId: insight.userId,
+        actor: "user",
+        action: "insight.reject",
+        target: insightId,
+        before: { status: insight.status },
+        after: { status: "rejected" },
+      });
     });
     return;
   }
@@ -248,15 +250,15 @@ export async function applyInsight(
         insight.userId,
         insight.beforeState,
       );
-    });
 
-    await logAudit({
-      userId: insight.userId,
-      actor: "user",
-      action: "insight.rollback",
-      target: insightId,
-      before: { status: insight.status },
-      after: { status: "rolled_back" },
+      await logAuditTx(tx, {
+        userId: insight.userId,
+        actor: "user",
+        action: "insight.rollback",
+        target: insightId,
+        before: { status: insight.status },
+        after: { status: "rolled_back" },
+      });
     });
     return;
   }
@@ -315,14 +317,14 @@ export async function applyInsight(
       factKey: fact?.factKey ?? null,
       value: fact?.value ?? null,
     });
-  });
 
-  await logAudit({
-    userId: insight.userId,
-    actor: "user",
-    action: "insight.accept",
-    target: insightId,
-    before: { status: insight.status },
-    after: { status: "applied", change: insight.proposedChange },
+    await logAuditTx(tx, {
+      userId: insight.userId,
+      actor: "user",
+      action: "insight.accept",
+      target: insightId,
+      before: { status: insight.status },
+      after: { status: "applied", change: insight.proposedChange },
+    });
   });
 }

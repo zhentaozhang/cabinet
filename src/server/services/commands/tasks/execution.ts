@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { approvals, runs } from "@/lib/db/schema";
+import type { Tx } from "../../shared/tx";
 
 export async function loadSpentCents(agentId: string, periodStart: Date): Promise<number> {
   const [row] = await db
@@ -10,8 +11,9 @@ export async function loadSpentCents(agentId: string, periodStart: Date): Promis
   return Number(row?.total ?? 0);
 }
 
-export async function loadLatestApproval(taskId: string) {
-  const [row] = await db
+export async function loadLatestApproval(taskId: string, tx?: Tx) {
+  const client = tx ?? db;
+  const [row] = await client
     .select()
     .from(approvals)
     .where(

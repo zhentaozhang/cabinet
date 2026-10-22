@@ -18,7 +18,7 @@ import {
 import { SEED_POLICY_CONFIG } from "@/lib/domain/policy";
 import { newId } from "@/lib/ids";
 import { startOfLocalWeek } from "@/lib/domain/time";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
 
 const POLICY_KEYS = [
@@ -217,20 +217,16 @@ export async function setupWorkspace(input: SetupInput) {
       });
     }
 
-    return { agentCount: created.length, goalId };
-  });
+    await logAuditTx(tx, {
+      userId: input.userId,
+      actor: "user",
+      action: "workspace.setup",
+      target: input.userId,
+      before: null,
+      after: { agents: created.length, goalId, timezone },
+    });
 
-  await logAudit({
-    userId: input.userId,
-    actor: "user",
-    action: "workspace.setup",
-    target: input.userId,
-    before: null,
-    after: {
-      agents: result.agentCount,
-      goalId: result.goalId,
-      timezone,
-    },
+    return { agentCount: created.length, goalId };
   });
 
   return result;

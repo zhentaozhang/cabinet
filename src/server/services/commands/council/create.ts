@@ -5,7 +5,7 @@ import {
   councils,
 } from "@/lib/db/schema";
 import type { CouncilMatrix } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { buildCouncilMatrix, buildCouncilMemo } from "@/lib/domain/council";
@@ -116,26 +116,26 @@ export async function createCouncil(
       .update(councils)
       .set({ status: "open", matrix, memo })
       .where(eq(councils.id, id));
+
+    await logAuditTx(tx, {
+      userId,
+      actor: "user",
+      action: "council.create",
+      target: id,
+      before: null,
+      after: {
+        topic,
+        trigger,
+        positions: positions.length,
+        matrix,
+      },
+    });
   });
 
   const [created] = await db
     .select()
     .from(councils)
     .where(eq(councils.id, id));
-
-  await logAudit({
-    userId,
-    actor: "user",
-    action: "council.create",
-    target: id,
-    before: null,
-    after: {
-      topic,
-      trigger,
-      positions: positions.length,
-      matrix,
-    },
-  });
 
   return created;
 }

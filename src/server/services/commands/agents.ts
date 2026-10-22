@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, auditEvents, tasks } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { decideUpgrade } from "@/lib/domain/policy";
 import { assertTransition } from "@/lib/domain/state";
@@ -58,28 +58,30 @@ export async function setAutonomy(agentId: string, level: number, userId: string
     throw new PolicyDenied(decision.reason);
   }
 
-  const [updated] = await db
-    .update(agents)
-    .set({ autonomyLevel: level })
-    .where(
-      and(
-        eq(agents.id, agentId),
-        eq(agents.autonomyLevel, agent.autonomyLevel),
-      ),
-    )
-    .returning();
-  if (!updated) throw new ConflictError("Agent autonomy changed; retry.");
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(agents)
+      .set({ autonomyLevel: level })
+      .where(
+        and(
+          eq(agents.id, agentId),
+          eq(agents.autonomyLevel, agent.autonomyLevel),
+        ),
+      )
+      .returning();
+    if (!updated) throw new ConflictError("Agent autonomy changed; retry.");
 
-  await logAudit({
-    userId: agent.userId,
-    actor: "user",
-    action: "autonomy.change",
-    target: agentId,
-    before: { level: agent.autonomyLevel },
-    after: { level, auditPassRate, reason: decision.reason },
+    await logAuditTx(tx, {
+      userId: agent.userId,
+      actor: "user",
+      action: "autonomy.change",
+      target: agentId,
+      before: { level: agent.autonomyLevel },
+      after: { level, auditPassRate, reason: decision.reason },
+    });
+
+    return { level, auditPassRate };
   });
-
-  return { level, auditPassRate };
 }
 
 export async function updateAgent(
@@ -138,35 +140,39 @@ export async function updateAgent(
     throw new ValidationError("Budget must be a non-negative integer.");
   }
 
-  const [updated] = await db
-    .update(agents)
-    .set({
-      ...(input.status ? { status: nextStatus } : {}),
-      ...(input.charter !== undefined ? { charter: input.charter.trim() } : {}),
-      ...(input.budgetCents !== undefined
-        ? { budgetCents: input.budgetCents }
-        : {}),
-    })
-    .where(and(eq(agents.id, agentId), eq(agents.status, agent.status)))
-    .returning();
-  if (!updated) throw new ConflictError("Agent state changed; retry.");
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(agents)
+      .set({
+        ...(input.status ? { status: nextStatus } : {}),
+        ...(input.charter !== undefined
+          ? { charter: input.charter.trim() }
+          : {}),
+        ...(input.budgetCents !== undefined
+          ? { budgetCents: input.budgetCents }
+          : {}),
+      })
+      .where(and(eq(agents.id, agentId), eq(agents.status, agent.status)))
+      .returning();
+    if (!updated) throw new ConflictError("Agent state changed; retry.");
 
-  await logAudit({
-    userId: agent.userId,
-    actor: "user",
-    action: "agent.update",
-    target: agentId,
-    before: {
-      status: agent.status,
-      charter: agent.charter,
-      budgetCents: agent.budgetCents,
-    },
-    after: {
-      status: updated.status,
-      charter: updated.charter,
-      budgetCents: updated.budgetCents,
-    },
+    await logAuditTx(tx, {
+      userId: agent.userId,
+      actor: "user",
+      action: "agent.update",
+      target: agentId,
+      before: {
+        status: agent.status,
+        charter: agent.charter,
+        budgetCents: agent.budgetCents,
+      },
+      after: {
+        status: updated.status,
+        charter: updated.charter,
+        budgetCents: updated.budgetCents,
+      },
+    });
+
+    return updated;
   });
-
-  return updated;
 }

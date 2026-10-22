@@ -42,18 +42,27 @@ function typeTone(type: string) {
 export default async function MemoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; view?: string }>;
+  searchParams: Promise<{ type?: string; view?: string; offset?: string }>;
 }) {
   const params = await searchParams;
   const type = params.type;
   const view = params.view === "history" ? "history" : "current";
-  const data = await fetchMemoryPage(type, view);
+  const offset = Math.max(Number(params.offset ?? 0) || 0, 0);
+  const data = await fetchMemoryPage(type, view, { offset });
   const avgConfidence =
     data.memories.length > 0
       ? data.memories.reduce((sum, m) => sum + m.confidence, 0) / data.memories.length
       : 0;
   const conflicts = data.memories.filter((m) => m.status === "conflicted").length;
   const stale = data.stale;
+  const pageHref = (nextOffset: number) => {
+    const query = new URLSearchParams();
+    if (type) query.set("type", type);
+    if (view === "history") query.set("view", "history");
+    if (nextOffset > 0) query.set("offset", String(nextOffset));
+    const qs = query.toString();
+    return qs ? `/memory?${qs}` : "/memory";
+  };
   const hrefFor = (nextType: string) => {
     const query = new URLSearchParams();
     if (nextType) query.set("type", nextType);
@@ -243,6 +252,31 @@ export default async function MemoryPage({
               </Card>
             ))
           )}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-micro text-faint">
+          <span>
+            第 {data.memories.length === 0 ? 0 : data.offset + 1}–
+            {data.offset + data.memories.length} 条 / 共 {data.total}
+          </span>
+          <div className="flex items-center gap-1.5">
+            {data.offset > 0 ? (
+              <Link
+                href={pageHref(Math.max(0, data.offset - data.limit))}
+                className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
+              >
+                上一页
+              </Link>
+            ) : null}
+            {data.hasMore ? (
+              <Link
+                href={pageHref(data.offset + data.limit)}
+                className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
+              >
+                下一页
+              </Link>
+            ) : null}
+          </div>
         </div>
 
         <div className="space-y-5">

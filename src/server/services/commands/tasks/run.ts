@@ -11,7 +11,7 @@ import {
   tasks,
   users,
 } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { generateArtifact } from "@/lib/llm";
 import { retrieveMemories } from "@/lib/memory/retrieval";
@@ -97,94 +97,101 @@ export async function runTask(taskId: string, userId: string) {
     .where(eq(runs.taskId, taskId));
 
   if (decision.effect === "suggest") {
-    const [updated] = await db
-      .update(tasks)
-      .set({ status: "suggested", updatedAt: new Date() })
-      .where(
-        and(
-          eq(tasks.id, taskId),
-          inArray(tasks.status, ["planned", "assigned"]),
-        ),
-      )
-      .returning();
-    if (!updated) throw new ConflictError("Task cannot be suggested now.");
+    return db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(tasks)
+        .set({ status: "suggested", updatedAt: new Date() })
+        .where(
+          and(
+            eq(tasks.id, taskId),
+            inArray(tasks.status, ["planned", "assigned"]),
+          ),
+        )
+        .returning();
+      if (!updated) throw new ConflictError("Task cannot be suggested now.");
 
-    const runId = newId("run");
-    const draft = draftFor(agent.role, task.title, prior.length, false);
-    const artifactId = newId("art");
-    await db.insert(runs).values({
-      id: runId,
-      taskId,
-      agentId: agent.id,
-      status: "succeeded",
-      mode: "demo",
-      startedAt: new Date(),
-      endedAt: new Date(),
-      replayKey: `suggest_${taskId}_${prior.length + 1}`,
+      const runId = newId("run");
+      const draft = draftFor(agent.role, task.title, prior.length, false);
+      const artifactId = newId("art");
+      await tx.insert(runs).values({
+        id: runId,
+        taskId,
+        agentId: agent.id,
+        status: "succeeded",
+        mode: "demo",
+        startedAt: new Date(),
+        endedAt: new Date(),
+        replayKey: `suggest_${taskId}_${prior.length + 1}`,
+      });
+      await tx.insert(artifacts).values({
+        id: artifactId,
+        runId,
+        taskId,
+        type: "markdown",
+        title: draft.title,
+        content: draft.content,
+      });
+      await tx.insert(steps).values({
+        id: newId("stp"),
+        runId,
+        idx: 1,
+        type: "suggest",
+        input: { task: task.title, policy: decision.reason },
+        output: { artifactId },
+        tokensIn: 120,
+        tokensOut: 240,
+        latencyMs: 80,
+      });
+      await logAuditTx(tx, {
+        userId: task.userId,
+        actor: `agent:${agent.id}`,
+        action: "task.suggest",
+        target: taskId,
+        before: { status: task.status },
+        after: { status: "suggested", runId, reason: decision.reason },
+      });
+      return { runId, artifactId, suggested: true, reason: decision.reason };
     });
-    await db.insert(artifacts).values({
-      id: artifactId,
-      runId,
-      taskId,
-      type: "markdown",
-      title: draft.title,
-      content: draft.content,
-    });
-    await db.insert(steps).values({
-      id: newId("stp"),
-      runId,
-      idx: 1,
-      type: "suggest",
-      input: { task: task.title, policy: decision.reason },
-      output: { artifactId },
-      tokensIn: 120,
-      tokensOut: 240,
-      latencyMs: 80,
-    });
-    await logAudit({
-      userId: task.userId,
-      actor: `agent:${agent.id}`,
-      action: "task.suggest",
-      target: taskId,
-      before: { status: task.status },
-      after: { status: "suggested", runId, reason: decision.reason },
-    });
-    return { runId, artifactId, suggested: true, reason: decision.reason };
   }
 
   if (decision.effect === "require_approval") {
-    const approvalRecord = await requestApproval({
-      userId: task.userId,
-      taskId,
-      action: task.actionType,
-      reason: decision.reason,
-      estimatedCostCents: task.estimatedCostCents,
+    return db.transaction(async (tx) => {
+      const approvalRecord = await requestApproval(
+        {
+          userId: task.userId,
+          taskId,
+          action: task.actionType,
+          reason: decision.reason,
+          estimatedCostCents: task.estimatedCostCents,
+        },
+        tx,
+      );
+
+      if (task.status !== "awaiting_approval") {
+        assertTransition("task", task.status, "awaiting_approval");
+        const [updated] = await tx
+          .update(tasks)
+          .set({ status: "awaiting_approval", updatedAt: new Date() })
+          .where(and(eq(tasks.id, taskId), eq(tasks.status, task.status)))
+          .returning();
+        if (!updated) throw new ConflictError("Task state changed; retry.");
+      }
+
+      await logAuditTx(tx, {
+        userId: task.userId,
+        actor: `agent:${agent.id}`,
+        action: "approval.request",
+        target: taskId,
+        before: { status: task.status },
+        after: { status: "awaiting_approval", approvalId: approvalRecord.id },
+      });
+
+      return {
+        requiresApproval: true,
+        approvalId: approvalRecord.id,
+        reason: decision.reason,
+      };
     });
-
-    if (task.status !== "awaiting_approval") {
-      assertTransition("task", task.status, "awaiting_approval");
-      const [updated] = await db
-        .update(tasks)
-        .set({ status: "awaiting_approval", updatedAt: new Date() })
-        .where(and(eq(tasks.id, taskId), eq(tasks.status, task.status)))
-        .returning();
-      if (!updated) throw new ConflictError("Task state changed; retry.");
-    }
-
-    await logAudit({
-      userId: task.userId,
-      actor: `agent:${agent.id}`,
-      action: "approval.request",
-      target: taskId,
-      before: { status: task.status },
-      after: { status: "awaiting_approval", approvalId: approvalRecord.id },
-    });
-
-    return {
-      requiresApproval: true,
-      approvalId: approvalRecord.id,
-      reason: decision.reason,
-    };
   }
 
   const runId = newId("run");
@@ -345,6 +352,7 @@ export async function runTask(taskId: string, userId: string) {
       taskDescription: task.description,
       acceptanceCriteria: task.acceptanceCriteria,
       memories: agentMemories.map((m) => m.content),
+      maxOutputTokens: config.cost.maxOutputTokens,
     });
     const draft =
       generated ??
@@ -374,6 +382,11 @@ export async function runTask(taskId: string, userId: string) {
         2,
       ),
     );
+    if (cost > config.cost.maxRunCents) {
+      throw new PolicyDenied(
+        `Run cost ${cost}c exceeds the configured cap of ${config.cost.maxRunCents}c.`,
+      );
+    }
 
     await db.transaction(async (tx) => {
       await tx.insert(artifacts).values({
@@ -404,45 +417,60 @@ export async function runTask(taskId: string, userId: string) {
         })
         .where(eq(runs.id, runId));
 
-      await tx
-        .update(agents)
-        .set({ spentCents: sql`${agents.spentCents} + ${cost}` })
-        .where(eq(agents.id, agent.id));
-    });
+      // Conditional charge: the budget pre-check reads a snapshot, so two
+      // concurrent runs can both pass it. The increment itself must decide.
+      if (cost > 0) {
+        const [charged] = await tx
+          .update(agents)
+          .set({ spentCents: sql`${agents.spentCents} + ${cost}` })
+          .where(
+            and(
+              eq(agents.id, agent.id),
+              sql`${agents.spentCents} + ${cost} <= ${agents.budgetCents}`,
+            ),
+          )
+          .returning({ id: agents.id });
+        if (!charged) {
+          throw new PolicyDenied(
+            "Budget exhausted while this run was in progress.",
+          );
+        }
+      }
 
-    await logAudit({
-      userId: task.userId,
-      actor: `agent:${agent.id}`,
-      action: "task.submit",
-      target: taskId,
-      before: { status: "running" },
-      after: { status: "submitted", runId },
+      await logAuditTx(tx, {
+        userId: task.userId,
+        actor: `agent:${agent.id}`,
+        action: "task.submit",
+        target: taskId,
+        before: { status: "running" },
+        after: { status: "submitted", runId },
+      });
     });
 
     return { runId, artifactId };
   } catch (error) {
-    await db
-      .update(runs)
-      .set({
-        status: "failed",
-        endedAt: new Date(),
-        error: error instanceof Error ? error.message : "run failed",
-      })
-      .where(eq(runs.id, runId));
-    await db
-      .update(tasks)
-      .set({ status: "failed", updatedAt: new Date() })
-      .where(and(eq(tasks.id, taskId), eq(tasks.status, "running")));
-    await logAudit({
-      userId: task.userId,
-      actor: `agent:${agent.id}`,
-      action: "task.run.failed",
-      target: taskId,
-      before: { status: "running" },
-      after: {
-        status: "failed",
-        error: error instanceof Error ? error.message : "run failed",
-      },
+    const message = error instanceof Error ? error.message : "run failed";
+    await db.transaction(async (tx) => {
+      await tx
+        .update(runs)
+        .set({
+          status: "failed",
+          endedAt: new Date(),
+          error: message,
+        })
+        .where(eq(runs.id, runId));
+      await tx
+        .update(tasks)
+        .set({ status: "failed", updatedAt: new Date() })
+        .where(and(eq(tasks.id, taskId), eq(tasks.status, "running")));
+      await logAuditTx(tx, {
+        userId: task.userId,
+        actor: `agent:${agent.id}`,
+        action: "task.run.failed",
+        target: taskId,
+        before: { status: "running" },
+        after: { status: "failed", error: message },
+      });
     });
     throw error;
   }

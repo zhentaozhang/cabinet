@@ -88,12 +88,33 @@ const OPEN_TASK_STATUS = new Set([
   "rejected",
 ]);
 
-export default async function ReviewPage() {
-  const data = await fetchReviewPage();
+export default async function ReviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    insightOffset?: string;
+    dissentOffset?: string;
+  }>;
+}) {
+  const params = await searchParams;
+  const insightOffset = Math.max(Number(params.insightOffset ?? 0) || 0, 0);
+  const dissentOffset = Math.max(Number(params.dissentOffset ?? 0) || 0, 0);
+  const data = await fetchReviewPage({ insightOffset, dissentOffset });
   const metrics = data.weeklyMetrics;
   const agentById = new Map(data.agents.map((agent) => [agent.id, agent]));
   const applied = data.insights.filter((i) => i.status === "applied");
-  const proposed = data.insights.filter((i) => i.status === "proposed");
+  const pageHref = (next: {
+    insightOffset?: number;
+    dissentOffset?: number;
+  }) => {
+    const query = new URLSearchParams();
+    const nextInsight = next.insightOffset ?? insightOffset;
+    const nextDissent = next.dissentOffset ?? dissentOffset;
+    if (nextInsight > 0) query.set("insightOffset", String(nextInsight));
+    if (nextDissent > 0) query.set("dissentOffset", String(nextDissent));
+    const qs = query.toString();
+    return qs ? `/review?${qs}` : "/review";
+  };
   const focus = data.tasks
     .filter((task) => OPEN_TASK_STATUS.has(task.status))
     .sort(
@@ -154,7 +175,7 @@ export default async function ReviewPage() {
               hint="采纳会改变下周计划；回滚会恢复原状，并留下审计记录。"
               right={
                 <div className="flex items-center gap-2">
-                  <Badge tone="accent">{proposed.length} 待采纳</Badge>
+                  <Badge tone="accent">{data.insightProposedTotal} 待采纳</Badge>
                   <ReflectButton />
                 </div>
               }
@@ -164,6 +185,35 @@ export default async function ReviewPage() {
                 <InsightCard key={insight.id} insight={insight} />
               ))}
             </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-nano text-faint">
+              <span>
+                第 {data.insights.length === 0 ? 0 : data.insightOffset + 1}–
+                {data.insightOffset + data.insights.length} 条 / 共{" "}
+                {data.insightTotal}
+              </span>
+              <div className="flex items-center gap-1.5">
+                {data.insightOffset > 0 ? (
+                  <Link
+                    href={pageHref({
+                      insightOffset: Math.max(0, data.insightOffset - data.limit),
+                    })}
+                    className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
+                  >
+                    上一页
+                  </Link>
+                ) : null}
+                {data.insightOffset + data.insights.length < data.insightTotal ? (
+                  <Link
+                    href={pageHref({
+                      insightOffset: data.insightOffset + data.limit,
+                    })}
+                    className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
+                  >
+                    下一页
+                  </Link>
+                ) : null}
+              </div>
+            </div>
           </div>
 
           <Card>
@@ -172,7 +222,7 @@ export default async function ReviewPage() {
               title="异议与判例"
               right={
                 <span className="text-mini text-faint">
-                  {data.dissents.filter((d) => d.status === "pending").length} 观察中
+                  {data.dissentPendingTotal} 观察中
                 </span>
               }
             />
@@ -216,6 +266,35 @@ export default async function ReviewPage() {
                 })}
               </div>
             )}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3 text-nano text-faint">
+              <span>
+                第 {data.dissents.length === 0 ? 0 : data.dissentOffset + 1}–
+                {data.dissentOffset + data.dissents.length} 条 / 共{" "}
+                {data.dissentTotal}
+              </span>
+              <div className="flex items-center gap-1.5">
+                {data.dissentOffset > 0 ? (
+                  <Link
+                    href={pageHref({
+                      dissentOffset: Math.max(0, data.dissentOffset - data.limit),
+                    })}
+                    className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
+                  >
+                    上一页
+                  </Link>
+                ) : null}
+                {data.dissentOffset + data.dissents.length < data.dissentTotal ? (
+                  <Link
+                    href={pageHref({
+                      dissentOffset: data.dissentOffset + data.limit,
+                    })}
+                    className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
+                  >
+                    下一页
+                  </Link>
+                ) : null}
+              </div>
+            </div>
           </Card>
 
           <Card>

@@ -9,7 +9,7 @@ import {
   tasks,
 } from "@/lib/db/schema";
 import type { Evidence, ProposedChange } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { startOfLocalWeek } from "@/lib/domain/time";
@@ -276,33 +276,37 @@ export async function runReflection(
       .limit(1);
     if (existing) continue;
 
-    const [created] = await db
-      .insert(insights)
-      .values({
-        id: newId("ins"),
-        userId,
-        claim: candidate.claim,
-        rationale: candidate.rationale,
-        confidence: candidate.confidence,
-        evidence: candidate.evidence,
-        proposedChange: candidate.proposedChange,
-        status: "proposed",
-      })
-      .returning();
+    return db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(insights)
+        .values({
+          id: newId("ins"),
+          userId,
+          claim: candidate.claim,
+          rationale: candidate.rationale,
+          confidence: candidate.confidence,
+          evidence: candidate.evidence,
+          proposedChange: candidate.proposedChange,
+          status: "proposed",
+        })
+        .returning();
 
-    await logAudit({
-      userId,
-      actor: "agent:ag_coach",
-      action: "insight.propose",
-      target: created.id,
-      before: null,
-      after: {
-        claim: created.claim,
-        confidence: created.confidence,
-        evidenceRefs: candidate.evidence.map((item) => item.ref).filter(Boolean),
-      },
+      await logAuditTx(tx, {
+        userId,
+        actor: "agent:coach",
+        action: "insight.propose",
+        target: created.id,
+        before: null,
+        after: {
+          claim: created.claim,
+          confidence: created.confidence,
+          evidenceRefs: candidate.evidence
+            .map((item) => item.ref)
+            .filter(Boolean),
+        },
+      });
+      return created;
     });
-    return created;
   }
 
   return null;

@@ -20,6 +20,7 @@ export async function generateArtifact(input: {
   taskDescription: string;
   acceptanceCriteria: string;
   memories: string[];
+  maxOutputTokens: number;
 }): Promise<ArtifactDraft | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -37,6 +38,7 @@ export async function generateArtifact(input: {
     const { text, usage } = await generateText({
       model: provider(process.env.OPENAI_MODEL ?? "gpt-4.1-mini"),
       abortSignal: controller.signal,
+      maxOutputTokens: input.maxOutputTokens,
       temperature: 0.2,
       system: [
         `你是 ${input.agentName}（${input.role}）。`,

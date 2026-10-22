@@ -9,7 +9,7 @@ import {
   tasks,
 } from "@/lib/db/schema";
 import type { CouncilResolution } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { getPolicyConfig } from "@/lib/policy/config";
 import {
@@ -184,23 +184,23 @@ export async function decideCouncil(
       .returning();
 
     updated = withResolution;
-  });
 
-  await logAudit({
-    userId: council.userId,
-    actor: "user",
-    action: "council.decide",
-    target: councilId,
-    before: { status: "open" },
-    after: {
-      status: "decided",
-      decision,
-      note: trimmedNote,
-      taskId,
-      memoryId,
-      dissents: dissentRecords,
-      dissentIds,
-    },
+    await logAuditTx(tx, {
+      userId: council.userId,
+      actor: "user",
+      action: "council.decide",
+      target: councilId,
+      before: { status: "open" },
+      after: {
+        status: "decided",
+        decision,
+        note: trimmedNote,
+        taskId,
+        memoryId,
+        dissents: dissentRecords,
+        dissentIds,
+      },
+    });
   });
 
   return updated!;

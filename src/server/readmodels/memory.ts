@@ -10,8 +10,9 @@ export async function loadMemory(
   userId: string,
   type?: string,
   view: MemoryView = "current",
+  options: { limit?: number; offset?: number } = {},
 ): Promise<MemoryPageDto> {
-  const data = await getMemoryData(userId, type, view);
+  const data = await getMemoryData(userId, type, view, options);
 
   return asDto(
     memoryPageSchema,
@@ -19,6 +20,10 @@ export async function loadMemory(
       memories: data.memories.map(toMemoryDto),
       counts: data.counts,
       stale: data.stale,
+      total: data.total,
+      offset: data.offset,
+      limit: data.limit,
+      hasMore: data.hasMore,
     },
     "MemoryPage",
   );

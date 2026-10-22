@@ -9,7 +9,7 @@ import {
   steps,
   tasks,
 } from "@/lib/db/schema";
-import { logAudit } from "@/lib/audit";
+import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { decideAudit } from "@/lib/domain/policy";
@@ -293,27 +293,28 @@ async function auditTaskInner(taskId: string, userId: string) {
       }
     }
 
-    return { runId, nextStatus, reason, pausedInfo };
-  });
+    if (pausedInfo) {
+      await logAuditTx(tx, {
+        userId,
+        actor: "system",
+        action: "agent.paused",
+        target: pausedInfo.executorId,
+        before: pausedInfo.before,
+        after: { ...pausedInfo.after, reason: "reject_streak_limit" },
+      });
+    }
 
-  if (result.pausedInfo) {
-    await logAudit({
+    await logAuditTx(tx, {
       userId,
-      actor: "system",
-      action: "agent.paused",
-      target: result.pausedInfo.executorId,
-      before: result.pausedInfo.before,
-      after: { ...result.pausedInfo.after, reason: "reject_streak_limit" },
+      actor: `agent:${auditor.id}`,
+      action:
+        nextStatus === "accepted" ? "audit.accept" : "audit.reject",
+      target: taskId,
+      before: { status: "auditing" },
+      after: { status: nextStatus, reason },
     });
-  }
 
-  await logAudit({
-    userId,
-    actor: `agent:${auditor.id}`,
-    action: result.nextStatus === "accepted" ? "audit.accept" : "audit.reject",
-    target: taskId,
-    before: { status: "auditing" },
-    after: { status: result.nextStatus, reason: result.reason },
+    return { runId, nextStatus, reason, pausedInfo };
   });
 
   return {

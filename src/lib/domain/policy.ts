@@ -96,6 +96,8 @@ export type PolicyConfig = {
   cost: {
     perMinuteCents: number;
     centsPer1kTokens: number;
+    maxOutputTokens: number;
+    maxRunCents: number;
   };
   council: CouncilConfig;
   reflection: ReflectionConfig;
@@ -126,6 +128,8 @@ export const SEED_POLICY_CONFIG: PolicyConfig = {
   cost: {
     perMinuteCents: 2,
     centsPer1kTokens: 0.8,
+    maxOutputTokens: 1200,
+    maxRunCents: 50,
   },
   council: {
     roleWeights: {
