@@ -11,7 +11,7 @@ import { cn } from "@/lib/format";
 describe("cn", () => {
   it("lets the caller override a conflicting utility", () => {
     expect(cn("px-3.5", "px-9")).toBe("px-9");
-    expect(cn("text-micro text-muted", "text-caption")).toBe("text-muted text-caption");
+    expect(cn("text-label text-muted", "text-body")).toBe("text-muted text-body");
   });
 
   it("does not confuse a project font size with a project text colour", () => {
