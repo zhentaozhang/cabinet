@@ -180,20 +180,37 @@ export function TaskActions({
 export function ApprovalActions({ approvalId }: { approvalId: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * Optimistic: the button area flips to the decision immediately and rolls
+   * back if the server refuses. Only safe because the decision is the whole
+   * visible state of this widget.
+   */
+  const [settled, setSettled] = useState<string | null>(null);
 
   async function decide(decision: "approve" | "reject") {
     setBusy(decision);
+    setSettled(decision === "approve" ? "已批准" : "已拒绝");
     const data = await call(`/api/approvals/${approvalId}`, "PATCH", {
       decision,
       reason: decision === "reject" ? "用户拒绝" : "用户批准",
     });
     setBusy(null);
     if (!data.ok) {
+      setSettled(null);
       toast.error(data.error ?? "审批失败");
       return;
     }
     toast.success(decision === "approve" ? "已批准外部动作" : "已拒绝动作");
     router.refresh();
+  }
+
+  if (settled) {
+    return (
+      <div className="flex items-center gap-2 text-label text-muted" aria-live="polite">
+        <span>{settled}</span>
+        <span className="text-faint">· 同步中</span>
+      </div>
+    );
   }
 
   return (
@@ -226,12 +243,22 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  /**
+   * Optimistic status so the card's own chrome (border, buttons, label) reacts
+   * on click instead of after a full re-render of the page.
+   */
+  const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
+  const status = optimisticStatus ?? insight.status;
 
   async function act(action: "accept" | "reject" | "rollback") {
     setBusy(action);
+    setOptimisticStatus(
+      action === "accept" ? "applied" : action === "reject" ? "rejected" : "proposed",
+    );
     const data = await call(`/api/insights/${insight.id}`, "PATCH", { action });
     setBusy(null);
     if (!data.ok) {
+      setOptimisticStatus(null);
       setMsg(data.error ?? "操作失败");
       toast.error(data.error ?? "操作失败");
       return;
@@ -243,9 +270,9 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
   }
 
   const tone =
-    insight.status === "applied"
+    status === "applied"
       ? "border-teal/25"
-      : insight.status === "rejected"
+      : status === "rejected"
         ? "border-line opacity-70"
         : "border-accent/25";
 
@@ -256,7 +283,7 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
           <div className="flex items-center gap-2">
             <Sparkles className="size-3.5 text-accent" />
             <span className="text-eyebrow uppercase tracking-[0.16em] text-faint">
-              insight · {insight.status}
+              insight · {status}
             </span>
           </div>
           <p className="mt-2 text-sm font-medium leading-relaxed text-ink">
@@ -289,7 +316,7 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        {insight.status === "proposed" ? (
+        {status === "proposed" ? (
           <>
             <Button size="sm" variant="primary" onClick={() => act("accept")} disabled={busy !== null}>
               {busy === "accept" ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
