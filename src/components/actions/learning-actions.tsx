@@ -37,7 +37,7 @@ export function NextLearningTaskButton() {
         )}
         让 Coach 安排下一步
       </Button>
-      {msg ? <span className="text-mini text-muted">{msg}</span> : null}
+      {msg ? <span className="text-label text-muted">{msg}</span> : null}
     </div>
   );
 }

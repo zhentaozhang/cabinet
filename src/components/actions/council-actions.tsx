@@ -57,8 +57,8 @@ export function CouncilActions({ councilId }: { councilId: string }) {
           否决
         </Button>
       </div>
-      <div className="text-mini text-faint">否决必须填写理由，理由会写入审计链。</div>
-      {msg ? <div className="text-mini text-muted">{msg}</div> : null}
+      <div className="text-label text-faint">否决必须填写理由，理由会写入审计链。</div>
+      {msg ? <div className="text-label text-muted">{msg}</div> : null}
     </div>
   );
 }
@@ -100,14 +100,14 @@ export function NewCouncilForm() {
         onChange={(event) => setTopic(event.target.value)}
             aria-label="议题"
         placeholder="议题"
-        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <input
         value={trigger}
         onChange={(event) => setTrigger(event.target.value)}
             aria-label="触发条件"
         placeholder="触发条件（如：单笔支出 > ¥200）"
-        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <Button
         size="sm"
@@ -117,7 +117,7 @@ export function NewCouncilForm() {
         {busy ? <Loader2 className="size-3 animate-spin" /> : null}
         发起会议
       </Button>
-      {msg ? <div className="text-mini text-muted">{msg}</div> : null}
+      {msg ? <div className="text-label text-muted">{msg}</div> : null}
     </form>
   );
 }

@@ -21,18 +21,19 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  /* Typographic scale — 5 steps, all UI text must use one of these. */
-  --text-nano: 9px;
-  --text-nano--line-height: 12px;
-  --text-mini: 10px;
-  --text-mini--line-height: 14px;
-  --text-micro: 11px;
-  --text-micro--line-height: 15px;
-  --text-micro--letter-spacing: 0.015em;
-  --text-caption: 12px;
-  --text-caption--line-height: 16px;
-  --text-subhead: 13px;
-  --text-subhead--line-height: 18px;
+  /*
+   * Typographic scale — four roles, not four sizes. CJK glyphs lose strokes
+   * below 12px on this dark background, so `label` is the floor for any text a
+   * user reads; `eyebrow` is the single exemption and only for uppercase Latin.
+   */
+  --text-eyebrow: 10px;
+  --text-eyebrow--line-height: 14px;
+  --text-label: 12px;
+  --text-label--line-height: 17px;
+  --text-body: 13px;
+  --text-body--line-height: 19px;
+  --text-title: 15px;
+  --text-title--line-height: 22px;
 }
 
 html {

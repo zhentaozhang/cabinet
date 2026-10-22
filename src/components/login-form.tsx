@@ -78,21 +78,21 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
     <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center">
       <Link
         href="/"
-        className="mb-6 inline-flex items-center gap-1 text-micro text-faint hover:text-muted"
+        className="mb-6 inline-flex items-center gap-1 text-label text-faint hover:text-muted"
       >
         <ArrowLeft className="size-3" /> 返回 Today
       </Link>
 
       <Card className="overflow-hidden">
         <div className="border-b border-line px-6 py-5">
-          <div className="mb-2 flex items-center gap-2 text-mini font-medium uppercase tracking-[0.2em] text-faint">
+          <div className="mb-2 flex items-center gap-2 text-eyebrow font-medium uppercase tracking-[0.2em] text-faint">
             <ShieldCheck className="size-3 text-accent" />
             Cabinet · access
           </div>
           <h1 className="text-lg font-semibold tracking-tight text-ink">
             {mode === "signin" ? "登录你的内阁" : "创建你的账号"}
           </h1>
-          <p className="mt-1 text-micro leading-relaxed text-muted">
+          <p className="mt-1 text-label leading-relaxed text-muted">
             {mode === "signin"
               ? demoEnabled
                 ? "演示账号：demo@cabinet.local / cabinet-demo。"
@@ -112,7 +112,7 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
             <div>
               <label
                 htmlFor="login-name"
-                className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint"
+                className="mb-1.5 block text-eyebrow uppercase tracking-[0.16em] text-faint"
               >
                 Name
               </label>
@@ -131,7 +131,7 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
           <div>
             <label
               htmlFor="login-email"
-              className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint"
+              className="mb-1.5 block text-eyebrow uppercase tracking-[0.16em] text-faint"
             >
               Email
             </label>
@@ -148,7 +148,7 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
           <div>
             <label
               htmlFor="login-password"
-              className="mb-1.5 block text-mini uppercase tracking-[0.16em] text-faint"
+              className="mb-1.5 block text-eyebrow uppercase tracking-[0.16em] text-faint"
             >
               Password
             </label>
@@ -164,7 +164,7 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
           </div>
 
           {error ? (
-            <div className="rounded-md border border-danger/30 bg-danger/[0.05] px-3 py-2 text-micro text-danger">
+            <div className="rounded-md border border-danger/30 bg-danger/[0.05] px-3 py-2 text-label text-danger">
               {error}
             </div>
           ) : null}
@@ -183,7 +183,7 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
             {mode === "signin" ? "登录" : "注册并创建内阁"}
           </Button>
 
-          <div className="flex items-center justify-between pt-1 text-mini">
+          <div className="flex items-center justify-between pt-1 text-label">
             <button
               type="button"
               className="text-faint hover:text-muted"

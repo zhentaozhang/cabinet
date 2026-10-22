@@ -50,7 +50,7 @@ export function CardHeader({
     >
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="mb-1 text-micro font-medium uppercase tracking-[0.16em] text-faint">
+          <div className="mb-1 text-label font-medium uppercase tracking-[0.16em] text-faint">
             {eyebrow}
           </div>
         ) : null}
@@ -85,7 +85,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-micro font-medium tracking-wide transition-colors",
+        "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-label font-medium tracking-wide transition-colors",
         badgeTones[tone],
         className,
       )}
@@ -125,7 +125,7 @@ export function Button({
       className={cn(
         "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-45",
         "outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-        size === "sm" ? "h-7 px-2.5 text-micro" : "h-9 px-3.5 text-xs",
+        size === "sm" ? "h-7 px-2.5 text-label" : "h-9 px-3.5 text-xs",
         buttonVariants[variant],
         className,
       )}
@@ -181,13 +181,13 @@ export function Stat({
 }) {
   return (
     <div className={cn("min-w-0", className)}>
-      <div className="text-micro font-medium uppercase tracking-[0.14em] text-faint">
+      <div className="text-label font-medium uppercase tracking-[0.14em] text-faint">
         {label}
       </div>
       <div className="mt-1 text-xl font-semibold tracking-tight text-ink tabular-nums font-mono">
         {value}
       </div>
-      {hint ? <div className="mt-0.5 text-caption text-muted">{hint}</div> : null}
+      {hint ? <div className="mt-0.5 text-body text-muted">{hint}</div> : null}
     </div>
   );
 }
@@ -206,7 +206,7 @@ export function Avatar({
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-lg border font-mono text-micro font-semibold shadow-sm transition-transform duration-200 hover:scale-105",
+        "flex shrink-0 items-center justify-center rounded-lg border font-mono text-label font-semibold shadow-sm transition-transform duration-200 hover:scale-105",
         className,
       )}
       style={{
@@ -238,14 +238,14 @@ export function SectionTitle({
     <div className="mb-4 flex items-end justify-between gap-4">
       <div>
         {eyebrow ? (
-          <div className="mb-1 text-micro font-medium uppercase tracking-[0.16em] text-faint">
+          <div className="mb-1 text-label font-medium uppercase tracking-[0.16em] text-faint">
             {eyebrow}
           </div>
         ) : null}
         <h2 className="text-base font-semibold tracking-tight text-ink">
           {title}
         </h2>
-        {hint ? <p className="mt-1 text-caption text-muted">{hint}</p> : null}
+        {hint ? <p className="mt-1 text-body text-muted">{hint}</p> : null}
       </div>
       {right}
     </div>

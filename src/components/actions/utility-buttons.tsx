@@ -39,7 +39,7 @@ export function ReflectButton() {
         {busy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
         运行反思
       </Button>
-      {msg ? <span className="text-mini text-muted">{msg}</span> : null}
+      {msg ? <span className="text-label text-muted">{msg}</span> : null}
     </div>
   );
 }
@@ -127,7 +127,7 @@ export function VerifyAuditButton() {
         )}
         验证审计链
       </Button>
-      {msg ? <span className="text-mini text-muted">{msg}</span> : null}
+      {msg ? <span className="text-label text-muted">{msg}</span> : null}
     </div>
   );
 }

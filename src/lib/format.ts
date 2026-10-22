@@ -2,16 +2,16 @@ import { clsx } from "clsx";
 import { extendTailwindMerge } from "tailwind-merge";
 
 /**
- * Projects tokens (`text-micro`, `text-muted`, …) are not Tailwind defaults, so
+ * Project tokens (`text-label`, `text-muted`, …) are not Tailwind defaults, so
  * `tailwind-merge` cannot tell a font size from a text colour and would drop one
- * of `"text-micro text-muted"`. Teaching it the two groups keeps arbitrary
+ * of `"text-label text-muted"`. Teaching it the two groups keeps arbitrary
  * token strings mergeable while still resolving real conflicts.
  */
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
       "font-size": [
-        { text: ["nano", "mini", "micro", "caption", "subhead"] },
+        { text: ["eyebrow", "label", "body", "title"] },
       ],
       "text-color": [
         {

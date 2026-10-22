@@ -38,19 +38,19 @@ export default async function SetupPage() {
           />
           <div className="divide-y divide-line">
             <div className="flex items-center justify-between px-5 py-3">
-              <span className="text-micro text-faint">名称</span>
-              <span className="text-micro text-ink">{context.name}</span>
+              <span className="text-label text-faint">名称</span>
+              <span className="text-label text-ink">{context.name}</span>
             </div>
             <div className="flex items-center justify-between px-5 py-3">
-              <span className="text-micro text-faint">登录邮箱</span>
-              <span className="mono text-micro text-ink">{context.email}</span>
+              <span className="text-label text-faint">登录邮箱</span>
+              <span className="mono text-label text-ink">{context.email}</span>
             </div>
             <div className="flex items-center justify-between px-5 py-3">
-              <span className="text-micro text-faint">内阁规模</span>
-              <span className="text-micro text-ink">{context.agents} 个 Agent</span>
+              <span className="text-label text-faint">内阁规模</span>
+              <span className="text-label text-ink">{context.agents} 个 Agent</span>
             </div>
             <div className="flex items-center justify-between gap-4 px-5 py-3">
-              <span className="text-micro text-faint">自主阶梯</span>
+              <span className="text-label text-faint">自主阶梯</span>
               <span className="flex flex-wrap gap-1.5">
                 <Badge tone="neutral">L1 · {context.autonomy.l1}</Badge>
                 <Badge tone="accent">L2 · {context.autonomy.l2}</Badge>
@@ -76,7 +76,7 @@ export default async function SetupPage() {
 
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-micro text-ink transition-colors hover:border-line2/80 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
+          className="inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-label text-ink transition-colors hover:border-line2/80 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
         >
           返回 Today <ArrowRight className="size-3" />
         </Link>

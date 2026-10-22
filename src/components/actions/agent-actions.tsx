@@ -42,7 +42,7 @@ export function AutonomyControl({
             onClick={() => change(n)}
             disabled={busy !== null}
             className={cn(
-              "flex-1 rounded-md border px-2 py-2 text-micro transition-colors",
+              "flex-1 rounded-md border px-2 py-2 text-label transition-colors",
               level === n
                 ? "border-accent/50 bg-accent/15 text-accent"
                 : "border-line bg-panel2 text-muted hover:border-line2",
@@ -52,10 +52,10 @@ export function AutonomyControl({
           </button>
         ))}
       </div>
-      <div className="mt-2 text-mini text-faint">
+      <div className="mt-2 text-label text-faint">
         升级需要：信任分 ≥70 · 成功任务 ≥3 · 非试用期。
       </div>
-      {error ? <div className="mt-2 text-micro text-danger">{error}</div> : null}
+      {error ? <div className="mt-2 text-label text-danger">{error}</div> : null}
     </div>
   );
 }
@@ -94,8 +94,8 @@ export function ExamButton() {
         {busy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
         运行结业考试
       </Button>
-      {result ? <span className="text-micro text-muted">{result}</span> : null}
-      <span className="text-micro text-faint">
+      {result ? <span className="text-label text-muted">{result}</span> : null}
+      <span className="text-label text-faint">
         考试产物为确定性模拟，由 Auditor 按常规审计流程验收。
       </span>
     </div>
@@ -198,14 +198,14 @@ export function AgentAdmin({
       </div>
 
       <div>
-        <div className="mb-1.5 text-mini uppercase tracking-[0.16em] text-faint">
+        <div className="mb-1.5 text-eyebrow uppercase tracking-[0.16em] text-faint">
           Charter
         </div>
         <textarea
           value={draftCharter}
           onChange={(event) => setDraftCharter(event.target.value)}
           rows={4}
-          className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-micro leading-relaxed text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-label leading-relaxed text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         />
         <Button
           size="sm"
@@ -218,7 +218,7 @@ export function AgentAdmin({
       </div>
 
       <div>
-        <div className="mb-1.5 text-mini uppercase tracking-[0.16em] text-faint">
+        <div className="mb-1.5 text-eyebrow uppercase tracking-[0.16em] text-faint">
           Weekly budget (¥)
         </div>
         <div className="flex items-center gap-2">
@@ -228,7 +228,7 @@ export function AgentAdmin({
             step={1}
             value={budgetYuan}
             onChange={(event) => setBudgetYuan(event.target.value)}
-            className="h-8 w-24 rounded-md border border-line bg-panel2 px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-24 rounded-md border border-line bg-panel2 px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <Button
             size="sm"
@@ -245,7 +245,7 @@ export function AgentAdmin({
         </div>
       </div>
 
-      {msg ? <div className="text-mini text-muted">{msg}</div> : null}
+      {msg ? <div className="text-label text-muted">{msg}</div> : null}
     </div>
   );
 }

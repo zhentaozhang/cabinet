@@ -56,7 +56,7 @@ export default async function TodayPage() {
     <div>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-mini font-medium uppercase tracking-[0.2em] text-faint">
+          <div className="mb-2 flex items-center gap-2 text-eyebrow font-medium uppercase tracking-[0.2em] text-faint">
             <Sun className="size-3 text-accent" />
             Today · {today}
           </div>
@@ -70,14 +70,14 @@ export default async function TodayPage() {
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <div className="text-mini uppercase tracking-[0.16em] text-faint">study / week</div>
+            <div className="text-eyebrow uppercase tracking-[0.16em] text-faint">study / week</div>
             <div className="mono text-sm text-teal">
               {data.weeklyMetrics.studyMinutes} min
             </div>
           </div>
           <div className="h-8 w-px bg-line" />
           <div className="text-right">
-            <div className="text-mini uppercase tracking-[0.16em] text-faint">recall</div>
+            <div className="text-eyebrow uppercase tracking-[0.16em] text-faint">recall</div>
             <div className="mono text-sm text-accent">
               {data.weeklyMetrics.recallAvg === null
                 ? "—"
@@ -104,7 +104,7 @@ export default async function TodayPage() {
                 <div className="truncate text-xs font-medium text-ink">
                   {learningTask.title}
                 </div>
-                <div className="mt-1 text-mini text-faint">
+                <div className="mt-1 text-label text-faint">
                   {learningTask.estimateMin} 分钟 · {statusLabel(learningTask.status)}
                 </div>
               </div>
@@ -151,7 +151,7 @@ export default async function TodayPage() {
                       ))}
                     </div>
                   ) : null}
-                  <div className="rounded-md border border-line bg-panel2/50 px-3 py-2 text-micro text-muted">
+                  <div className="rounded-md border border-line bg-panel2/50 px-3 py-2 text-label text-muted">
                     {data.checkin.note || "无备注"}
                   </div>
                 </div>
@@ -182,7 +182,7 @@ export default async function TodayPage() {
               <Badge tone="accent">
                 <Sparkles className="size-2.5" /> {data.counts.proposedInsights} 条洞察待采纳
               </Badge>
-              <span className="ml-auto text-mini text-faint">
+              <span className="ml-auto text-label text-faint">
                 生成于 {dateTime(data.brief?.createdAt, tz)}
               </span>
             </div>
@@ -195,7 +195,7 @@ export default async function TodayPage() {
               right={
                 <Link
                   href="/cabinet"
-                  className="flex items-center gap-1 text-micro text-muted hover:text-ink"
+                  className="flex items-center gap-1 text-label text-muted hover:text-ink"
                 >
                   组织 <ArrowRight className="size-3" />
                 </Link>
@@ -223,7 +223,7 @@ export default async function TodayPage() {
                       <div className="truncate text-xs font-medium text-ink group-hover:text-white">
                         {task.title}
                       </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-mini text-faint">
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-label text-faint">
                         <span className="text-muted">{agent?.name ?? "未指派"}</span>
                         <span>·</span>
                         <span className="inline-flex items-center gap-1">
@@ -240,7 +240,7 @@ export default async function TodayPage() {
               {data.tasks.length > 3 ? (
                 <Link
                   href="/cabinet"
-                  className="flex items-center justify-between px-5 py-2.5 text-mini text-faint transition-colors hover:text-muted"
+                  className="flex items-center justify-between px-5 py-2.5 text-label text-faint transition-colors hover:text-muted"
                 >
                   <span>还有 {data.tasks.length - 3} 件在队列里</span>
                   <span>看组织 →</span>
@@ -286,7 +286,7 @@ export default async function TodayPage() {
                         <div className="text-xs font-medium text-ink">
                           {title} {at ? `· ${at}` : ""}
                         </div>
-                        <div className="mt-1 text-micro text-muted">
+                        <div className="mt-1 text-label text-muted">
                           {reason} · 预计 ¥{(costCents / 100).toFixed(2)}
                         </div>
                       </div>
@@ -306,7 +306,7 @@ export default async function TodayPage() {
                     <div className="truncate text-xs font-medium text-ink">
                       内阁会议：{data.council.topic}
                     </div>
-                    <div className="mt-1 text-mini text-faint">
+                    <div className="mt-1 text-label text-faint">
                       触发：{data.council.trigger}
                     </div>
                   </div>
@@ -332,10 +332,10 @@ export default async function TodayPage() {
                     <span className="text-line2">·</span>
                     <span className="mono text-ink">{data.yesterdayCheckin.mood}/5</span> 心情
                   </div>
-                  <div className="text-micro text-muted">
+                  <div className="text-label text-muted">
                     {data.yesterdayCheckin.completed.filter((c) => !c.done).length} 项未完成
                   </div>
-                  <div className="basis-full text-micro text-muted">
+                  <div className="basis-full text-label text-muted">
                     “{data.yesterdayCheckin.note}”
                   </div>
                   <Badge tone="teal">
@@ -362,7 +362,7 @@ export default async function TodayPage() {
                     className="flex items-center gap-2.5 px-5 py-2.5 transition-colors hover:bg-white/[0.02]"
                   >
                     <span
-                      className="flex size-6 items-center justify-center rounded-md border font-mono text-nano"
+                      className="flex size-6 items-center justify-center rounded-md border font-mono text-label"
                       style={{
                         color: meta.accent,
                         borderColor: `${meta.accent}55`,
@@ -372,12 +372,12 @@ export default async function TodayPage() {
                       {agent.avatar}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-micro text-ink">{agent.name}</div>
-                      <div className="text-nano text-faint">{meta.objective}</div>
+                      <div className="truncate text-label text-ink">{agent.name}</div>
+                      <div className="text-label text-faint">{meta.objective}</div>
                     </div>
                     <div className="text-right">
-                      <div className="mono text-mini text-muted">L{agent.autonomyLevel}</div>
-                      <div className="text-nano text-faint">{Math.round(agent.trustScore)}</div>
+                      <div className="mono text-label text-muted">L{agent.autonomyLevel}</div>
+                      <div className="text-label text-faint">{Math.round(agent.trustScore)}</div>
                     </div>
                   </Link>
                 );
@@ -391,11 +391,11 @@ export default async function TodayPage() {
               {data.goals.map((goal) => (
                 <div key={goal.id}>
                   <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-micro text-ink">{goal.title}</span>
-                    <span className="mono text-mini text-muted">{pct(goal.progress)}</span>
+                    <span className="text-label text-ink">{goal.title}</span>
+                    <span className="mono text-label text-muted">{pct(goal.progress)}</span>
                   </div>
                   <Progress value={goal.progress} tone={goal.domain === "health" ? "teal" : "accent"} />
-                  <div className="mt-1 text-nano text-faint">{goal.target}</div>
+                  <div className="mt-1 text-label text-faint">{goal.target}</div>
                 </div>
               ))}
             </div>
@@ -423,7 +423,7 @@ export default async function TodayPage() {
               <Brain className="mt-0.5 size-4 text-accent" />
               <div>
                 <div className="text-xs font-medium text-ink">每天 3 分钟</div>
-                <p className="mt-1 text-micro leading-relaxed text-muted">
+                <p className="mt-1 text-label leading-relaxed text-muted">
                   早报 1 分钟、check-in 30 秒、审批 1 分钟。其余交给内阁。
                 </p>
               </div>

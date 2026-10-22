@@ -167,9 +167,9 @@ export function TaskActions({
         {busy === "audit" ? <Loader2 className="size-3 animate-spin" /> : <FileCheck2 className="size-3" />}
         提交验收
       </Button>
-      {msg ? <span className="text-micro text-muted">{msg}</span> : null}
+      {msg ? <span className="text-label text-muted">{msg}</span> : null}
       {status === "rejected" ? (
-        <span className="text-mini text-danger">
+        <span className="text-label text-danger">
           已驳回：先重新执行，再提交验收。
         </span>
       ) : null}
@@ -255,7 +255,7 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Sparkles className="size-3.5 text-accent" />
-            <span className="text-mini uppercase tracking-[0.16em] text-faint">
+            <span className="text-eyebrow uppercase tracking-[0.16em] text-faint">
               insight · {insight.status}
             </span>
           </div>
@@ -265,14 +265,14 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
         </div>
         <div className="shrink-0 text-right">
           <div className="mono text-lg text-ink">{Math.round(insight.confidence * 100)}%</div>
-          <div className="text-mini text-faint">confidence</div>
+          <div className="text-label text-faint">confidence</div>
         </div>
       </div>
 
       <p className="mt-2 text-xs leading-relaxed text-muted">{insight.rationale}</p>
 
       <div className="mt-3 rounded-lg border border-line bg-panel/60 px-3 py-2">
-        <div className="text-mini uppercase tracking-[0.14em] text-faint">proposed change</div>
+        <div className="text-eyebrow uppercase tracking-[0.14em] text-faint">proposed change</div>
         <div className="mt-1 text-xs text-accent">{changeLabel(insight.proposedChange)}</div>
       </div>
 
@@ -280,7 +280,7 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
         {insight.evidence.map((e) => (
           <span
             key={`${e.label}-${e.ref ?? ""}`}
-            className="rounded border border-line bg-panel px-2 py-1 text-mini text-muted"
+            className="rounded border border-line bg-panel px-2 py-1 text-label text-muted"
             title={e.quote}
           >
             {e.label}
@@ -306,7 +306,7 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
             回滚
           </Button>
         ) : null}
-        {msg ? <span className="text-micro text-muted">{msg}</span> : null}
+        {msg ? <span className="text-label text-muted">{msg}</span> : null}
       </div>
 
       <div className="mt-3">
@@ -359,8 +359,8 @@ export function ArtifactSubmitForm({
 
   return (
     <div className="rounded-lg border border-line bg-panel px-4 py-4">
-      <div className="mb-1 text-mini font-medium text-ink">提交我的答案</div>
-      <div className="mb-3 text-nano text-faint">
+      <div className="mb-1 text-label font-medium text-ink">提交我的答案</div>
+      <div className="mb-3 text-label text-faint">
         用自己的话写答案或产物；Auditor 会按验收标准逐条检查。
       </div>
       <input
@@ -390,7 +390,7 @@ export function ArtifactSubmitForm({
           )}
           提交产物
         </Button>
-        {msg ? <span className="text-mini text-muted">{msg}</span> : null}
+        {msg ? <span className="text-label text-muted">{msg}</span> : null}
       </div>
     </div>
   );
@@ -442,7 +442,7 @@ export function CheckinForm({
         <div>
           <div
             id="checkin-energy-label"
-            className="mb-2 text-mini uppercase tracking-[0.16em] text-faint"
+            className="mb-2 text-eyebrow uppercase tracking-[0.16em] text-faint"
           >
             energy
           </div>
@@ -459,7 +459,7 @@ export function CheckinForm({
                 aria-label={`Energy ${n}`}
                 onClick={() => setEnergy(n)}
                 className={cn(
-                  "h-7 flex-1 rounded border text-micro transition-colors",
+                  "h-7 flex-1 rounded border text-label transition-colors",
                   energy === n
                     ? "border-accent/50 bg-accent/15 text-accent"
                     : "border-line bg-panel2 text-muted hover:border-line2",
@@ -473,7 +473,7 @@ export function CheckinForm({
         <div>
           <div
             id="checkin-mood-label"
-            className="mb-2 text-mini uppercase tracking-[0.16em] text-faint"
+            className="mb-2 text-eyebrow uppercase tracking-[0.16em] text-faint"
           >
             mood
           </div>
@@ -490,7 +490,7 @@ export function CheckinForm({
                 aria-label={`Mood ${n}`}
                 onClick={() => setMood(n)}
                 className={cn(
-                  "h-7 flex-1 rounded border text-micro transition-colors",
+                  "h-7 flex-1 rounded border text-label transition-colors",
                   mood === n
                     ? "border-teal/50 bg-teal/15 text-teal"
                     : "border-line bg-panel2 text-muted hover:border-line2",
@@ -522,7 +522,7 @@ export function CheckinForm({
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="mb-2 block text-mini uppercase tracking-[0.16em] text-faint">
+          <span className="mb-2 block text-eyebrow uppercase tracking-[0.16em] text-faint">
             学习分钟
           </span>
           <input
@@ -535,7 +535,7 @@ export function CheckinForm({
           />
         </label>
         <label className="block">
-          <span className="mb-2 block text-mini uppercase tracking-[0.16em] text-faint">
+          <span className="mb-2 block text-eyebrow uppercase tracking-[0.16em] text-faint">
             回忆正确率 %
           </span>
           <input
@@ -572,7 +572,7 @@ export function CheckinForm({
           {busy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
           {saved ? "已保存" : "完成 check-in"}
         </Button>
-        <span className="text-mini text-faint" aria-live="polite">
+        <span className="text-label text-faint" aria-live="polite">
           会写入记忆，供明天使用
         </span>
       </div>

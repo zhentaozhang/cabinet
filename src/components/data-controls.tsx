@@ -104,7 +104,7 @@ export function DataControls() {
         onCancel={() => setConfirmDelete(false)}
         onConfirm={deleteData}
       />
-      <p className="text-micro leading-relaxed text-faint">
+      <p className="text-label leading-relaxed text-faint">
         导出包含 Agent、目标、任务、记忆、复盘和审计事件；不包含密码或会话。
       </p>
     </div>

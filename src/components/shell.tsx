@@ -76,7 +76,7 @@ function NavLinks() {
             <span className="font-medium">{item.label}</span>
             <span
               aria-hidden="true"
-              className="ml-auto hidden text-mini text-faint lg:block"
+              className="ml-auto hidden text-label text-faint lg:block"
             >
               {active ? "●" : ""}
             </span>
@@ -110,7 +110,7 @@ function MobileTabs() {
                 )}
               >
                 <Icon aria-hidden="true" className="size-[18px]" />
-                <span className="text-nano font-medium">{item.label}</span>
+                <span className="text-label font-medium">{item.label}</span>
               </Link>
             </li>
           );
@@ -145,7 +145,7 @@ function ResetButton() {
           type="button"
           onClick={reset}
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-micro text-danger transition-colors hover:bg-danger/10",
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-label text-danger transition-colors hover:bg-danger/10",
             FOCUS_RING,
           )}
         >
@@ -156,7 +156,7 @@ function ResetButton() {
           type="button"
           onClick={() => setState("idle")}
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-micro text-faint transition-colors hover:bg-white/[0.04]",
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-label text-faint transition-colors hover:bg-white/[0.04]",
             FOCUS_RING,
           )}
         >
@@ -173,7 +173,7 @@ function ResetButton() {
         onClick={() => setState("confirm")}
         disabled={state === "busy"}
         className={cn(
-          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-micro transition-colors hover:bg-white/[0.04] disabled:opacity-50",
+          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-label transition-colors hover:bg-white/[0.04] disabled:opacity-50",
           state === "error" ? "text-danger" : "text-faint hover:text-muted",
           FOCUS_RING,
         )}
@@ -203,10 +203,10 @@ function AutonomyPanel({ context }: { context: ShellContextDto | null }) {
   return (
     <div className="mb-3 rounded-lg border border-line bg-panel2/60 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-mini uppercase tracking-[0.16em] text-faint">
+        <span className="text-eyebrow uppercase tracking-[0.16em] text-faint">
           Autonomy
         </span>
-        <span className="mono text-mini text-accent">L{highest}</span>
+        <span className="mono text-label text-accent">L{highest}</span>
       </div>
       <div className="flex items-center gap-1">
         {[1, 2, 3].map((rung) => {
@@ -216,12 +216,12 @@ function AutonomyPanel({ context }: { context: ShellContextDto | null }) {
               <div
                 className={cn("h-1 rounded-full", reached ? "bg-accent" : "bg-line2")}
               />
-              <div className="mt-1 text-nano text-faint">L{rung}</div>
+              <div className="mt-1 text-label text-faint">L{rung}</div>
             </div>
           );
         })}
       </div>
-      <div className="mt-2 text-mini leading-relaxed text-muted">
+      <div className="mt-2 text-label leading-relaxed text-muted">
         {context && context.agents > 0
           ? `${context.agents} 位在岗，L2+ ${autonomy.l2} 位`
           : "授权靠信用和审计，不靠信任。"}
@@ -261,10 +261,10 @@ export function Shell({
         <div className="flex items-center gap-2.5 px-5 pb-5 pt-6">
           <Mark />
           <div>
-            <div className="text-subhead font-semibold tracking-[0.16em] text-ink">
+            <div className="text-title font-semibold tracking-[0.16em] text-ink">
               CABINET
             </div>
-            <div className="text-mini tracking-wide text-faint">
+            <div className="text-label tracking-wide text-faint">
               personal agent org
             </div>
           </div>
@@ -280,15 +280,15 @@ export function Shell({
           <div className="mb-2 flex items-center gap-2 px-1">
             <div
               aria-hidden="true"
-              className="flex size-6 items-center justify-center rounded-md border border-line2 bg-panel2 text-mini text-muted"
+              className="flex size-6 items-center justify-center rounded-md border border-line2 bg-panel2 text-label text-muted"
             >
               {displayName.slice(0, 1).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-micro font-medium text-ink">
+              <div className="truncate text-label font-medium text-ink">
                 {displayName}
               </div>
-              <div className="truncate text-nano text-faint">
+              <div className="truncate text-label text-faint">
                 {displayEmail}
               </div>
             </div>
@@ -328,7 +328,7 @@ export function Shell({
       <header className="sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-xl md:hidden">
         <div className="flex items-center gap-3 px-4 py-3">
           <Mark />
-          <div className="text-caption font-semibold tracking-[0.16em]">CABINET</div>
+          <div className="text-body font-semibold tracking-[0.16em]">CABINET</div>
           <Link
             href="/setup"
             aria-label="工作区设置"

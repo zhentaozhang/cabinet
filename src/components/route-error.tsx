@@ -39,7 +39,7 @@ export function RouteError({
         <button
           type="button"
           onClick={reset}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-micro text-ink transition-colors hover:border-line2/80 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-label text-ink transition-colors hover:border-line2/80 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
         >
           <RotateCcw className="size-3" />
           重试

@@ -64,7 +64,7 @@ function AgentCard({
               <span className="truncate text-sm font-medium text-ink">{agent.name}</span>
               <Badge tone={statusTone(agent.status)}>{statusLabel(agent.status)}</Badge>
             </div>
-            <div className="mt-0.5 text-mini text-faint">
+            <div className="mt-0.5 text-label text-faint">
               {agent.title} · {meta.objective}
             </div>
           </div>
@@ -72,7 +72,7 @@ function AgentCard({
         </div>
 
         <div className="px-5 pt-4">
-          <div className="flex items-center justify-between text-mini">
+          <div className="flex items-center justify-between text-label">
             <span className="text-faint">Autonomy</span>
             <span className="text-accent">{AUTONOMY_LABELS[agent.autonomyLevel]}</span>
           </div>
@@ -89,7 +89,7 @@ function AgentCard({
             ))}
           </div>
           {agent.lifecycleStage !== "active" ? (
-            <div className="mt-2 inline-flex items-center gap-1 text-mini text-accent">
+            <div className="mt-2 inline-flex items-center gap-1 text-label text-accent">
               <Sparkles className="size-2.5" /> {agent.lifecycleStage}
             </div>
           ) : null}
@@ -98,19 +98,19 @@ function AgentCard({
         <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line px-5 py-3">
           <div>
             <div className="mono text-sm text-ink">{Math.round(agent.trustScore)}</div>
-            <div className="text-nano uppercase tracking-wider text-faint">trust</div>
+            <div className="text-eyebrow uppercase tracking-wider text-faint">trust</div>
           </div>
           <div>
             <div className="mono text-sm text-ink">{rate}%</div>
-            <div className="text-nano uppercase tracking-wider text-faint">pass</div>
+            <div className="text-eyebrow uppercase tracking-wider text-faint">pass</div>
           </div>
           <div>
             <div className="mono text-sm text-ink">{money(agent.spentCents)}</div>
-            <div className="text-nano uppercase tracking-wider text-faint">spend</div>
+            <div className="text-eyebrow uppercase tracking-wider text-faint">spend</div>
           </div>
         </div>
 
-        <div className="border-t border-line px-5 py-2.5 text-mini text-faint">
+        <div className="border-t border-line px-5 py-2.5 text-label text-faint">
           {taskCount} 个任务 · {agent.successCount} 次通过 · {agent.failCount} 次驳回
         </div>
       </Card>
@@ -142,14 +142,14 @@ function OrgNode({
       className="flex min-w-[150px] items-center gap-2 rounded-lg border border-line bg-panel px-2.5 py-2 transition-colors hover:border-line2"
     >
       <span
-        className="flex size-7 items-center justify-center rounded-md border font-mono text-nano"
+        className="flex size-7 items-center justify-center rounded-md border font-mono text-label"
         style={{ color, borderColor: `${color}55`, background: `${color}14` }}
       >
         {agent.avatar}
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-micro text-ink">{agent.name}</span>
-        <span className="block truncate text-nano text-faint">
+        <span className="block truncate text-label text-ink">{agent.name}</span>
+        <span className="block truncate text-label text-faint">
           {label ?? agent.title} · L{agent.autonomyLevel}
         </span>
       </span>
@@ -170,7 +170,7 @@ export default async function CabinetPage() {
         <div className="mt-4 flex justify-center">
           <Link
             href="/setup"
-            className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-micro text-accent transition-colors hover:bg-accent/15 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
+            className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-label text-accent transition-colors hover:bg-accent/15 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
           >
             去创建工作区 <ArrowRight className="size-3" />
           </Link>
@@ -193,7 +193,7 @@ export default async function CabinetPage() {
     <div>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-mini font-medium uppercase tracking-[0.2em] text-faint">
+          <div className="mb-2 flex items-center gap-2 text-eyebrow font-medium uppercase tracking-[0.2em] text-faint">
             <Users className="size-3 text-accent" />
             Cabinet
           </div>
@@ -209,7 +209,7 @@ export default async function CabinetPage() {
           </Badge>
           <Link
             href="/council"
-            className="inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-micro text-ink hover:border-line2/80"
+            className="inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-label text-ink hover:border-line2/80"
           >
             <Gavel className="size-3 text-violet" /> 内阁会议
           </Link>
@@ -220,7 +220,7 @@ export default async function CabinetPage() {
         <CardHeader
           eyebrow="Org chart"
           title="组织与制衡"
-          right={<span className="text-mini text-faint">执行 · 监督 · 成长</span>}
+          right={<span className="text-label text-faint">执行 · 监督 · 成长</span>}
         />
         <div className="px-5 py-5">
           {chief ? (
@@ -249,7 +249,7 @@ export default async function CabinetPage() {
             })}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 border-t border-line px-5 py-3 text-mini text-faint">
+        <div className="flex flex-wrap gap-2 border-t border-line px-5 py-3 text-label text-faint">
           <span className="inline-flex items-center gap-1">
             <span className="size-1.5 rounded-full bg-teal" /> 执行者不能验收自己的产物
           </span>
@@ -279,7 +279,7 @@ export default async function CabinetPage() {
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader eyebrow="Separation of duties" title="制度" />
-          <div className="space-y-3 px-5 py-4 text-micro leading-relaxed text-muted">
+          <div className="space-y-3 px-5 py-4 text-label leading-relaxed text-muted">
             <p>
               <span className="text-ink">执行者</span>提交产物与自评；
               <span className="text-ink">Auditor</span>按验收标准独立检查。
@@ -295,12 +295,12 @@ export default async function CabinetPage() {
         <Card>
           <CardHeader eyebrow="Settings" title="数据与账号" />
           <div className="px-5 py-4">
-            <p className="text-micro leading-relaxed text-muted">
+            <p className="text-label leading-relaxed text-muted">
               导出备份、彻底删除账号，以及查看工作区规模，都收在设置里。
             </p>
             <Link
               href="/setup"
-              className="mt-3 inline-flex items-center gap-1 text-micro text-accent transition-colors hover:text-accent/80 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
+              className="mt-3 inline-flex items-center gap-1 text-label text-accent transition-colors hover:text-accent/80 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
             >
               打开设置 <ArrowRight className="size-3" />
             </Link>
@@ -308,7 +308,7 @@ export default async function CabinetPage() {
         </Card>
         <Card>
           <CardHeader eyebrow="Autonomy ladder" title="授权阶梯" />
-          <div className="space-y-2 px-5 py-4 text-micro">
+          <div className="space-y-2 px-5 py-4 text-label">
             {[
               ["L1", "建议", "每个动作都要你确认"],
               ["L2", "审批后执行", "内部自动，外部动作需批准"],

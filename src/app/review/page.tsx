@@ -128,7 +128,7 @@ export default async function ReviewPage({
     <div>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-mini font-medium uppercase tracking-[0.2em] text-faint">
+          <div className="mb-2 flex items-center gap-2 text-eyebrow font-medium uppercase tracking-[0.2em] text-faint">
             <ClipboardCheck className="size-3 text-accent" />
             Review · {data.weekly?.period ?? "—"}
           </div>
@@ -182,7 +182,7 @@ export default async function ReviewPage({
             <CardHeader
               eyebrow="Narrative"
               title="本周叙事"
-              right={<span className="text-mini text-faint">{dateTime(data.weekly?.createdAt, tz)}</span>}
+              right={<span className="text-label text-faint">{dateTime(data.weekly?.createdAt, tz)}</span>}
             />
             <div className="px-5 py-4">
               <Markdown content={data.weekly?.narrative ?? "本周还没有复盘。"} />
@@ -206,7 +206,7 @@ export default async function ReviewPage({
                 <InsightCard key={insight.id} insight={insight} />
               ))}
             </div>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-nano text-faint">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-label text-faint">
               <span>
                 第 {data.insights.length === 0 ? 0 : data.insightOffset + 1}–
                 {data.insightOffset + data.insights.length} 条 / 共{" "}
@@ -242,13 +242,13 @@ export default async function ReviewPage({
               eyebrow="Dissent"
               title="异议与判例"
               right={
-                <span className="text-mini text-faint">
+                <span className="text-label text-faint">
                   {data.dissentPendingTotal} 观察中
                 </span>
               }
             />
             {data.dissents.length === 0 ? (
-              <div className="px-5 py-4 text-micro text-muted">
+              <div className="px-5 py-4 text-label text-muted">
                 还没有正式异议。批准一场存在反对立场的会议后，异议会进入观察期。
               </div>
             ) : (
@@ -261,19 +261,19 @@ export default async function ReviewPage({
                     <div key={dissent.id} className="px-5 py-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge tone={status.tone}>{status.label}</Badge>
-                        <span className="text-micro font-medium text-ink">
+                        <span className="text-label font-medium text-ink">
                           {agent?.name ?? dissent.agentId}
                         </span>
-                        <span className="text-nano text-faint">
+                        <span className="text-label text-faint">
                           {dissent.condition.metric} {dissent.condition.operator}{" "}
                           {dissent.condition.threshold} ·{" "}
                           {dissent.condition.windowDays} 天
                         </span>
                       </div>
-                      <p className="mt-1.5 text-micro leading-relaxed text-muted">
+                      <p className="mt-1.5 text-label leading-relaxed text-muted">
                         {dissent.warning}
                       </p>
-                      <div className="mt-1 text-nano text-faint">
+                      <div className="mt-1 text-label text-faint">
                         提出 {dateTime(dissent.createdAt, tz)}
                         {dissent.evaluatedAt
                           ? ` · 评估 ${dateTime(dissent.evaluatedAt, tz)}`
@@ -287,7 +287,7 @@ export default async function ReviewPage({
                 })}
               </div>
             )}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3 text-nano text-faint">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3 text-label text-faint">
               <span>
                 第 {data.dissents.length === 0 ? 0 : data.dissentOffset + 1}–
                 {data.dissentOffset + data.dissents.length} 条 / 共{" "}
@@ -322,7 +322,7 @@ export default async function ReviewPage({
             <CardHeader eyebrow="Diff" title="本周改了什么" right={<GitCompareArrows className="size-3.5 text-faint" />} />
             <div className="divide-y divide-line">
               {(data.weekly?.decisions ?? []).map((decision, i) => (
-                <div key={i} className="flex items-center gap-2 px-5 py-3 text-micro">
+                <div key={i} className="flex items-center gap-2 px-5 py-3 text-label">
                   <span className="mono text-accent">{String(decision.action ?? "change")}</span>
                   <span className="text-faint">→</span>
                   <span className="text-muted">{String(decision.target ?? "")}</span>
@@ -330,7 +330,7 @@ export default async function ReviewPage({
                 </div>
               ))}
               {applied.map((insight) => (
-                <div key={insight.id} className="flex items-center gap-2 px-5 py-3 text-micro">
+                <div key={insight.id} className="flex items-center gap-2 px-5 py-3 text-label">
                   <span className="mono text-teal">applied</span>
                   <span className="text-faint">→</span>
                   <span className="truncate text-muted">{insight.claim}</span>
@@ -345,7 +345,7 @@ export default async function ReviewPage({
             <CardHeader eyebrow="Agent performance" title="内阁绩效" />
             <div className="divide-y divide-line">
               {data.agents.length === 0 ? (
-                <div className="px-5 py-6 text-center text-micro text-faint">
+                <div className="px-5 py-6 text-center text-label text-faint">
                   还没有在岗的 Agent。创建工作区后，这里会按信任分给出升级或退休建议。
                 </div>
               ) : null}
@@ -369,8 +369,8 @@ export default async function ReviewPage({
                   >
                     <Avatar initials={agent.avatar} accent={meta.accent} size={28} />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-micro text-ink">{agent.name}</div>
-                      <div className="text-nano text-faint">
+                      <div className="truncate text-label text-ink">{agent.name}</div>
+                      <div className="text-label text-faint">
                         {rate}% pass · L{agent.autonomyLevel} · {money(agent.spentCents)}
                       </div>
                     </div>
@@ -389,23 +389,23 @@ export default async function ReviewPage({
             />
             <div className="divide-y divide-line">
               {data.audit.length === 0 ? (
-                <div className="px-5 py-6 text-center text-micro text-faint">
+                <div className="px-5 py-6 text-center text-label text-faint">
                   还没有审计记录。第一次验收通过后，这里会写下第一条哈希链事件。
                 </div>
               ) : null}
               {data.audit.slice(0, 8).map((event) => (
                 <div key={event.id} className="px-5 py-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="mono text-mini text-muted">{event.action}</span>
-                    <span className="ml-auto text-nano text-faint">{dateTime(event.createdAt, tz)}</span>
+                    <span className="mono text-label text-muted">{event.action}</span>
+                    <span className="ml-auto text-label text-faint">{dateTime(event.createdAt, tz)}</span>
                   </div>
-                  <div className="mt-0.5 truncate text-nano text-faint">
+                  <div className="mt-0.5 truncate text-label text-faint">
                     {event.actor} → {event.target}
                   </div>
                 </div>
               ))}
             </div>
-            <div className="border-t border-line px-5 py-2.5 text-nano text-faint">
+            <div className="border-t border-line px-5 py-2.5 text-label text-faint">
               哈希链：每条记录包含前一条的 hash，改动可被发现。
             </div>
           </Card>
@@ -416,7 +416,7 @@ export default async function ReviewPage({
               <div>
                 <div className="text-xs font-medium text-ink">下一周的唯一目标</div>
                 {focus ? (
-                  <p className="mt-1 text-micro leading-relaxed text-muted">
+                  <p className="mt-1 text-label leading-relaxed text-muted">
                     <Link href={`/tasks/${focus.id}`} className="text-ink hover:underline">
                       {focus.title}
                     </Link>
@@ -424,13 +424,13 @@ export default async function ReviewPage({
                     {focus.dueAt ? ` · 截止 ${shortDate(focus.dueAt, tz)}` : ""}
                   </p>
                 ) : (
-                  <p className="mt-1 text-micro leading-relaxed text-muted">
+                  <p className="mt-1 text-label leading-relaxed text-muted">
                     本周没有未收尾的任务。
                   </p>
                 )}
                 <Link
                   href="/cabinet"
-                  className="mt-2 inline-flex items-center gap-1 text-mini text-teal hover:underline"
+                  className="mt-2 inline-flex items-center gap-1 text-label text-teal hover:underline"
                 >
                   查看 Agent 绩效 <ArrowRight className="size-3" />
                 </Link>

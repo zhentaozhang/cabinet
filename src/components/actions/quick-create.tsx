@@ -107,7 +107,7 @@ export function QuickCreate({
   return (
     <div className="space-y-2">
       <details className="rounded-md border border-line bg-panel2/40 px-3 py-2">
-        <summary className="cursor-pointer text-micro text-muted">
+        <summary className="cursor-pointer text-label text-muted">
           <Plus className="mr-1 inline size-3" /> 新建任务
         </summary>
         <form
@@ -122,7 +122,7 @@ export function QuickCreate({
             onChange={(event) => setTaskTitle(event.target.value)}
             aria-label="任务标题"
             placeholder="任务标题"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <textarea
             value={taskDesc}
@@ -130,7 +130,7 @@ export function QuickCreate({
             aria-label="任务描述"
             placeholder="描述"
             rows={2}
-            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <textarea
             value={taskCriteria}
@@ -138,14 +138,14 @@ export function QuickCreate({
             aria-label="验收标准"
             placeholder="验收标准"
             rows={2}
-            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <div className="grid grid-cols-2 gap-2">
             <select
               value={taskAssignee}
               onChange={(event) => setTaskAssignee(event.target.value)}
             aria-label="执行 Agent"
-              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-label text-ink"
             >
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
@@ -157,7 +157,7 @@ export function QuickCreate({
               value={taskAuditor}
               onChange={(event) => setTaskAuditor(event.target.value)}
             aria-label="验收 Agent"
-              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-label text-ink"
             >
               {agents
                 .filter((agent) => agent.role === "auditor")
@@ -173,7 +173,7 @@ export function QuickCreate({
               value={taskAction}
               onChange={(event) => setTaskAction(event.target.value)}
             aria-label="动作类型"
-              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-label text-ink"
             >
               <option value="internal">内部动作</option>
               <option value="external">外部动作</option>
@@ -183,7 +183,7 @@ export function QuickCreate({
               value={taskGoal}
               onChange={(event) => setTaskGoal(event.target.value)}
             aria-label="关联目标"
-              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-label text-ink"
             >
               <option value="">无目标</option>
               {goals.map((goal) => (
@@ -204,13 +204,13 @@ export function QuickCreate({
                 onChange={(event) => setTaskCostYuan(event.target.value)}
                 aria-label="预计支出金额（元）"
                 placeholder="金额（元）"
-                className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                className="h-8 w-full rounded border border-line bg-panel px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               />
-              <p className="text-mini text-muted">
+              <p className="text-label text-muted">
                 金额用于审批和预算校验，超过审批阈值需要审批。
               </p>
               {taskCostYuan.trim() && !hasValidCost ? (
-                <p className="text-mini text-danger">金额需大于 0。</p>
+                <p className="text-label text-danger">金额需大于 0。</p>
               ) : null}
             </div>
           ) : null}
@@ -235,7 +235,7 @@ export function QuickCreate({
       </details>
 
       <details className="rounded-md border border-line bg-panel2/40 px-3 py-2">
-        <summary className="cursor-pointer text-micro text-muted">
+        <summary className="cursor-pointer text-label text-muted">
           <Plus className="mr-1 inline size-3" /> 新建目标
         </summary>
         <form
@@ -250,34 +250,34 @@ export function QuickCreate({
             onChange={(event) => setGoalTitle(event.target.value)}
             aria-label="目标标题"
             placeholder="目标标题"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
             value={goalWhy}
             onChange={(event) => setGoalWhy(event.target.value)}
             aria-label="为什么"
             placeholder="为什么（一句话）"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <input
             value={goalTarget}
             onChange={(event) => setGoalTarget(event.target.value)}
             aria-label="可验收的结果"
             placeholder="可验收的目标"
-            className="h-8 w-full rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />
           <div className="grid grid-cols-2 gap-2">
             <input
               value={goalHorizon}
               onChange={(event) => setGoalHorizon(event.target.value)}
             aria-label="目标周期"
-              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              className="h-8 rounded border border-line bg-panel px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <select
               value={goalDomain}
               onChange={(event) => setGoalDomain(event.target.value)}
             aria-label="目标领域"
-              className="h-8 rounded border border-line bg-panel px-2 text-micro text-ink"
+              className="h-8 rounded border border-line bg-panel px-2 text-label text-ink"
             >
               <option value="learning">学习</option>
               <option value="health">健康</option>
@@ -301,7 +301,7 @@ export function QuickCreate({
         </form>
       </details>
 
-      {msg ? <div className="text-mini text-muted">{msg}</div> : null}
+      {msg ? <div className="text-label text-muted">{msg}</div> : null}
     </div>
   );
 }
