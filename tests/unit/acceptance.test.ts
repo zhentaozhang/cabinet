@@ -47,4 +47,41 @@ describe("acceptance checklist", () => {
     expect(results[0].passed).toBe(false);
     expect(checklistPassed(results)).toBe(true);
   });
+
+  it("does not accept hallucinated URLs as evidence", () => {
+    // Two real-looking links, but nothing was fetched, so nothing is persisted.
+    const content =
+      "结论见 https://example.com/a 和 https://example.org/b 。";
+    const withLinks = evaluateAcceptance(content, [
+      { type: "min_sources", value: 2, required: true },
+    ]);
+    expect(withLinks[0].passed).toBe(true);
+    // The wording must say it only counted links, not verified them.
+    expect(withLinks[0].reason).toContain("未验证可达性");
+
+    const asEvidence = evaluateAcceptance(
+      content,
+      [{ type: "min_evidence", value: 2, required: true }],
+      { evidenceCount: 0 },
+    );
+    expect(asEvidence[0].passed).toBe(false);
+    expect(asEvidence[0].reason).toContain("正文里的链接不算证据");
+    expect(checklistPassed(asEvidence)).toBe(false);
+  });
+
+  it("passes min_evidence only with persisted rows", () => {
+    const results = evaluateAcceptance(
+      "有来源的结论。",
+      [{ type: "min_evidence", value: 2, required: true }],
+      { evidenceCount: 3 },
+    );
+    expect(results[0].passed).toBe(true);
+  });
+
+  it("treats a missing evidence context as zero evidence", () => {
+    const results = evaluateAcceptance("有来源的结论。", [
+      { type: "min_evidence", value: 1, required: true },
+    ]);
+    expect(results[0].passed).toBe(false);
+  });
 });

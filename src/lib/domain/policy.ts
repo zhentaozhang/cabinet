@@ -310,20 +310,36 @@ export function decideRun(input: {
     return deny("Auditor cannot execute the task they audit.");
   }
 
-  if (approval?.status === "approved") {
-    if (approval.consumedAt) {
-      return deny("Approval has already been consumed.");
-    }
-    return allow("Execution approved.");
+  // A user decision is a hard signal: rejection blocks, a pending request
+  // waits. Approval is deliberately NOT checked here — see `needApproval`,
+  // which runs only after the structural checks, so a user's approval can
+  // lift the approval requirement and nothing else (no revoked grant, no
+  // forbidden action type, no unknown action gets through).
+  if (approval?.status === "rejected") {
+    return deny("Approval was rejected.");
   }
 
   if (approval?.status === "pending") {
     return requireApproval("Approval is already pending.");
   }
 
-  if (approval?.status === "rejected") {
-    return deny("Approval was rejected.");
-  }
+  /**
+   * An approval is the user saying "act now". It may therefore lift only the
+   * *autonomy gate* — `require_approval` (needs a yes) and `suggest` (the agent
+   * is only allowed to propose at this level). It never turns a `deny` into an
+   * allow, so a revoked grant, a forbidden action type or a second use of a
+   * consumed approval stays blocked.
+   */
+  const gate = (decision: PolicyDecision): PolicyDecision => {
+    if (decision.effect !== "require_approval" && decision.effect !== "suggest") {
+      return decision;
+    }
+    if (approval?.status !== "approved") return decision;
+    if (approval.consumedAt) {
+      return deny("Approval has already been consumed.");
+    }
+    return allow(`Execution approved by user. ${decision.reason}`);
+  };
 
   const action = normalizeAction(task.actionType);
   if (action === "unknown") {
@@ -353,30 +369,30 @@ export function decideRun(input: {
 
   if (action === "internal_write") {
     if (level >= 2) return allow("Internal write at L2+.");
-    return suggest("L1 can only suggest internal writes.");
+    return gate(suggest("L1 can only suggest internal writes."));
   }
 
   if (action === "external_action") {
-    if (level <= 1) return suggest("L1 can only suggest external actions.");
+    if (level <= 1) return gate(suggest("L1 can only suggest external actions."));
     if (level === 2) {
-      return requireApproval("L2 external action requires approval.");
+      return gate(requireApproval("L2 external action requires approval."));
     }
   }
 
   if (action === "spend") {
     if (level <= 1) return deny("L1 cannot spend.");
     if (level === 2) {
-      return requireApproval("L2 spend requires approval.");
+      return gate(requireApproval("L2 spend requires approval."));
     }
     const threshold =
       task.approvalThresholdCents ?? config.budget.approvalThresholdCents;
     if (task.estimatedCostCents > threshold) {
-      return requireApproval("Spend exceeds approval threshold.");
+      return gate(requireApproval("Spend exceeds approval threshold."));
     }
   }
 
   if (task.requiresApproval) {
-    return requireApproval("Task is marked as requiring approval.");
+    return gate(requireApproval("Task is marked as requiring approval."));
   }
 
   if (
@@ -386,7 +402,7 @@ export function decideRun(input: {
     if (level <= 1) {
       return deny("Estimated spend exceeds budget at L1.");
     }
-    return requireApproval("Estimated spend exceeds remaining budget.");
+    return gate(requireApproval("Estimated spend exceeds remaining budget."));
   }
 
   return allow("Policy allows execution.");

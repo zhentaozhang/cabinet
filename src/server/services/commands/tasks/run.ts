@@ -17,6 +17,7 @@ import { newId } from "@/lib/ids";
 import { generateArtifact } from "@/lib/llm";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
+import { planTools, type ToolStepStatus } from "@/lib/domain/tool-plan";
 import { decideRun } from "@/lib/domain/policy";
 import { usageCents } from "@/lib/domain/agent-budget";
 import { assertTransition } from "@/lib/domain/state";
@@ -408,27 +409,37 @@ export async function runTask(taskId: string, userId: string) {
       latency: 700,
     });
 
-    const tool =
-      agent.role === "researcher"
-        ? "web_search"
-        : agent.role === "coach"
-          ? "read_notes"
-          : agent.role === "treasurer"
-            ? "ledger_read"
-            : agent.role === "auditor"
-              ? "read_artifacts"
-              : "read_notes";
+    // The tool comes from the agent's declared list, filtered by grants — a
+    // role ternary here made `agent_grants` decorative and gave Coach a
+    // research tool it was never granted.
+    const toolPlan = planTools({
+      tools: agent.tools,
+      grants: grants.map((grant) => ({
+        resource: grant.resource,
+        scope: grant.scope,
+      })),
+      actionType: task.actionType,
+    });
+    const toolStartedAt = performance.now();
+    const toolStatus: ToolStepStatus = toolPlan.planned
+      ? "not_connected"
+      : "unauthorized";
 
     await addStep({
       type: "tool",
-      tool,
-      input: { query: task.title },
+      tool: toolPlan.planned?.tool,
+      input: { query: task.title, actionType: task.actionType },
       output: {
-        status: "not_connected",
-        tool,
-        reason: "No external connector is configured for this tool.",
+        status: toolStatus,
+        tool: toolPlan.planned?.tool ?? null,
+        provider: null,
+        resource: toolPlan.planned?.resource ?? null,
+        reason: toolPlan.planned
+          ? "No external connector is configured for this tool."
+          : toolPlan.reason,
+        considered: toolPlan.considered,
       },
-      latency: 10,
+      latency: Math.max(1, Math.round(performance.now() - toolStartedAt)),
     });
 
     const [priorRejection] = await db

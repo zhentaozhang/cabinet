@@ -167,10 +167,12 @@ export default async function TaskPage({
                           : item.type === "min_words"
                             ? `至少 ${item.value} 字`
                             : item.type === "min_sources"
-                              ? `至少 ${item.value} 个来源`
-                              : item.type === "section"
-                                ? `包含章节「${item.value}」`
-                                : `人工项：${item.note}`;
+                              ? `至少 ${item.value} 个引用链接`
+                              : item.type === "min_evidence"
+                                ? `至少 ${item.value} 条落库证据`
+                                : item.type === "section"
+                                  ? `包含章节「${item.value}」`
+                                  : `人工项：${item.note}`;
                       return (
                         <div
                           key={`${item.type}-${index}`}
