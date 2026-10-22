@@ -216,6 +216,7 @@ Postgres（Drizzle） · 可选 LLM（AI SDK）
 
 ## 当前指标（演示数据）
 
+- 记忆检索：`recency(0.99^h) × relevance × salience`，Run Trace 的 context step 显示 score breakdown
 - AAO / week：5（实时计算：`accepted_at` 在本周且 `accepted_autonomy_level ≥ 2`）
 - 每日管理时间：2.8 min（来自 `user_actions`，不是写死）
 - 计划依从性：63%（本周到期任务完成率）

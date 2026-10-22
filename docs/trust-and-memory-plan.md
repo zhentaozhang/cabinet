@@ -222,5 +222,6 @@ Merkle 树、Biscuit、OPA/Rego、链上身份、完整 mem0/Graphiti、Guest Ag
 - ✅ A3：`withIdempotency` + `Idempotency-Key` + Zod schema；同 key 重放返回缓存响应，不同 body 409，并发 409。
 - 🟡 A4：DB CHECK（自验收/负成本/自主范围/负预算）、audit seq 唯一、`runTask` claim/finalize 事务、失败注入测试已完成；核心 FK 延后。
 - ✅ A5：注册 + `/setup` + `agent_templates` 创建 7 个 Agent；CSRF Origin 校验；DB rate limit；导出/删除账号；生产禁用 demo reset。
-- ⏳ B1–B3、C：未开始。
-- 当前测试：109。
+- ✅ B1：记忆检索三信号融合（recency 0.99 + 中文分词 relevance + salience），Run Trace 记录 score breakdown。
+- ⏳ B2–B3、C：未开始。
+- 当前测试：117。

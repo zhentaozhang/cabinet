@@ -25,6 +25,7 @@ import { logAudit } from "./audit";
 import { newId } from "./ids";
 import { weekLabel } from "./format";
 import { generateArtifact } from "./llm";
+import { retrieveMemories } from "./memory/retrieval";
 import { getPolicyConfig } from "./policy/config";
 import { decideAudit, decideRun, decideUpgrade } from "./domain/policy";
 import { assertTransition } from "./domain/state";
@@ -917,18 +918,22 @@ export async function runTask(taskId: string, userId: string) {
   };
 
   try {
-    const agentMemories = await db
-      .select()
-      .from(memories)
-      .where(eq(memories.userId, task.userId))
-      .orderBy(desc(memories.salience))
-      .limit(5);
+    const agentMemories = await retrieveMemories(
+      task.userId,
+      `${task.title} ${task.description}`,
+      { limit: 5 },
+    );
 
     await addStep({
       type: "context",
       input: { task: task.title, agent: agent.name },
       output: {
         memories: agentMemories.map((m) => m.content),
+        retrieved: agentMemories.map((m) => ({
+          id: m.id,
+          content: m.content,
+          scores: m.scores,
+        })),
         goal: task.goalId,
       },
       ti: 220,
