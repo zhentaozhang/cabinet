@@ -59,7 +59,7 @@ export function TaskActions({
         disabled={busy !== null}
       >
         {busy === "run" ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
-        执行
+        {["accepted", "rejected", "done"].includes(status) ? "重新执行" : "执行"}
       </Button>
       <Button
         size="sm"
