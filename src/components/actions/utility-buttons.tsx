@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Loader2, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
+import { API_ROUTES, auditVerificationSchema } from "@/contracts";
+import { browserApi } from "@/lib/api/browser";
 import { call } from "./shared";
 
 export function ReflectButton() {
@@ -64,6 +66,28 @@ export function BriefButton() {
   );
 }
 
+export function WeeklyReviewButton() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    const data = await call("/api/reviews/weekly", "POST");
+    setBusy(false);
+    if (!data.ok) {
+      toast.error(data.error ?? "周复盘生成失败");
+      return;
+    }
+    toast.success("本周复盘已生成");
+    router.refresh();
+  }
+  return (
+    <Button size="sm" variant="ghost" onClick={run} disabled={busy}>
+      {busy ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
+      生成本周复盘
+    </Button>
+  );
+}
+
 export function VerifyAuditButton() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -71,14 +95,22 @@ export function VerifyAuditButton() {
   async function run() {
     setBusy(true);
     setMsg(null);
-    const res = await fetch("/api/audit/verify");
-    const data = await res.json();
+    const result = await browserApi.query(
+      API_ROUTES.verifyAudit,
+      auditVerificationSchema,
+    );
     setBusy(false);
-    const text = data.ok
-      ? `链完整 · ${data.checked} 条`
-      : `首个不一致：${data.firstMismatch ?? "未知"}`;
+    if (!result.ok) {
+      setMsg(result.error);
+      toast.error(result.error);
+      return;
+    }
+    const { verified, checked, firstMismatch } = result.data;
+    const text = verified
+      ? `链完整 · ${checked} 条`
+      : `首个不一致：${firstMismatch ?? "未知"}`;
     setMsg(text);
-    if (data.ok) {
+    if (verified) {
       toast.success(text);
     } else {
       toast.error(text);

@@ -9,6 +9,16 @@ type MutationResult = {
   body: Record<string, unknown>;
 };
 
+/** Explicit origin allowlist: `TRUSTED_ORIGINS` (comma separated) + auth URL. */
+export function trustedOrigins(): string[] {
+  const configured = (process.env.TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((value) => value.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+  const authUrl = process.env.BETTER_AUTH_URL?.replace(/\/$/, "");
+  return [...new Set([...(authUrl ? [authUrl] : []), ...configured])];
+}
+
 export function assertSameOrigin(request: Request): void {
   const origin = request.headers.get("origin");
   const fetchSite = request.headers.get("sec-fetch-site");
@@ -24,18 +34,25 @@ export function assertSameOrigin(request: Request): void {
     return;
   }
 
-  const host = request.headers.get("host");
-  const allowed = new Set(
-    [
-      process.env.BETTER_AUTH_URL,
-      host ? `http://${host}` : null,
-      host ? `https://${host}` : null,
-    ].filter((value): value is string => Boolean(value)),
-  );
+  // The allowlist comes from configuration, not from the request's own Host
+  // header: a spoofed Host would otherwise make any Origin look trusted.
+  const allowed = new Set(trustedOrigins());
+  if (allowed.has(origin)) return;
 
-  if (!allowed.has(origin)) {
-    throw new ForbiddenError("Cross-origin request blocked.");
+  // A browser declares same-origin itself, and cannot be talked into it by a
+  // proxy that rewrites Host.
+  if (fetchSite === "same-origin") return;
+
+  // Local development may be reached through several hostnames (127.0.0.1,
+  // localhost, a LAN IP), and production must not widen the allowlist for it.
+  if (process.env.NODE_ENV !== "production") {
+    const host = request.headers.get("host");
+    if (host && (origin === `http://${host}` || origin === `https://${host}`)) {
+      return;
+    }
   }
+
+  throw new ForbiddenError("Cross-origin request blocked.");
 }
 
 /**

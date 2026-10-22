@@ -1,14 +1,15 @@
 import { verifyAuditChain } from "@/lib/audit";
-import { getApiUserId } from "@/lib/auth/context";
-import { toErrorResponse } from "@/lib/domain/errors";
+import { handleQuery } from "@/lib/api/read";
 
 export async function GET() {
-  try {
-    const userId = await getApiUserId();
+  // A broken chain is a successful verification with a negative verdict, not a
+  // transport failure: the client has to show *which* event broke the chain.
+  return handleQuery(async (userId) => {
     const result = await verifyAuditChain(userId);
-    return Response.json(result);
-  } catch (error) {
-    const { status, body } = toErrorResponse(error);
-    return Response.json(body, { status });
-  }
+    return {
+      verified: result.ok,
+      checked: result.checked,
+      firstMismatch: result.firstMismatch,
+    };
+  });
 }

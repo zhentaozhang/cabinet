@@ -35,6 +35,11 @@ export const weeklyMetricsSchema = z.object({
   aao: z.number(),
   adherence: z.number(),
   managementMinutes: z.number(),
+  managementMinutesSource: z.enum(["measured", "estimated"]),
+  studyMinutes: z.number(),
+  recallAvg: z.number().nullable(),
+  learningTasks: z.number(),
+  retestPassRate: z.number(),
   costUsd: z.number(),
   goalProgress: z.number(),
   auditRejectRate: z.number(),
@@ -106,6 +111,7 @@ export const reviewPageSchema = z.object({
 export type ReviewPageDto = z.infer<typeof reviewPageSchema>;
 
 export const memoryPageSchema = z.object({
+  timezone: z.string(),
   memories: z.array(memoryDtoSchema),
   counts: z.object({
     all: z.number(),
@@ -122,6 +128,7 @@ export const memoryPageSchema = z.object({
 export type MemoryPageDto = z.infer<typeof memoryPageSchema>;
 
 export const councilPageSchema = z.object({
+  timezone: z.string(),
   council: councilDtoSchema,
   positions: z.array(councilPositionDtoSchema),
   agents: z.array(agentDtoSchema),
@@ -129,6 +136,7 @@ export const councilPageSchema = z.object({
 export type CouncilPageDto = z.infer<typeof councilPageSchema>;
 
 export const agentPageSchema = z.object({
+  timezone: z.string(),
   agent: agentDtoSchema,
   runs: z.array(runDtoSchema),
   memories: z.array(memoryDtoSchema),
@@ -138,6 +146,7 @@ export const agentPageSchema = z.object({
 export type AgentPageDto = z.infer<typeof agentPageSchema>;
 
 export const taskPageSchema = z.object({
+  timezone: z.string(),
   task: taskDtoSchema,
   goal: goalDtoSchema.nullable(),
   assignee: agentDtoSchema.nullable(),
@@ -169,3 +178,11 @@ export const shellContextSchema = z.object({
   }),
 });
 export type ShellContextDto = z.infer<typeof shellContextSchema>;
+
+/** `GET /api/audit/verify` — a verdict, not a failure: a broken chain is data. */
+export const auditVerificationSchema = z.object({
+  verified: z.boolean(),
+  checked: z.number(),
+  firstMismatch: z.string().nullable(),
+});
+export type AuditVerificationDto = z.infer<typeof auditVerificationSchema>;

@@ -1,5 +1,13 @@
+import { clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+/**
+ * Class combiner. `twMerge` resolves *conflicting* utilities by call order, so
+ * a component's `className` can actually override its variant instead of
+ * depending on where Tailwind happened to emit each rule.
+ */
 export function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
+  return twMerge(clsx(parts));
 }
 
 export function pct(value: number): string {
@@ -14,16 +22,23 @@ export function usd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-export function shortDate(value: Date | string | null | undefined): string {
+export function shortDate(
+  value: Date | string | null | undefined,
+  timeZone?: string,
+): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
   return new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit",
     day: "2-digit",
+    timeZone,
   }).format(d);
 }
 
-export function dateTime(value: Date | string | null | undefined): string {
+export function dateTime(
+  value: Date | string | null | undefined,
+  timeZone?: string,
+): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
   return new Intl.DateTimeFormat("zh-CN", {
@@ -31,15 +46,20 @@ export function dateTime(value: Date | string | null | undefined): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   }).format(d);
 }
 
-export function timeOnly(value: Date | string | null | undefined): string {
+export function timeOnly(
+  value: Date | string | null | undefined,
+  timeZone?: string,
+): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
   return new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone,
   }).format(d);
 }
 

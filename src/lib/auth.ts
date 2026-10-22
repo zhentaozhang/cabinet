@@ -26,10 +26,33 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     autoSignIn: true,
+    // `requireEmailVerification` and `sendResetPassword` are intentionally not
+    // enabled: this deployment has no mail transport, so turning them on would
+    // lock users out (verification) or silently drop reset links. Wire an
+    // email provider first, then add `emailVerification.sendVerificationEmail`
+    // and `emailAndPassword.sendResetPassword` together.
+  },
+  rateLimit: {
+    // better-auth only enables its own limiter in production by default; turn
+    // it on everywhere so /sign-in, /sign-up and password-reset endpoints are
+    // covered in staging too. The default in-memory store is per-process; a
+    // multi-instance deployment should switch to `storage: "database"` after
+    // adding the `rateLimit` model, or provide `secondaryStorage`.
+    enabled: true,
   },
   secret,
   baseURL,
-  trustedOrigins: [baseURL],
+  // Multi-domain deployments add their origins through TRUSTED_ORIGINS; the
+  // login endpoint itself rejects any other origin.
+  trustedOrigins: [
+    ...new Set([
+      baseURL,
+      ...(process.env.TRUSTED_ORIGINS ?? "")
+        .split(",")
+        .map((value) => value.trim().replace(/\/$/, ""))
+        .filter(Boolean),
+    ]),
+  ],
   session: {
     expiresIn: 60 * 60 * 24 * 7,
   },
