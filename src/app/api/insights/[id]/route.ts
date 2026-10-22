@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { applyInsight } from "@/server/services/engine";
+import { applyInsight } from "@/server/services/commands/memory/insights";
 import { handleMutation } from "@/lib/api/mutation";
 import { insightActionSchema } from "@/lib/validation/schemas";
 import { parseBody } from "@/lib/validation/parse";

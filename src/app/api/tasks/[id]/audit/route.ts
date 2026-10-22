@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { auditTask } from "@/server/services/engine";
+import { auditTask } from "@/server/services/commands/tasks/audit";
 import { handleMutation } from "@/lib/api/mutation";
 
 export async function POST(

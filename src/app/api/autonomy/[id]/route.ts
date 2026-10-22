@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { setAutonomy } from "@/server/services/engine";
+import { setAutonomy } from "@/server/services/commands/agents";
 import { handleMutation } from "@/lib/api/mutation";
 import { autonomySchema } from "@/lib/validation/schemas";
 import { parseBody } from "@/lib/validation/parse";

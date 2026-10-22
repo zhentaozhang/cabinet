@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { updateAgent } from "@/server/services/engine";
+import { updateAgent } from "@/server/services/commands/agents";
 import { handleMutation } from "@/lib/api/mutation";
 import { handleQuery } from "@/lib/api/read";
 import { agentUpdateSchema } from "@/lib/validation/schemas";

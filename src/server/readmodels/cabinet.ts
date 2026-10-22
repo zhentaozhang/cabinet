@@ -1,7 +1,7 @@
 import { cabinetPageSchema, type CabinetPageDto } from "@/contracts";
 import { asDto } from "@/server/dto-guard";
 import { toAgentDto, toProfileDto, toTaskDto, toUserDto } from "@/server/mappers";
-import { getCabinetData } from "@/server/services/engine";
+import { getCabinetData } from "@/server/services/queries/cabinet";
 
 export async function loadCabinet(userId: string): Promise<CabinetPageDto> {
   const data = await getCabinetData(userId);

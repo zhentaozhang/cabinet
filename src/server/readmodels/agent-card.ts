@@ -1,6 +1,6 @@
 import { agentCardSchema, type AgentCardDto } from "@/contracts";
 import { asDto } from "@/server/dto-guard";
-import { getAgentData } from "@/server/services/engine";
+import { getAgentData } from "@/server/services/queries/agent";
 
 /**
  * Portable Agent Card. Deliberately whitelists fields: no email, no memories,

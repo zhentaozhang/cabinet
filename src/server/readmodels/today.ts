@@ -15,7 +15,7 @@ import {
   toTaskDto,
   toUserDto,
 } from "@/server/mappers";
-import { getTodayData } from "@/server/services/engine";
+import { getTodayData } from "@/server/services/queries/today";
 
 export async function loadToday(userId: string): Promise<TodayPageDto> {
   const [data, proposed] = await Promise.all([

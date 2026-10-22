@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { runReflection } from "@/server/services/engine";
+import { runReflection } from "@/server/services/commands/reflection";
 import { handleMutation } from "@/lib/api/mutation";
 
 export async function POST(req: Request) {

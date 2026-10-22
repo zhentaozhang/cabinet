@@ -10,7 +10,7 @@ import {
   toTaskDto,
   toUserDto,
 } from "@/server/mappers";
-import { getReviewData } from "@/server/services/engine";
+import { getReviewData } from "@/server/services/queries/review";
 
 export async function loadReview(userId: string): Promise<ReviewPageDto> {
   const data = await getReviewData(userId);

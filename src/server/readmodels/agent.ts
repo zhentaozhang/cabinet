@@ -7,7 +7,7 @@ import {
   toSkillDto,
   toTaskDto,
 } from "@/server/mappers";
-import { getAgentData } from "@/server/services/engine";
+import { getAgentData } from "@/server/services/queries/agent";
 
 export async function loadAgent(
   agentId: string,

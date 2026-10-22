@@ -4,7 +4,7 @@ import { toMemoryDto } from "@/server/mappers";
 import {
   getMemoryData,
   type MemoryView,
-} from "@/server/services/engine";
+} from "@/server/services/queries/memory";
 
 export async function loadMemory(
   userId: string,

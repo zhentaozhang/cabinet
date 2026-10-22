@@ -10,7 +10,7 @@ import {
   toStepDto,
   toTaskDto,
 } from "@/server/mappers";
-import { getTaskData } from "@/server/services/engine";
+import { getTaskData } from "@/server/services/queries/task";
 
 export async function loadTask(
   taskId: string,
