@@ -206,7 +206,7 @@ export default async function MemoryPage({
                   </div>
                 </div>
 
-                <p className="mt-2.5 text-xs leading-relaxed text-[#c6ccd8]">{memory.content}</p>
+                <p className="mt-2.5 text-xs leading-relaxed text-ink-soft">{memory.content}</p>
                 {memory.value ? (
                   <p className="mt-1 text-label text-accent">
                     事实值：{memory.value}

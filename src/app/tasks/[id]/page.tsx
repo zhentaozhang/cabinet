@@ -119,7 +119,7 @@ export default async function TaskPage({
           <Card>
             <CardHeader eyebrow="Acceptance criteria" title="验收标准" />
             <div className="px-5 py-4">
-              <p className="text-xs leading-relaxed text-[#c6ccd8]">{task.acceptanceCriteria}</p>
+              <p className="text-xs leading-relaxed text-ink-soft">{task.acceptanceCriteria}</p>
               {task.acceptanceChecklist?.length ? (
                 <div className="mt-3 space-y-1.5 rounded-md border border-line bg-panel2/40 px-3 py-2">
                   {task.acceptanceChecklist.map((item, index) => {
@@ -244,10 +244,10 @@ export default async function TaskPage({
                                   查看输入 / 输出
                                 </summary>
                                 <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-                                  <pre className="overflow-x-auto rounded border border-line bg-[#0b0e14] p-2 text-label leading-relaxed text-muted">
+                                  <pre className="overflow-x-auto rounded border border-line bg-sunken p-2 text-label leading-relaxed text-muted">
                                     {JSON.stringify(step.input, null, 2)}
                                   </pre>
-                                  <pre className="overflow-x-auto rounded border border-line bg-[#0b0e14] p-2 text-label leading-relaxed text-teal/80">
+                                  <pre className="overflow-x-auto rounded border border-line bg-sunken p-2 text-label leading-relaxed text-teal/80">
                                     {JSON.stringify(step.output, null, 2)}
                                   </pre>
                                 </div>
@@ -297,7 +297,7 @@ export default async function TaskPage({
                       <summary className="cursor-pointer text-label text-faint hover:text-muted">
                         展开内容
                       </summary>
-                      <div className="mt-2 rounded-lg border border-line bg-[#0b0e14] px-4 py-3">
+                      <div className="mt-2 rounded-lg border border-line bg-sunken px-4 py-3">
                         <Markdown content={artifact.content} />
                       </div>
                     </details>

@@ -13,6 +13,15 @@
   --color-ink: #e8ebf1;
   --color-muted: #8b96a8;
   --color-faint: #566173;
+  /* body copy: brighter than `muted`, dimmer than `ink` */
+  --color-ink-soft: #c6ccd8;
+  /* recessed surface for code, JSON traces and artifact bodies */
+  --color-sunken: #0b0e14;
+  /* raised surface for hover on outline controls */
+  --color-panel-hover: #1a2030;
+  /* ink laid on top of `accent` fills */
+  --color-accent-ink: #1a1204;
+  --color-accent-hi: #efb954;
   --color-accent: #e2a336;
   --color-teal: #3bb99e;
   --color-danger: #ea5555;

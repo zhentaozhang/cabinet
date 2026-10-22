@@ -540,7 +540,7 @@ export function CheckinForm({
               type="checkbox"
               checked={Boolean(done[t.id])}
               onChange={(e) => setDone((d) => ({ ...d, [t.id]: e.target.checked }))}
-              className="size-3.5 accent-[#e0a83e]"
+              className="size-3.5 accent-accent"
             />
             <span className="truncate">{t.title}</span>
           </label>

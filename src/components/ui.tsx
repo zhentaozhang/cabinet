@@ -100,9 +100,9 @@ type ButtonVariant = "primary" | "outline" | "ghost" | "danger";
 
 const buttonVariants: Record<ButtonVariant, string> = {
   primary:
-    "bg-accent text-[#1a1204] hover:bg-[#efb954] border border-accent/60",
+    "bg-accent text-accent-ink hover:bg-accent-hi border border-accent/60",
   outline:
-    "border border-line2 bg-panel2 text-ink hover:border-line2/80 hover:bg-[#1a2030]",
+    "border border-line2 bg-panel2 text-ink hover:border-line2/80 hover:bg-panel-hover",
   ghost: "text-muted hover:text-ink hover:bg-white/[0.04] border border-transparent",
   danger:
     "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20",

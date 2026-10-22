@@ -95,7 +95,7 @@ export default async function AgentPage({
           <Card>
             <CardHeader eyebrow="Charter" title="宪章" right={<Badge tone="accent">不可违反</Badge>} />
             <div className="px-5 py-4">
-              <p className="text-xs leading-relaxed text-[#c6ccd8]">{agent.charter}</p>
+              <p className="text-xs leading-relaxed text-ink-soft">{agent.charter}</p>
             </div>
           </Card>
 

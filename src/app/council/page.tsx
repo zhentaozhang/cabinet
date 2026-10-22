@@ -195,7 +195,7 @@ export default async function CouncilPage() {
                             {agent?.title ?? ""}
                           </span>
                         </div>
-                        <p className="mt-2 text-xs leading-relaxed text-[#c6ccd8]">
+                        <p className="mt-2 text-xs leading-relaxed text-ink-soft">
                           {position.claim}
                         </p>
                         <div className="mt-2 flex flex-wrap gap-1.5">
