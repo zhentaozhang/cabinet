@@ -9,6 +9,7 @@ import {
   Gavel,
   LogOut,
   RefreshCw,
+  Settings,
   Sun,
   Users,
 } from "lucide-react";
@@ -291,6 +292,17 @@ export function Shell({
                 {displayEmail}
               </div>
             </div>
+            <Link
+              href="/setup"
+              aria-label="工作区设置"
+              title="工作区设置"
+              className={cn(
+                "rounded p-1 text-faint transition-colors hover:bg-white/[0.04] hover:text-muted",
+                FOCUS_RING,
+              )}
+            >
+              <Settings aria-hidden="true" className="size-3" />
+            </Link>
             {showSignOut ? (
               <button
                 type="button"
@@ -317,6 +329,16 @@ export function Shell({
         <div className="flex items-center gap-3 px-4 py-3">
           <Mark />
           <div className="text-caption font-semibold tracking-[0.16em]">CABINET</div>
+          <Link
+            href="/setup"
+            aria-label="工作区设置"
+            className={cn(
+              "ml-auto rounded-md border border-line p-1.5 text-faint transition-colors hover:text-muted",
+              FOCUS_RING,
+            )}
+          >
+            <Settings aria-hidden="true" className="size-3.5" />
+          </Link>
         </div>
       </header>
 

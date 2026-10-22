@@ -244,6 +244,11 @@ export default async function ReviewPage() {
           <Card>
             <CardHeader eyebrow="Agent performance" title="内阁绩效" />
             <div className="divide-y divide-line">
+              {data.agents.length === 0 ? (
+                <div className="px-5 py-6 text-center text-micro text-faint">
+                  还没有在岗的 Agent。创建工作区后，这里会按信任分给出升级或退休建议。
+                </div>
+              ) : null}
               {data.agents.map((agent) => {
                 const rate = passRate(agent.successCount, agent.failCount);
                 const rec = recommendation(
@@ -283,6 +288,11 @@ export default async function ReviewPage() {
               right={<VerifyAuditButton />}
             />
             <div className="divide-y divide-line">
+              {data.audit.length === 0 ? (
+                <div className="px-5 py-6 text-center text-micro text-faint">
+                  还没有审计记录。第一次验收通过后，这里会写下第一条哈希链事件。
+                </div>
+              ) : null}
               {data.audit.slice(0, 8).map((event) => (
                 <div key={event.id} className="px-5 py-2.5">
                   <div className="flex items-center gap-2">

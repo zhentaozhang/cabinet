@@ -15,9 +15,9 @@ import {
   Badge,
   Card,
   CardHeader,
+  EmptyState,
   SectionTitle,
 } from "@/components/ui";
-import { DataControls } from "@/components/data-controls";
 
 export const metadata: Metadata = {
   title: "Cabinet · Cabinet",
@@ -159,6 +159,26 @@ function OrgNode({
 
 export default async function CabinetPage() {
   const data = await fetchCabinetPage();
+
+  if (data.agents.length === 0) {
+    return (
+      <div className="mx-auto max-w-xl py-12">
+        <EmptyState
+          title="这个内阁还没有成员"
+          hint="七个 Agent 的位置已经留好：Chief 拆解、Auditor 验收、Critic 唱反调。创建工作区后它们会按宪章上岗。"
+        />
+        <div className="mt-4 flex justify-center">
+          <Link
+            href="/setup"
+            className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-micro text-accent transition-colors hover:bg-accent/15 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
+          >
+            去创建工作区 <ArrowRight className="size-3" />
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const byRole = (role: string) => data.agents.filter((a) => a.role === role);
   const chief = byRole("chief")[0];
   // One pass over tasks instead of one scan per agent card.
@@ -273,9 +293,17 @@ export default async function CabinetPage() {
           </div>
         </Card>
         <Card>
-          <CardHeader eyebrow="Data" title="数据与账号" />
+          <CardHeader eyebrow="Settings" title="数据与账号" />
           <div className="px-5 py-4">
-            <DataControls />
+            <p className="text-micro leading-relaxed text-muted">
+              导出备份、彻底删除账号，以及查看工作区规模，都收在设置里。
+            </p>
+            <Link
+              href="/setup"
+              className="mt-3 inline-flex items-center gap-1 text-micro text-accent transition-colors hover:text-accent/80 focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
+            >
+              打开设置 <ArrowRight className="size-3" />
+            </Link>
           </div>
         </Card>
         <Card>

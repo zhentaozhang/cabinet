@@ -59,7 +59,6 @@ export default async function globalSetup() {
   mkdirSync(path.dirname(HANDOFF_FILE), { recursive: true });
   writeFileSync(HANDOFF_FILE, isolatedUrl, "utf8");
 
-  // eslint-disable-next-line no-console
   console.log(`[tests] isolated database: ${databaseName}`);
 
   return async () => {
