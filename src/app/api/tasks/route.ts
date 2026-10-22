@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { createTask } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function POST(req: Request) {
@@ -17,19 +18,23 @@ export async function POST(req: Request) {
       estimateMin?: number;
       dueAt?: string | null;
     };
-    const task = await createTask({
-      goalId: body.goalId ?? null,
-      title: body.title ?? "",
-      description: body.description ?? "",
-      assigneeId: body.assigneeId ?? "",
-      auditorId: body.auditorId ?? "",
-      actionType: body.actionType ?? "internal",
-      resource: body.resource ?? "task",
-      estimatedCostCents: body.estimatedCostCents ?? 0,
-      acceptanceCriteria: body.acceptanceCriteria ?? "",
-      estimateMin: body.estimateMin ?? 25,
-      dueAt: body.dueAt ?? null,
-    });
+    const userId = await getApiUserId();
+    const task = await createTask(
+      {
+        goalId: body.goalId ?? null,
+        title: body.title ?? "",
+        description: body.description ?? "",
+        assigneeId: body.assigneeId ?? "",
+        auditorId: body.auditorId ?? "",
+        actionType: body.actionType ?? "internal",
+        resource: body.resource ?? "task",
+        estimatedCostCents: body.estimatedCostCents ?? 0,
+        acceptanceCriteria: body.acceptanceCriteria ?? "",
+        estimateMin: body.estimateMin ?? 25,
+        dueAt: body.dueAt ?? null,
+      },
+      userId,
+    );
     revalidatePath("/");
     revalidatePath("/cabinet");
     revalidatePath("/review");

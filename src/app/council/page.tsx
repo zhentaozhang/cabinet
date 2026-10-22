@@ -8,6 +8,7 @@ import {
   Users,
 } from "lucide-react";
 import { getCouncilData } from "@/lib/engine";
+import { getPageUserId } from "@/lib/auth/context";
 import { roleMeta } from "@/lib/agents";
 import { dateTime } from "@/lib/format";
 import {
@@ -35,7 +36,8 @@ function stanceLabel(stance: string) {
 }
 
 export default async function CouncilPage() {
-  const data = await getCouncilData();
+  const userId = await getPageUserId();
+  const data = await getCouncilData(userId);
   if (!data) {
     return (
       <div className="mx-auto max-w-xl py-12">

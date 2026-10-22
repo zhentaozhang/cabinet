@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { auditTask } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function POST(
@@ -8,7 +9,8 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const result = await auditTask(id);
+    const userId = await getApiUserId();
+    const result = await auditTask(id, userId);
     revalidatePath("/");
     revalidatePath("/cabinet");
     revalidatePath("/review");

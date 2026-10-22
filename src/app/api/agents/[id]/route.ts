@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { updateAgent } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function PATCH(
@@ -13,7 +14,8 @@ export async function PATCH(
       charter?: string;
       budgetCents?: number;
     };
-    const agent = await updateAgent(id, body);
+    const userId = await getApiUserId();
+    const agent = await updateAgent(id, body, userId);
     revalidatePath("/cabinet");
     revalidatePath(`/cabinet/${id}`);
     revalidatePath("/");

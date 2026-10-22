@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { decideCouncil } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function PATCH(
@@ -13,7 +14,8 @@ export async function PATCH(
       note?: string;
     };
     if (!body.decision) throw new Error("decision is required");
-    await decideCouncil(id, body.decision, body.note ?? "");
+    const userId = await getApiUserId();
+    await decideCouncil(id, body.decision, body.note ?? "", userId);
     revalidatePath("/");
     revalidatePath("/council");
     revalidatePath("/review");

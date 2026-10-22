@@ -1,4 +1,5 @@
 export type ErrorCode =
+  | "unauthorized"
   | "validation_error"
   | "policy_denied"
   | "conflict"
@@ -14,6 +15,12 @@ export class DomainError extends Error {
     this.name = new.target.name;
     this.code = code;
     this.status = status;
+  }
+}
+
+export class UnauthorizedError extends DomainError {
+  constructor(message = "Unauthorized") {
+    super("unauthorized", message, 401);
   }
 }
 

@@ -7,6 +7,7 @@ import {
   Users,
 } from "lucide-react";
 import { getCabinetData } from "@/lib/engine";
+import { getPageUserId } from "@/lib/auth/context";
 import { AUTONOMY_LABELS, roleMeta } from "@/lib/agents";
 import { money } from "@/lib/format";
 import {
@@ -170,7 +171,8 @@ function OrgNode({
 }
 
 export default async function CabinetPage() {
-  const data = await getCabinetData();
+  const userId = await getPageUserId();
+  const data = await getCabinetData(userId);
   const byRole = (role: string) => data.agents.filter((a) => a.role === role);
   const chief = byRole("chief")[0];
   const taskCount = (id: string) =>

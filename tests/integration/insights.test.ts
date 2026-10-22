@@ -1,3 +1,4 @@
+import { DEMO_USER_ID } from "@/lib/demo";
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -12,7 +13,7 @@ beforeEach(async () => {
 
 describe("insight state guards", () => {
   it("accepts an insight once and rolls it back exactly", async () => {
-    await applyInsight("ins_split", "accept");
+    await applyInsight("ins_split", "accept", DEMO_USER_ID);
 
     const [afterAccept] = await db
       .select()
@@ -26,11 +27,11 @@ describe("insight state guards", () => {
       .where(eq(memories.sourceEventId, "ins_split"));
     expect(created).toHaveLength(1);
 
-    await expect(applyInsight("ins_split", "accept")).rejects.toBeInstanceOf(
+    await expect(applyInsight("ins_split", "accept", DEMO_USER_ID)).rejects.toBeInstanceOf(
       ConflictError,
     );
 
-    await applyInsight("ins_split", "rollback");
+    await applyInsight("ins_split", "rollback", DEMO_USER_ID);
     const [afterRollback] = await db
       .select()
       .from(tasks)
@@ -40,13 +41,13 @@ describe("insight state guards", () => {
 
   it("refuses to roll back an insight that was never applied", async () => {
     await expect(
-      applyInsight("ins_split", "rollback"),
+      applyInsight("ins_split", "rollback", DEMO_USER_ID),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
   it("refuses to reject an applied insight", async () => {
-    await applyInsight("ins_split", "accept");
-    await expect(applyInsight("ins_split", "reject")).rejects.toBeInstanceOf(
+    await applyInsight("ins_split", "accept", DEMO_USER_ID);
+    await expect(applyInsight("ins_split", "reject", DEMO_USER_ID)).rejects.toBeInstanceOf(
       ConflictError,
     );
   });

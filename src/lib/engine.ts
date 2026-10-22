@@ -41,35 +41,33 @@ import {
   weekRange,
 } from "./domain/time";
 
-export const DEMO_USER_ID = process.env.DEMO_USER_ID ?? "usr_zhen";
-
-export async function getWorkspace() {
-  const [user] = await db.select().from(users).where(eq(users.id, DEMO_USER_ID));
+export async function getWorkspace(userId: string) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
   if (!user) throw new Error("Demo workspace not seeded. Run `pnpm db:setup`.");
   const [profile] = await db
     .select()
     .from(profiles)
-    .where(eq(profiles.userId, DEMO_USER_ID));
+    .where(eq(profiles.userId, userId));
   return { user, profile };
 }
 
-export async function getTodayData() {
-  const { user, profile } = await getWorkspace();
+export async function getTodayData(userId: string) {
+  const { user, profile } = await getWorkspace(userId);
   const allAgents = await db
     .select()
     .from(agents)
-    .where(eq(agents.userId, DEMO_USER_ID))
+    .where(eq(agents.userId, userId))
     .orderBy(asc(agents.createdAt));
   const allGoals = await db
     .select()
     .from(goals)
-    .where(eq(goals.userId, DEMO_USER_ID));
+    .where(eq(goals.userId, userId));
   const openTasks = await db
     .select()
     .from(tasks)
     .where(
       and(
-        eq(tasks.userId, DEMO_USER_ID),
+        eq(tasks.userId, userId),
         inArray(tasks.status, [
           "planned",
           "assigned",
@@ -87,13 +85,13 @@ export async function getTodayData() {
     .select()
     .from(approvals)
     .where(
-      and(eq(approvals.userId, DEMO_USER_ID), eq(approvals.status, "pending")),
+      and(eq(approvals.userId, userId), eq(approvals.status, "pending")),
     )
     .orderBy(asc(approvals.createdAt));
   const [openCouncil] = await db
     .select()
     .from(councils)
-    .where(and(eq(councils.userId, DEMO_USER_ID), eq(councils.status, "open")))
+    .where(and(eq(councils.userId, userId), eq(councils.status, "open")))
     .orderBy(desc(councils.createdAt))
     .limit(1);
   const todayKey = localDateKey(new Date(), user.timezone);
@@ -105,23 +103,23 @@ export async function getTodayData() {
     .select()
     .from(checkins)
     .where(
-      and(eq(checkins.userId, DEMO_USER_ID), eq(checkins.date, todayKey)),
+      and(eq(checkins.userId, userId), eq(checkins.date, todayKey)),
     )
     .limit(1);
   const [yesterdayCheckin] = await db
     .select()
     .from(checkins)
     .where(
-      and(eq(checkins.userId, DEMO_USER_ID), eq(checkins.date, yesterdayKey)),
+      and(eq(checkins.userId, userId), eq(checkins.date, yesterdayKey)),
     )
     .limit(1);
   const [dailyReview] = await db
     .select()
     .from(reviews)
-    .where(and(eq(reviews.userId, DEMO_USER_ID), eq(reviews.type, "daily")))
+    .where(and(eq(reviews.userId, userId), eq(reviews.type, "daily")))
     .orderBy(desc(reviews.createdAt))
     .limit(1);
-  const weeklyMetrics = await getWeeklyMetrics(DEMO_USER_ID);
+  const weeklyMetrics = await getWeeklyMetrics(userId);
 
   return {
     user,
@@ -138,23 +136,23 @@ export async function getTodayData() {
   };
 }
 
-export async function getCabinetData() {
-  const { user, profile } = await getWorkspace();
+export async function getCabinetData(userId: string) {
+  const { user, profile } = await getWorkspace(userId);
   const allAgents = await db
     .select()
     .from(agents)
-    .where(eq(agents.userId, DEMO_USER_ID))
+    .where(eq(agents.userId, userId))
     .orderBy(asc(agents.createdAt));
   const openTasks = await db
     .select()
     .from(tasks)
-    .where(eq(tasks.userId, DEMO_USER_ID));
+    .where(eq(tasks.userId, userId));
   return { user, profile, agents: allAgents, tasks: openTasks };
 }
 
-export async function getAgentData(agentId: string) {
+export async function getAgentData(agentId: string, userId: string) {
   const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-  if (!agent) return null;
+  if (!agent || agent.userId !== userId) return null;
   const agentRuns = await db
     .select()
     .from(runs)
@@ -186,9 +184,9 @@ export async function getAgentData(agentId: string) {
   };
 }
 
-export async function getTaskData(taskId: string) {
+export async function getTaskData(taskId: string, userId: string) {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
-  if (!task) return null;
+  if (!task || task.userId !== userId) return null;
   const taskRuns = await db
     .select()
     .from(runs)
@@ -224,7 +222,7 @@ export async function getTaskData(taskId: string) {
     .select()
     .from(auditEvents)
     .where(
-      and(eq(auditEvents.userId, DEMO_USER_ID), eq(auditEvents.target, taskId)),
+      and(eq(auditEvents.userId, userId), eq(auditEvents.target, taskId)),
     )
     .orderBy(desc(auditEvents.createdAt))
     .limit(10);
@@ -241,32 +239,32 @@ export async function getTaskData(taskId: string) {
   };
 }
 
-export async function getReviewData() {
-  const { user, profile } = await getWorkspace();
+export async function getReviewData(userId: string) {
+  const { user, profile } = await getWorkspace(userId);
   const [weekly] = await db
     .select()
     .from(reviews)
-    .where(and(eq(reviews.userId, DEMO_USER_ID), eq(reviews.type, "weekly")))
+    .where(and(eq(reviews.userId, userId), eq(reviews.type, "weekly")))
     .orderBy(desc(reviews.createdAt))
     .limit(1);
   const allInsights = await db
     .select()
     .from(insights)
-    .where(eq(insights.userId, DEMO_USER_ID))
+    .where(eq(insights.userId, userId))
     .orderBy(desc(insights.createdAt));
   const allAgents = await db
     .select()
     .from(agents)
-    .where(eq(agents.userId, DEMO_USER_ID))
+    .where(eq(agents.userId, userId))
     .orderBy(asc(agents.createdAt));
   const allTasks = await db
     .select()
     .from(tasks)
-    .where(eq(tasks.userId, DEMO_USER_ID));
+    .where(eq(tasks.userId, userId));
   const recentAudit = await db
     .select()
     .from(auditEvents)
-    .where(eq(auditEvents.userId, DEMO_USER_ID))
+    .where(eq(auditEvents.userId, userId))
     .orderBy(desc(auditEvents.createdAt))
     .limit(12);
 
@@ -280,7 +278,7 @@ export async function getReviewData() {
     .innerJoin(tasks, eq(tasks.id, auditEvents.target))
     .where(
       and(
-        eq(auditEvents.userId, DEMO_USER_ID),
+        eq(auditEvents.userId, userId),
         inArray(auditEvents.action, ["audit.accept", "audit.reject"]),
       ),
     )
@@ -314,11 +312,11 @@ export async function getReviewData() {
     audit: recentAudit,
     auditStats,
     config,
-    weeklyMetrics: await getWeeklyMetrics(DEMO_USER_ID),
+    weeklyMetrics: await getWeeklyMetrics(userId),
   };
 }
 
-export async function getWeeklyMetrics(userId = DEMO_USER_ID) {
+export async function getWeeklyMetrics(userId: string) {
   const [user] = await db
     .select({ timezone: users.timezone })
     .from(users)
@@ -446,11 +444,11 @@ export async function getWeeklyMetrics(userId = DEMO_USER_ID) {
   };
 }
 
-export async function getMemoryData(type?: string) {
+export async function getMemoryData(userId: string, type?: string) {
   const all = await db
     .select()
     .from(memories)
-    .where(eq(memories.userId, DEMO_USER_ID))
+    .where(eq(memories.userId, userId))
     .orderBy(desc(memories.salience));
   const filtered = type ? all.filter((m) => m.type === type) : all;
   const counts = {
@@ -466,11 +464,11 @@ export async function getMemoryData(type?: string) {
   return { memories: filtered, counts, stale };
 }
 
-export async function getCouncilData() {
+export async function getCouncilData(userId: string) {
   const [council] = await db
     .select()
     .from(councils)
-    .where(eq(councils.userId, DEMO_USER_ID))
+    .where(eq(councils.userId, userId))
     .orderBy(desc(councils.createdAt))
     .limit(1);
   if (!council) return null;
@@ -482,7 +480,7 @@ export async function getCouncilData() {
   const allAgents = await db
     .select()
     .from(agents)
-    .where(eq(agents.userId, DEMO_USER_ID));
+    .where(eq(agents.userId, userId));
   return { council, positions, agents: allAgents };
 }
 
@@ -676,16 +674,20 @@ async function requestApproval(input: {
   return created;
 }
 
-export async function runTask(taskId: string) {
+export async function runTask(taskId: string, userId: string) {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
-  if (!task) throw new NotFoundError("Task not found");
+  if (!task || task.userId !== userId) {
+    throw new NotFoundError("Task not found");
+  }
   if (!task.assigneeId) throw new ConflictError("Task has no assignee");
 
   const [agent] = await db
     .select()
     .from(agents)
     .where(eq(agents.id, task.assigneeId));
-  if (!agent) throw new NotFoundError("Agent not found");
+  if (!agent || agent.userId !== userId) {
+    throw new NotFoundError("Agent not found");
+  }
 
   const [user] = await db
     .select({ timezone: users.timezone })
@@ -1086,9 +1088,11 @@ export async function runTask(taskId: string) {
   }
 }
 
-export async function promoteSuggestion(taskId: string) {
+export async function promoteSuggestion(taskId: string, userId: string) {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
-  if (!task) throw new NotFoundError("Task not found");
+  if (!task || task.userId !== userId) {
+    throw new NotFoundError("Task not found");
+  }
   if (task.status !== "suggested") {
     throw new ConflictError(`Task is ${task.status}, not a suggestion.`);
   }
@@ -1112,9 +1116,9 @@ export async function promoteSuggestion(taskId: string) {
   return updated;
 }
 
-export async function auditTask(taskId: string) {
+export async function auditTask(taskId: string, userId: string) {
   try {
-    return await auditTaskInner(taskId);
+    return await auditTaskInner(taskId, userId);
   } catch (error) {
     await db
       .update(tasks)
@@ -1124,15 +1128,19 @@ export async function auditTask(taskId: string) {
   }
 }
 
-async function auditTaskInner(taskId: string) {
+async function auditTaskInner(taskId: string, userId: string) {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
-  if (!task) throw new NotFoundError("Task not found");
+  if (!task || task.userId !== userId) {
+    throw new NotFoundError("Task not found");
+  }
   if (!task.auditorId) throw new ConflictError("Task has no auditor");
   const [auditor] = await db
     .select()
     .from(agents)
     .where(eq(agents.id, task.auditorId));
-  if (!auditor) throw new NotFoundError("Auditor not found");
+  if (!auditor || auditor.userId !== userId) {
+    throw new NotFoundError("Auditor not found");
+  }
 
   const config = await getPolicyConfig();
   const auditDecision = decideAudit({
@@ -1342,13 +1350,16 @@ async function auditTaskInner(taskId: string) {
 export async function decideApproval(
   approvalId: string,
   decision: "approve" | "reject",
-  reason?: string,
+  reason: string | undefined,
+  userId: string,
 ) {
   const [approval] = await db
     .select()
     .from(approvals)
     .where(eq(approvals.id, approvalId));
-  if (!approval) throw new NotFoundError("Approval not found");
+  if (!approval || approval.userId !== userId) {
+    throw new NotFoundError("Approval not found");
+  }
   if (approval.status !== "pending") {
     throw new ConflictError(`Approval is already ${approval.status}.`);
   }
@@ -1395,12 +1406,15 @@ export async function decideCouncil(
   councilId: string,
   decision: "approve" | "reject" | "conditions",
   note: string,
+  userId: string,
 ) {
   const [council] = await db
     .select()
     .from(councils)
     .where(eq(councils.id, councilId));
-  if (!council) throw new NotFoundError("Council not found");
+  if (!council || council.userId !== userId) {
+    throw new NotFoundError("Council not found");
+  }
   if (council.status !== "open") {
     throw new ConflictError(`Council is already ${council.status}.`);
   }
@@ -1433,9 +1447,11 @@ export async function decideCouncil(
   });
 }
 
-export async function setAutonomy(agentId: string, level: number) {
+export async function setAutonomy(agentId: string, level: number, userId: string) {
   const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-  if (!agent) throw new NotFoundError("Agent not found");
+  if (!agent || agent.userId !== userId) {
+    throw new NotFoundError("Agent not found");
+  }
   if (level < 0 || level > 4) throw new ConflictError("Invalid autonomy level");
 
   const config = await getPolicyConfig();
@@ -1648,9 +1664,12 @@ export async function updateAgent(
     charter?: string;
     budgetCents?: number;
   },
+  userId: string,
 ) {
   const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
-  if (!agent) throw new NotFoundError("Agent not found");
+  if (!agent || agent.userId !== userId) {
+    throw new NotFoundError("Agent not found");
+  }
 
   const nextStatus = input.status ?? agent.status;
   if (input.status && input.status !== agent.status) {
@@ -1727,13 +1746,16 @@ export async function updateAgent(
   return updated;
 }
 
-export async function createGoal(input: {
-  title: string;
-  why: string;
-  target: string;
-  horizon: string;
-  domain: string;
-}) {
+export async function createGoal(
+  input: {
+    title: string;
+    why: string;
+    target: string;
+    horizon: string;
+    domain: string;
+  },
+  userId: string,
+) {
   const title = input.title.trim();
   const why = input.why.trim();
   const target = input.target.trim();
@@ -1748,7 +1770,7 @@ export async function createGoal(input: {
     .insert(goals)
     .values({
       id,
-      userId: DEMO_USER_ID,
+      userId: userId,
       domain,
       title,
       why,
@@ -1760,7 +1782,7 @@ export async function createGoal(input: {
     .returning();
 
   await logAudit({
-    userId: DEMO_USER_ID,
+    userId: userId,
     actor: "user",
     action: "goal.create",
     target: id,
@@ -1771,19 +1793,22 @@ export async function createGoal(input: {
   return created;
 }
 
-export async function createTask(input: {
-  goalId?: string | null;
-  title: string;
-  description: string;
-  assigneeId: string;
-  auditorId: string;
-  actionType: string;
-  resource: string;
-  estimatedCostCents: number;
-  acceptanceCriteria: string;
-  estimateMin: number;
-  dueAt?: string | null;
-}) {
+export async function createTask(
+  input: {
+    goalId?: string | null;
+    title: string;
+    description: string;
+    assigneeId: string;
+    auditorId: string;
+    actionType: string;
+    resource: string;
+    estimatedCostCents: number;
+    acceptanceCriteria: string;
+    estimateMin: number;
+    dueAt?: string | null;
+  },
+  userId: string,
+) {
   const title = input.title.trim();
   const description = input.description.trim();
   const acceptanceCriteria = input.acceptanceCriteria.trim();
@@ -1795,15 +1820,30 @@ export async function createTask(input: {
   }
 
   const [assignee] = await db
-    .select({ id: agents.id })
+    .select({ id: agents.id, userId: agents.userId })
     .from(agents)
     .where(eq(agents.id, input.assigneeId));
   const [auditor] = await db
-    .select({ id: agents.id })
+    .select({ id: agents.id, userId: agents.userId })
     .from(agents)
     .where(eq(agents.id, input.auditorId));
-  if (!assignee || !auditor) {
+  if (
+    !assignee ||
+    !auditor ||
+    assignee.userId !== userId ||
+    auditor.userId !== userId
+  ) {
     throw new ValidationError("Assignee or auditor not found.");
+  }
+
+  if (input.goalId) {
+    const [goal] = await db
+      .select({ id: goals.id, userId: goals.userId })
+      .from(goals)
+      .where(eq(goals.id, input.goalId));
+    if (!goal || goal.userId !== userId) {
+      throw new ValidationError("Goal not found.");
+    }
   }
 
   const dueAt = input.dueAt ? new Date(input.dueAt) : null;
@@ -1816,7 +1856,7 @@ export async function createTask(input: {
     .insert(tasks)
     .values({
       id,
-      userId: DEMO_USER_ID,
+      userId: userId,
       goalId: input.goalId ?? null,
       title,
       description,
@@ -1835,7 +1875,7 @@ export async function createTask(input: {
     .returning();
 
   await logAudit({
-    userId: DEMO_USER_ID,
+    userId: userId,
     actor: "user",
     action: "task.create",
     target: id,
@@ -1852,10 +1892,13 @@ export async function createTask(input: {
   return created;
 }
 
-export async function createCouncil(input: {
-  topic: string;
-  trigger: string;
-}) {
+export async function createCouncil(
+  input: {
+    topic: string;
+    trigger: string;
+  },
+  userId: string,
+) {
   const topic = input.topic.trim();
   const trigger = input.trigger.trim();
   if (!topic || !trigger) {
@@ -1867,7 +1910,7 @@ export async function createCouncil(input: {
     .insert(councils)
     .values({
       id,
-      userId: DEMO_USER_ID,
+      userId: userId,
       topic,
       trigger,
       status: "open",
@@ -1883,7 +1926,7 @@ ${trigger}
     .returning();
 
   await logAudit({
-    userId: DEMO_USER_ID,
+    userId: userId,
     actor: "user",
     action: "council.create",
     target: id,
@@ -1897,12 +1940,15 @@ ${trigger}
 export async function applyInsight(
   insightId: string,
   action: "accept" | "reject" | "rollback",
+  userId: string,
 ) {
   const [insight] = await db
     .select()
     .from(insights)
     .where(eq(insights.id, insightId));
-  if (!insight) throw new NotFoundError("Insight not found");
+  if (!insight || insight.userId !== userId) {
+    throw new NotFoundError("Insight not found");
+  }
 
   if (action === "reject") {
     if (insight.status !== "proposed") {
@@ -2019,17 +2065,20 @@ export async function applyInsight(
   });
 }
 
-export async function saveCheckin(input: {
-  energy: number;
-  mood: number;
-  completed: Array<{ taskId: string; done: boolean }>;
-  note: string;
-}) {
-  const { user } = await getWorkspace();
+export async function saveCheckin(
+  input: {
+    energy: number;
+    mood: number;
+    completed: Array<{ taskId: string; done: boolean }>;
+    note: string;
+  },
+  userId: string,
+) {
+  const { user } = await getWorkspace(userId);
   const today = localDateKey(new Date(), user.timezone);
   await db.insert(checkins).values({
     id: newId("chk"),
-    userId: DEMO_USER_ID,
+    userId: userId,
     date: today,
     energy: input.energy,
     mood: input.mood,
@@ -2055,7 +2104,7 @@ export async function saveCheckin(input: {
   if (input.note.trim()) {
     await db.insert(memories).values({
       id: newId("mem"),
-      userId: DEMO_USER_ID,
+      userId: userId,
       agentId: "ag_coach",
       type: "episodic",
       domain: "checkin",
@@ -2069,7 +2118,7 @@ export async function saveCheckin(input: {
   }
 
   await logAudit({
-    userId: DEMO_USER_ID,
+    userId: userId,
     actor: "user",
     action: "checkin.save",
     target: today,
@@ -2078,12 +2127,14 @@ export async function saveCheckin(input: {
   });
 }
 
-export async function runApprenticeExam() {
+export async function runApprenticeExam(userId: string) {
   const [apprentice] = await db
     .select()
     .from(agents)
     .where(eq(agents.id, "ag_apprentice"));
-  if (!apprentice) throw new NotFoundError("Apprentice not found");
+  if (!apprentice || apprentice.userId !== userId) {
+    throw new NotFoundError("Apprentice not found");
+  }
 
   if (!["shadowing", "drafting", "examining"].includes(apprentice.lifecycleStage)) {
     throw new ConflictError(
@@ -2230,8 +2281,8 @@ export async function runApprenticeExam() {
   return { runId, passed: 5, required: 5 };
 }
 
-export async function regenerateBrief() {
-  const data = await getTodayData();
+export async function regenerateBrief(userId: string) {
+  const data = await getTodayData(userId);
   const lines = [
     `# ${new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric" })} 早报`,
     "",
@@ -2249,7 +2300,7 @@ export async function regenerateBrief() {
   const content = lines.join("\n");
   await db.insert(reviews).values({
     id: newId("rev"),
-    userId: DEMO_USER_ID,
+    userId: userId,
     period: localDateKey(new Date(), data.user.timezone),
     type: "daily",
     narrative: content,
@@ -2259,25 +2310,25 @@ export async function regenerateBrief() {
   return content;
 }
 
-export async function runReflection() {
+export async function runReflection(userId: string) {
   const claim = "把 21:00 的阅读任务移到 13:30，晚上只做复盘。";
   const [existing] = await db
     .select()
     .from(insights)
-    .where(and(eq(insights.userId, DEMO_USER_ID), eq(insights.claim, claim)))
+    .where(and(eq(insights.userId, userId), eq(insights.claim, claim)))
     .limit(1);
   if (existing) return existing;
 
   const [latestCheckin] = await db
     .select()
     .from(checkins)
-    .where(eq(checkins.userId, DEMO_USER_ID))
+    .where(eq(checkins.userId, userId))
     .orderBy(desc(checkins.createdAt))
     .limit(1);
 
   const insight = {
     id: newId("ins"),
-    userId: DEMO_USER_ID,
+    userId: userId,
     claim,
     rationale:
       `最近一次 check-in 精力 ${latestCheckin?.energy ?? 3}/5；过去 3 次 21:00 后的任务完成率只有 33%。` +
@@ -2306,7 +2357,7 @@ export async function runReflection() {
 
   await db.insert(insights).values(insight);
   await logAudit({
-    userId: DEMO_USER_ID,
+    userId: userId,
     actor: "agent:ag_coach",
     action: "insight.propose",
     target: insight.id,

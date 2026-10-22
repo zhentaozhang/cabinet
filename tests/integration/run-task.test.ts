@@ -1,3 +1,4 @@
+import { DEMO_USER_ID } from "@/lib/demo";
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -21,7 +22,7 @@ describe("runtime policy enforcement", () => {
       .set({ status: "paused" })
       .where(eq(agents.id, "ag_coach"));
 
-    await expect(runTask("tsk_read")).rejects.toBeInstanceOf(PolicyDenied);
+    await expect(runTask("tsk_read", DEMO_USER_ID)).rejects.toBeInstanceOf(PolicyDenied);
   });
 
   it("blocks self-audit even when the actor has the auditor role", async () => {
@@ -34,13 +35,13 @@ describe("runtime policy enforcement", () => {
       })
       .where(eq(tasks.id, "tsk_research"));
 
-    await expect(auditTask("tsk_research")).rejects.toBeInstanceOf(
+    await expect(auditTask("tsk_research", DEMO_USER_ID)).rejects.toBeInstanceOf(
       PolicyDenied,
     );
   });
 
   it("creates an approval instead of running an external action", async () => {
-    const result = await runTask("tsk_booking");
+    const result = await runTask("tsk_booking", DEMO_USER_ID);
     expect(result).toMatchObject({ requiresApproval: true });
 
     const [task] = await db
@@ -57,27 +58,27 @@ describe("runtime policy enforcement", () => {
   });
 
   it("requires approval, then executes exactly once", async () => {
-    await decideApproval("appr_booking", "approve", "test");
+    await decideApproval("appr_booking", "approve", "test", DEMO_USER_ID);
 
-    const result = await runTask("tsk_booking");
+    const result = await runTask("tsk_booking", DEMO_USER_ID);
     expect("runId" in result).toBe(true);
 
-    await expect(runTask("tsk_booking")).rejects.toBeInstanceOf(PolicyDenied);
+    await expect(runTask("tsk_booking", DEMO_USER_ID)).rejects.toBeInstanceOf(PolicyDenied);
   });
 
   it("rejects a repeated approval decision", async () => {
-    await decideApproval("appr_booking", "approve", "test");
+    await decideApproval("appr_booking", "approve", "test", DEMO_USER_ID);
     await expect(
-      decideApproval("appr_booking", "approve", "test"),
+      decideApproval("appr_booking", "approve", "test", DEMO_USER_ID),
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
   it("runs the reject → rework → accept loop", async () => {
-    await expect(auditTask("tsk_quiz")).resolves.toMatchObject({
+    await expect(auditTask("tsk_quiz", DEMO_USER_ID)).resolves.toMatchObject({
       decision: "rejected",
     });
-    await expect(runTask("tsk_quiz")).resolves.toHaveProperty("runId");
-    await expect(auditTask("tsk_quiz")).resolves.toMatchObject({
+    await expect(runTask("tsk_quiz", DEMO_USER_ID)).resolves.toHaveProperty("runId");
+    await expect(auditTask("tsk_quiz", DEMO_USER_ID)).resolves.toMatchObject({
       decision: "accepted",
     });
 

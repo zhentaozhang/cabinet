@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { applyInsight } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function PATCH(
@@ -12,7 +13,8 @@ export async function PATCH(
       action?: "accept" | "reject" | "rollback";
     };
     if (!body.action) throw new Error("action is required");
-    await applyInsight(id, body.action);
+    const userId = await getApiUserId();
+    await applyInsight(id, body.action, userId);
     revalidatePath("/");
     revalidatePath("/review");
     revalidatePath("/memory");

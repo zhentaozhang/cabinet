@@ -1,10 +1,11 @@
 import { verifyAuditChain } from "@/lib/audit";
-import { DEMO_USER_ID } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function GET() {
   try {
-    const result = await verifyAuditChain(DEMO_USER_ID);
+    const userId = await getApiUserId();
+    const result = await verifyAuditChain(userId);
     return Response.json(result);
   } catch (error) {
     const { status, body } = toErrorResponse(error);

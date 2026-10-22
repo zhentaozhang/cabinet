@@ -11,6 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { getTaskData } from "@/lib/engine";
+import { getPageUserId } from "@/lib/auth/context";
 import { roleMeta } from "@/lib/agents";
 import { dateTime, money, timeOnly } from "@/lib/format";
 import {
@@ -68,7 +69,8 @@ export default async function TaskPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const data = await getTaskData(id);
+  const userId = await getPageUserId();
+  const data = await getTaskData(id, userId);
   if (!data) notFound();
   const { task, goal, assignee, auditor, runs, steps, artifacts, approvals, audit } = data;
 

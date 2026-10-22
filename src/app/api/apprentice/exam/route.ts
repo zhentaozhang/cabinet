@@ -1,10 +1,12 @@
 import { revalidatePath } from "next/cache";
 import { runApprenticeExam } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function POST() {
   try {
-    const result = await runApprenticeExam();
+    const userId = await getApiUserId();
+    const result = await runApprenticeExam(userId);
     revalidatePath("/cabinet");
     revalidatePath("/cabinet/ag_apprentice");
     revalidatePath("/review");

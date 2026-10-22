@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { setAutonomy } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function PATCH(
@@ -10,7 +11,8 @@ export async function PATCH(
   try {
     const body = (await req.json()) as { level?: number };
     if (typeof body.level !== "number") throw new Error("level is required");
-    const result = await setAutonomy(id, body.level);
+    const userId = await getApiUserId();
+    const result = await setAutonomy(id, body.level, userId);
     revalidatePath("/cabinet");
     revalidatePath(`/cabinet/${id}`);
     revalidatePath("/");

@@ -217,5 +217,6 @@ Merkle 树、Biscuit、OPA/Rego、链上身份、完整 mem0/Graphiti、Guest Ag
 ## 进度
 
 - ✅ A1：better-auth、登录页、demo 账号、`AUTH_REQUIRED` 开关、`proxy.ts`、`drizzle/0001_auth.sql`。
-- ⏳ A2：租户作用域（下一步）。
+- ✅ A2：所有 service/query 接收 `userId`；跨用户访问返回 404；新增 7 条租户隔离测试。
+  - engine 拆分延后到 A3 同批做，避免与签名重构叠加两次大范围改动。
 - ⏳ A3–A5、B1–B3、C：未开始。

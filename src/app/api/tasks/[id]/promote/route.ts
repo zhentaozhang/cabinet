@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { promoteSuggestion } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function POST(
@@ -8,7 +9,8 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    await promoteSuggestion(id);
+    const userId = await getApiUserId();
+    await promoteSuggestion(id, userId);
     revalidatePath("/");
     revalidatePath(`/tasks/${id}`);
     return Response.json({ ok: true });

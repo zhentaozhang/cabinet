@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { getAgentData } from "@/lib/engine";
+import { getPageUserId } from "@/lib/auth/context";
 import { AUTONOMY_LABELS, roleMeta } from "@/lib/agents";
 import { money, pct, relative, timeOnly } from "@/lib/format";
 import {
@@ -44,7 +45,8 @@ export default async function AgentPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const data = await getAgentData(id);
+  const userId = await getPageUserId();
+  const data = await getAgentData(id, userId);
   if (!data) notFound();
   const { agent, runs, memories, skills, tasks } = data;
   const meta = roleMeta(agent.role);

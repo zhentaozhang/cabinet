@@ -11,6 +11,7 @@ import {
   Sun,
 } from "lucide-react";
 import { getTodayData } from "@/lib/engine";
+import { getPageUserId } from "@/lib/auth/context";
 import { roleMeta } from "@/lib/agents";
 import { dateTime, pct, timeOnly } from "@/lib/format";
 import { Badge, Card, CardHeader, Dot, Progress, Stat } from "@/components/ui";
@@ -52,7 +53,8 @@ function statusLabel(status: string) {
 }
 
 export default async function TodayPage() {
-  const data = await getTodayData();
+  const userId = await getPageUserId();
+  const data = await getTodayData(userId);
   const primaryGoal = data.goals[0];
   const agentById = new Map(data.agents.map((a) => [a.id, a]));
   const today = new Intl.DateTimeFormat("zh-CN", {

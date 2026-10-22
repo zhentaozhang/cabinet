@@ -7,6 +7,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { getReviewData } from "@/lib/engine";
+import { getPageUserId } from "@/lib/auth/context";
 import { roleMeta } from "@/lib/agents";
 import { dateTime, money } from "@/lib/format";
 import {
@@ -69,7 +70,8 @@ function recommendation(
 }
 
 export default async function ReviewPage() {
-  const data = await getReviewData();
+  const userId = await getPageUserId();
+  const data = await getReviewData(userId);
   const metrics = data.weeklyMetrics;
   const applied = data.insights.filter((i) => i.status === "applied");
   const proposed = data.insights.filter((i) => i.status === "proposed");

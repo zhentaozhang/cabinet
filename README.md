@@ -244,11 +244,13 @@ pnpm build
 - better-auth + Drizzle + Postgres，登录页 `/login`，演示账号已 seed。
 - `AUTH_REQUIRED=false`：本地演示不拦截。
 - `AUTH_REQUIRED=true`：页面 redirect `/login`，API 返回 401。
-- **注意**：租户作用域（A2）尚未完成；当前仍是单用户 demo，开启 `AUTH_REQUIRED` 只保护入口，不做跨用户数据隔离。
+- 租户作用域（A2）已完成：所有 service/query 接收 `userId`，跨用户访问返回 404，并有 7 条隔离测试。
+- 目前还没有注册/`/setup`，所以实际可登录账号只有 seed 的 demo 账号。
 
 ## 已知边界（下一步）
 
-- **租户作用域**：`DEMO_USER_ID` 仍在 service 内；A2 会改为 `ctx.userId` 并加跨用户测试。
+- **`/setup` 与注册**：A5 才会做；当前只有 demo 账号可登录。
+- **engine 拆分**：已加 `userId`，但 2,300 行文件尚未拆到 `src/lib/services/`；与 A3 同批做。
 - **Onboarding**：仍依赖 `db:seed`；`/setup` 创建真实 workspace 是 P1。
 - **自动内阁**：会议目前是预置/手动的；规则触发 + LLM 立场生成是 P1。
 - **技能评测**：学徒转正是状态机；留出集、灰度、回滚的评测管线是 P1。

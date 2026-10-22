@@ -8,6 +8,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { getMemoryData } from "@/lib/engine";
+import { getPageUserId } from "@/lib/auth/context";
 import { dateTime, pct } from "@/lib/format";
 import {
   Badge,
@@ -40,7 +41,8 @@ export default async function MemoryPage({
   searchParams: Promise<{ type?: string }>;
 }) {
   const { type } = await searchParams;
-  const data = await getMemoryData(type);
+  const userId = await getPageUserId();
+  const data = await getMemoryData(userId, type);
   const avgConfidence =
     data.memories.length > 0
       ? data.memories.reduce((sum, m) => sum + m.confidence, 0) / data.memories.length

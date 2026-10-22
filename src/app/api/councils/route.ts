@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { createCouncil } from "@/lib/engine";
+import { getApiUserId } from "@/lib/auth/context";
 import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function POST(req: Request) {
@@ -8,10 +9,14 @@ export async function POST(req: Request) {
       topic?: string;
       trigger?: string;
     };
-    const council = await createCouncil({
-      topic: body.topic ?? "",
-      trigger: body.trigger ?? "",
-    });
+    const userId = await getApiUserId();
+    const council = await createCouncil(
+      {
+        topic: body.topic ?? "",
+        trigger: body.trigger ?? "",
+      },
+      userId,
+    );
     revalidatePath("/");
     revalidatePath("/council");
     return Response.json({ ok: true, council });
