@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { decideApproval } from "@/lib/engine";
+import { decideApproval } from "@/server/services/engine";
 import { handleMutation } from "@/lib/api/mutation";
 import { approvalDecisionSchema } from "@/lib/validation/schemas";
 import { parseBody } from "@/lib/validation/parse";

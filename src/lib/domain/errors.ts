@@ -1,12 +1,6 @@
-export type ErrorCode =
-  | "unauthorized"
-  | "forbidden"
-  | "rate_limited"
-  | "validation_error"
-  | "policy_denied"
-  | "conflict"
-  | "not_found"
-  | "internal_error";
+import type { ErrorCode } from "@/contracts/errors";
+
+export type { ErrorCode };
 
 export class DomainError extends Error {
   readonly code: ErrorCode;

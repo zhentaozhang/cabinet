@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { promoteSuggestion } from "@/lib/engine";
+import { promoteSuggestion } from "@/server/services/engine";
 import { handleMutation } from "@/lib/api/mutation";
 
 export async function POST(

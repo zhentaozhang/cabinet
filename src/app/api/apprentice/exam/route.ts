@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { runApprenticeExam } from "@/lib/engine";
+import { runApprenticeExam } from "@/server/services/engine";
 import { handleMutation } from "@/lib/api/mutation";
 
 export async function POST(req: Request) {

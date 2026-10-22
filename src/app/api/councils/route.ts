@@ -1,5 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { createCouncil } from "@/lib/engine";
+import { createCouncil } from "@/server/services/engine";
 import { handleMutation } from "@/lib/api/mutation";
 import { councilCreateSchema } from "@/lib/validation/schemas";
 import { parseBody } from "@/lib/validation/parse";

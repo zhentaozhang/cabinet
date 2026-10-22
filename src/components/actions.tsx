@@ -16,22 +16,29 @@ import {
   X,
 } from "lucide-react";
 import { Button, Progress } from "@/components/ui";
+import { browserApi, idempotencyKey } from "@/lib/api/browser";
 import { cn } from "@/lib/format";
 
+/**
+ * Thin adapter kept for the existing call sites: the transport work (JSON
+ * guarding, error codes, idempotency) now lives in the shared API client.
+ */
 async function call(
   url: string,
   method: "POST" | "PATCH",
   body?: unknown,
-): Promise<{ ok: boolean; error?: string; [key: string]: unknown }> {
-  const res = await fetch(url, {
+): Promise<{ ok: boolean; error?: string; code?: string; [key: string]: unknown }> {
+  const result = await browserApi.mutate<Record<string, unknown>>(url, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": crypto.randomUUID(),
-    },
-    body: body ? JSON.stringify(body) : undefined,
+    body,
+    idempotencyKey: idempotencyKey(url, body),
   });
-  return res.json();
+
+  if (!result.ok) {
+    return { ok: false, error: result.error, code: result.code };
+  }
+
+  return { ok: true, ...result.data };
 }
 
 export function TaskActions({
