@@ -3,6 +3,7 @@ import { cache } from "react";
 import type { z } from "zod";
 
 import {
+  API_ROUTES,
   agentPageSchema,
   auditPageSchema,
   cabinetPageSchema,
@@ -10,10 +11,12 @@ import {
   memoryPageSchema,
   reviewPageSchema,
   shellContextSchema,
+  connectorStatusSchema,
   taskPageSchema,
   todayPageSchema,
   workspaceStateSchema,
   type AgentPageDto,
+  type ConnectorStatusDto,
   type CabinetPageDto,
   type CouncilPageDto,
   type MemoryPageDto,
@@ -154,3 +157,10 @@ export const fetchShellContext = cache(async (): Promise<ShellContextDto> => {
   if (!result.ok) throw new Error(result.error);
   return result.data;
 });
+
+/** Connector state for `/settings/connectors`; never includes a key. */
+export async function fetchConnectorStatus(): Promise<ConnectorStatusDto> {
+  const result = await loadPage(API_ROUTES.connectors, connectorStatusSchema);
+  if ("missing" in result) throw new Error("Connectors endpoint returned not found");
+  return result.data;
+}

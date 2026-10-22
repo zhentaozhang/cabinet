@@ -69,6 +69,35 @@ export default async function TaskPage({
   const latestAudit = audit.find((a) => a.action.startsWith("audit."));
 
   /**
+   * Four provenance states the user must be able to tell apart in the rendered
+   * HTML: real model execution, demo templates, rule output, and a step that
+   * had nothing to connect to.
+   */
+  function runProvenance(run: (typeof runs)[number]): {
+    label: string;
+    tone: "teal" | "accent" | "neutral" | "danger";
+  } {
+    if (run.mode === "live" && run.providerAttemptId) {
+      return { label: "真实模型", tone: "teal" };
+    }
+    if (run.mode === "live") return { label: "未连上模型", tone: "danger" };
+    if (run.mode === "demo") return { label: "演示模板", tone: "accent" };
+    return { label: "规则产出", tone: "neutral" };
+  }
+
+  const TOOL_STATUS_LABEL: Record<string, string> = {
+    ok: "已执行",
+    not_connected: "未连接",
+    not_configured: "未配置",
+    unauthorized: "密钥被拒",
+    rate_limited: "被限流",
+    timeout: "超时",
+    invalid_response: "响应异常",
+    network_error: "网络错误",
+    failed: "失败",
+  };
+
+  /**
    * The acceptance table reads top-down as "what I asked for" then "what the
    * Auditor found". Failures are hoisted so a rejected run can be scanned
    * without reading every row.
@@ -166,7 +195,7 @@ export default async function TaskPage({
                 <div className="mt-3 overflow-hidden rounded-md border border-line">
                   <div className="grid grid-cols-[1.15fr_1fr] gap-3 border-b border-line bg-panel2/60 px-3 py-1.5 text-eyebrow tracking-[0.14em] text-faint uppercase">
                     <span>标准</span>
-                    <span>Auditor 判定</span>
+                    <span>判定（规则 / 人工）</span>
                   </div>
                   <div className="divide-line/70 divide-y">
                     {orderedChecklist.map(({ item, index, result }) => {
@@ -215,7 +244,9 @@ export default async function TaskPage({
                                 </span>
                               </span>
                             ) : (
-                              <span className="text-faint">待验收</span>
+                              <span className={item.type === "manual" ? "text-accent" : "text-faint"}>
+                                {item.type === "manual" ? "需人工复核" : "待规则判定"}
+                              </span>
                             )}
                           </span>
                         </div>
@@ -223,6 +254,11 @@ export default async function TaskPage({
                     })}
                   </div>
                 </div>
+              ) : null}
+              {checklistRows.length ? (
+                <p className="mt-2 text-label leading-relaxed text-faint">
+                  规则项由程序判定；「需人工复核」只有你能给结论，Auditor 不会替你盖章。
+                </p>
               ) : null}
               <div className="mt-3 flex flex-wrap gap-4 text-label text-faint">
                 <span>预估 {task.estimateMin} 分钟</span>
@@ -265,8 +301,11 @@ export default async function TaskPage({
                         <Badge tone={run.agentId === auditor?.id ? "danger" : "neutral"}>
                           {run.agentId}
                         </Badge>
+                        <Badge tone={runProvenance(run).tone}>
+                          {runProvenance(run).label}
+                        </Badge>
                         <span className="text-label text-faint">
-                          {run.status} · {run.mode} ·{" "}
+                          {run.status} ·{" "}
                           {run.tokensIn === null || run.tokensOut === null
                             ? "用量未知"
                             : `${run.tokensIn + run.tokensOut} tokens`}{" "}
@@ -301,6 +340,21 @@ export default async function TaskPage({
                                   <span className="mono rounded border border-line bg-panel2 px-1.5 py-0.5 text-label text-violet">
                                     {step.tool}
                                   </span>
+                                ) : null}
+                                {typeof step.output?.status === "string" ? (
+                                  <Badge
+                                    tone={
+                                      step.output.status === "ok"
+                                        ? "teal"
+                                        : step.output.status === "not_connected" ||
+                                            step.output.status === "not_configured"
+                                          ? "neutral"
+                                          : "danger"
+                                    }
+                                  >
+                                    {TOOL_STATUS_LABEL[step.output.status] ??
+                                      step.output.status}
+                                  </Badge>
                                 ) : null}
                                 <span className="text-label text-faint">
                                   {step.latencyMs}ms · {step.tokensIn + step.tokensOut} tok

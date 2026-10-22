@@ -37,6 +37,8 @@ export const API_ROUTES = {
   insight: (id: string) => `/api/insights/${id}`,
   reflect: "/api/reflect",
   audit: "/api/audit",
+  connectors: "/api/connectors",
+  connectorTest: "/api/connectors/test",
   verifyAudit: "/api/audit/verify",
   setup: "/api/setup",
   account: "/api/account",

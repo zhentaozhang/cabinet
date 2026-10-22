@@ -248,6 +248,50 @@ export const taskPageSchema = z.object({
 });
 export type TaskPageDto = z.infer<typeof taskPageSchema>;
 
+/**
+ * `GET /api/connectors` — what can this deployment actually reach?
+ *
+ * Reported as configuration state only: never a key, never a masked prefix.
+ */
+export const connectorStatusSchema = z.object({
+  search: z.object({
+    provider: z.string().nullable(),
+    configured: z.boolean(),
+    envVar: z.string().nullable(),
+    fallback: z.string().nullable(),
+    fallbackConfigured: z.boolean(),
+  }),
+  model: z.object({
+    provider: z.string(),
+    model: z.string(),
+    configured: z.boolean(),
+    envVar: z.string(),
+  }),
+  demoMode: z.boolean(),
+});
+export type ConnectorStatusDto = z.infer<typeof connectorStatusSchema>;
+
+/** `POST /api/connectors/test` — one live attempt, reported honestly. */
+export const connectorTestSchema = z.object({
+  status: z.enum([
+    "ok",
+    "not_configured",
+    "unauthorized",
+    "rate_limited",
+    "timeout",
+    "invalid_response",
+    "network_error",
+  ]),
+  provider: z.string().nullable(),
+  latencyMs: z.number(),
+  hits: z.number(),
+  sample: z
+    .object({ title: z.string(), url: z.string(), publisher: z.string().nullable() })
+    .nullable(),
+  message: z.string().nullable(),
+});
+export type ConnectorTestDto = z.infer<typeof connectorTestSchema>;
+
 /** `GET /api/setup` — does this account already have a cabinet? */
 export const workspaceStateSchema = z.object({
   hasWorkspace: z.boolean(),

@@ -23,6 +23,7 @@ const NAV = [
   { href: "/review", label: "Review", icon: ClipboardCheck, hint: "周复盘" },
   { href: "/memory", label: "Memory", icon: Brain, hint: "记忆与证据" },
   { href: "/council", label: "Council", icon: Gavel, hint: "内阁会议" },
+  { href: "/settings", label: "Settings", icon: Settings, hint: "连接器与配置" },
 ];
 
 const FOCUS_RING =

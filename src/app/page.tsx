@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { fetchTodayPage } from "@/lib/api/pages";
 import { roleMeta, statusLabel, statusTone } from "@/lib/agents";
-import { dateTime, pct, timeOnly } from "@/lib/format";
+import { dateTime, pct, timeOnly, usd } from "@/lib/format";
 import { Badge, Card, CardHeader, Dot, Progress, Stat } from "@/components/ui";
 import {
   ApprovalActions,
@@ -35,6 +35,9 @@ export default async function TodayPage() {
   const data = await fetchTodayPage();
   const tz = data.user.timezone;
   const primaryGoal = data.goals[0];
+  const topSpender = [...data.agents]
+    .filter((agent) => agent.spentCents > 0)
+    .sort((a, b) => b.spentCents - a.spentCents)[0];
   const agentById = new Map(data.agents.map((a) => [a.id, a]));
   const today = new Intl.DateTimeFormat("zh-CN", {
     weekday: "long",
@@ -68,7 +71,11 @@ export default async function TodayPage() {
           </h1>
           <p className="mt-1.5 text-xs text-muted">
             {data.weeklyMetrics.weekKey} · {primaryGoal ? `${primaryGoal.title} ${pct(primaryGoal.progress)}` : "尚未设定目标"} ·{" "}
-            {data.tasks.length} 件事在推进
+            {data.tasks.length} 件事在推进 ·{" "}
+            {data.weeklyMetrics.costUsd > 0
+              ? `本周花费 ${usd(data.weeklyMetrics.costUsd)}`
+              : "本周还没有产生模型费用"}{" "}
+            {topSpender ? `（最高 ${topSpender.name}）` : ""}
           </p>
         </div>
         <div className="flex items-center gap-3">
