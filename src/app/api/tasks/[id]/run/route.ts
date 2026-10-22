@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { runTask } from "@/lib/engine";
+import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function POST(
   _req: Request,
@@ -12,11 +13,12 @@ export async function POST(
     revalidatePath("/cabinet");
     revalidatePath("/review");
     revalidatePath(`/tasks/${id}`);
-    return Response.json({ ok: true, ...result });
-  } catch (error) {
     return Response.json(
-      { ok: false, error: error instanceof Error ? error.message : "run failed" },
-      { status: 400 },
+      { ok: true, ...result },
+      { status: result.requiresApproval ? 202 : 200 },
     );
+  } catch (error) {
+    const { status, body } = toErrorResponse(error);
+    return Response.json(body, { status });
   }
 }

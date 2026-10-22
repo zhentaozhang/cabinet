@@ -17,7 +17,7 @@ import {
   CardHeader,
   EmptyState,
 } from "@/components/ui";
-import { CouncilActions } from "@/components/actions";
+import { CouncilActions, NewCouncilForm } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
 
 export const dynamic = "force-dynamic";
@@ -38,8 +38,17 @@ export default async function CouncilPage() {
   const data = await getCouncilData();
   if (!data) {
     return (
-      <div className="py-16">
-        <EmptyState title="没有进行中的内阁会议" hint="当支出、时间冲突或目标变更触发时，会自动召开。" />
+      <div className="mx-auto max-w-xl py-12">
+        <EmptyState
+          title="没有进行中的内阁会议"
+          hint="当支出、时间冲突或目标变更触发时，会自动召开；也可以手动发起。"
+        />
+        <Card className="mt-4">
+          <CardHeader eyebrow="Manual" title="发起一场会议" />
+          <div className="px-5 py-4">
+            <NewCouncilForm />
+          </div>
+        </Card>
       </div>
     );
   }
@@ -171,6 +180,13 @@ export default async function CouncilPage() {
                   决定已记录在审计日志；下次遇到类似议题会作为判例。
                 </div>
               )}
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader eyebrow="New" title="发起新会议" />
+            <div className="px-5 py-4">
+              <NewCouncilForm />
             </div>
           </Card>
 

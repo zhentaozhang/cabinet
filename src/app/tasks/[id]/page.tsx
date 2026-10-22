@@ -27,7 +27,8 @@ export const dynamic = "force-dynamic";
 
 function statusTone(status: string) {
   if (["accepted", "done"].includes(status)) return "teal" as const;
-  if (["submitted", "auditing"].includes(status)) return "accent" as const;
+  if (["submitted", "auditing", "awaiting_approval", "suggested"].includes(status))
+    return "accent" as const;
   if (["rejected", "failed"].includes(status)) return "danger" as const;
   if (status === "running") return "blue" as const;
   return "neutral" as const;
@@ -38,6 +39,9 @@ function statusLabel(status: string) {
     {
       planned: "待执行",
       assigned: "已指派",
+      awaiting_approval: "待审批",
+      approved: "已批准",
+      suggested: "建议",
       running: "执行中",
       submitted: "待验收",
       auditing: "验收中",

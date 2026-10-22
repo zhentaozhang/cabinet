@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { saveCheckin } from "@/lib/engine";
+import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function POST(req: Request) {
   try {
@@ -19,9 +20,7 @@ export async function POST(req: Request) {
     revalidatePath("/memory");
     return Response.json({ ok: true });
   } catch (error) {
-    return Response.json(
-      { ok: false, error: error instanceof Error ? error.message : "failed" },
-      { status: 400 },
-    );
+    const { status, body } = toErrorResponse(error);
+    return Response.json(body, { status });
   }
 }

@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { memories } from "@/lib/db/schema";
 import { logAudit } from "@/lib/audit";
+import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function DELETE(
   _req: Request,
@@ -28,9 +29,7 @@ export async function DELETE(
     revalidatePath("/");
     return Response.json({ ok: true });
   } catch (error) {
-    return Response.json(
-      { ok: false, error: error instanceof Error ? error.message : "failed" },
-      { status: 400 },
-    );
+    const { status, body } = toErrorResponse(error);
+    return Response.json(body, { status });
   }
 }

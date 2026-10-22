@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { auditTask } from "@/lib/engine";
+import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function POST(
   _req: Request,
@@ -14,9 +15,7 @@ export async function POST(
     revalidatePath(`/tasks/${id}`);
     return Response.json({ ok: true, ...result });
   } catch (error) {
-    return Response.json(
-      { ok: false, error: error instanceof Error ? error.message : "audit failed" },
-      { status: 400 },
-    );
+    const { status, body } = toErrorResponse(error);
+    return Response.json(body, { status });
   }
 }

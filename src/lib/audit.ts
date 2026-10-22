@@ -1,7 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { auditEvents } from "@/lib/db/schema";
-import { newId, sha256 } from "@/lib/ids";
+import { canonicalJson, newId, sha256 } from "@/lib/ids";
 
 export type AuditInput = {
   userId: string;
@@ -12,40 +12,105 @@ export type AuditInput = {
   after?: Record<string, unknown> | null;
 };
 
-export async function logAudit(input: AuditInput): Promise<string> {
-  const [last] = await db
-    .select({ hash: auditEvents.hash })
-    .from(auditEvents)
-    .where(eq(auditEvents.userId, input.userId))
-    .orderBy(desc(auditEvents.createdAt))
-    .limit(1);
-
-  const prevHash = last?.hash ?? null;
-  const createdAt = new Date();
-  const hash = sha256(
+function hashEvent(input: {
+  prevHash: string | null;
+  actor: string;
+  action: string;
+  target: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: Date;
+}): string {
+  return sha256(
     [
-      prevHash ?? "genesis",
+      input.prevHash ?? "genesis",
       input.actor,
       input.action,
       input.target,
-      JSON.stringify(input.before ?? null),
-      JSON.stringify(input.after ?? null),
-      createdAt.toISOString(),
+      canonicalJson(input.before ?? null),
+      canonicalJson(input.after ?? null),
+      input.createdAt.toISOString(),
     ].join("|"),
   );
+}
 
-  await db.insert(auditEvents).values({
-    id: newId("aud"),
-    userId: input.userId,
-    actor: input.actor,
-    action: input.action,
-    target: input.target,
-    before: input.before ?? null,
-    after: input.after ?? null,
-    hash,
-    prevHash,
-    createdAt,
+export async function logAudit(input: AuditInput): Promise<string> {
+  return db.transaction(async (tx) => {
+    // Serialize chain appends per user.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${input.userId}))`,
+    );
+
+    const [last] = await tx
+      .select({ hash: auditEvents.hash })
+      .from(auditEvents)
+      .where(eq(auditEvents.userId, input.userId))
+      .orderBy(desc(auditEvents.seq))
+      .limit(1);
+
+    const prevHash = last?.hash ?? null;
+    const createdAt = new Date();
+    const hash = hashEvent({
+      prevHash,
+      actor: input.actor,
+      action: input.action,
+      target: input.target,
+      before: input.before ?? null,
+      after: input.after ?? null,
+      createdAt,
+    });
+
+    await tx.insert(auditEvents).values({
+      id: newId("aud"),
+      userId: input.userId,
+      actor: input.actor,
+      action: input.action,
+      target: input.target,
+      before: input.before ?? null,
+      after: input.after ?? null,
+      hash,
+      prevHash,
+      createdAt,
+    });
+
+    return hash;
   });
+}
 
-  return hash;
+export async function verifyAuditChain(userId: string): Promise<{
+  ok: boolean;
+  checked: number;
+  firstMismatch: string | null;
+}> {
+  const events = await db
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.userId, userId))
+    .orderBy(asc(auditEvents.seq));
+
+  let prevHash: string | null = null;
+
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    const expected = hashEvent({
+      prevHash,
+      actor: event.actor,
+      action: event.action,
+      target: event.target,
+      before: event.before,
+      after: event.after,
+      createdAt: event.createdAt,
+    });
+
+    if (event.prevHash !== prevHash || event.hash !== expected) {
+      return {
+        ok: false,
+        checked: index,
+        firstMismatch: event.id,
+      };
+    }
+    prevHash = event.hash;
+  }
+
+  return { ok: true, checked: events.length, firstMismatch: null };
 }

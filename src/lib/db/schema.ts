@@ -1,4 +1,6 @@
 import {
+  bigserial,
+  boolean,
   index,
   integer,
   jsonb,
@@ -6,6 +8,7 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export type Evidence = {
@@ -67,9 +70,14 @@ export const agents = pgTable(
     tools: jsonb("tools").$type<string[]>().notNull(),
     memoryScope: jsonb("memory_scope").$type<string[]>().notNull(),
     budgetCents: integer("budget_cents").notNull().default(0),
-    spentCents: integer("spent_cents").notNull().default(0),
+    spentCents: real("spent_cents").notNull().default(0),
+    budgetPeriodStart: timestamp("budget_period_start", {
+      withTimezone: true,
+    }),
+    policyJson: jsonb("policy_json").$type<Record<string, unknown>>(),
     successCount: integer("success_count").notNull().default(0),
     failCount: integer("fail_count").notNull().default(0),
+    rejectStreak: integer("reject_streak").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -117,6 +125,16 @@ export const tasks = pgTable(
     dueAt: timestamp("due_at", { withTimezone: true }),
     acceptanceCriteria: text("acceptance_criteria").notNull(),
     estimateMin: integer("estimate_min").notNull().default(25),
+    actionType: text("action_type").notNull().default("internal"),
+    resource: text("resource").notNull().default("task"),
+    riskLevel: text("risk_level").notNull().default("low"),
+    requiresApproval: boolean("requires_approval").notNull().default(false),
+    approvalThresholdCents: integer("approval_threshold_cents"),
+    estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
+    qualityGate: text("quality_gate"),
+    template: text("template"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    acceptedAutonomyLevel: integer("accepted_autonomy_level"),
     createdBy: text("created_by").notNull().default("agent"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -218,6 +236,8 @@ export const insights = pgTable("insights", {
   proposedChange: jsonb("proposed_change")
     .$type<ProposedChange>()
     .notNull(),
+  beforeState: jsonb("before_state").$type<Record<string, unknown> | null>(),
+  afterState: jsonb("after_state").$type<Record<string, unknown> | null>(),
   status: text("status").notNull().default("proposed"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -251,6 +271,7 @@ export const approvals = pgTable("approvals", {
   reason: text("reason"),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -260,6 +281,7 @@ export const auditEvents = pgTable(
   "audit_events",
   {
     id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
     userId: text("user_id").notNull(),
     actor: text("actor").notNull(),
     action: text("action").notNull(),
@@ -328,6 +350,57 @@ export const checkins = pgTable("checkins", {
     .$type<Array<{ taskId: string; done: boolean }>>()
     .notNull(),
   note: text("note").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const policyConfig = pgTable("policy_config", {
+  key: text("key").primaryKey(),
+  valueJson: jsonb("value_json").$type<unknown>().notNull(),
+  description: text("description").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const idempotencyKeys = pgTable(
+  "idempotency_keys",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    key: text("key").notNull(),
+    endpoint: text("endpoint").notNull(),
+    requestHash: text("request_hash").notNull(),
+    responseJson: jsonb("response_json").$type<Record<string, unknown>>(),
+    statusCode: integer("status_code").notNull().default(200),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("idempotency_user_key_idx").on(t.userId, t.key)],
+);
+
+export const userActions = pgTable("user_actions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  action: text("action").notNull(),
+  durationMs: integer("duration_ms").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const agentTemplates = pgTable("agent_templates", {
+  role: text("role").primaryKey(),
+  name: text("name").notNull(),
+  title: text("title").notNull(),
+  charter: text("charter").notNull(),
+  objective: text("objective").notNull(),
+  tools: jsonb("tools").$type<string[]>().notNull(),
+  memoryScope: jsonb("memory_scope").$type<string[]>().notNull(),
+  defaultAutonomy: integer("default_autonomy").notNull().default(1),
+  budgetCents: integer("budget_cents").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

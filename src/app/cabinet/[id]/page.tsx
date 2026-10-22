@@ -21,7 +21,7 @@ import {
   Progress,
   Stat,
 } from "@/components/ui";
-import { AutonomyControl, ExamButton } from "@/components/actions";
+import { AgentAdmin, AutonomyControl, ExamButton } from "@/components/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -211,6 +211,18 @@ export default async function AgentPage({
             <CardHeader eyebrow="Autonomy" title="授权控制" />
             <div className="px-5 py-4">
               <AutonomyControl agentId={agent.id} level={agent.autonomyLevel} />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader eyebrow="Manage" title="管理动作" />
+            <div className="px-5 py-4">
+              <AgentAdmin
+                agentId={agent.id}
+                status={agent.status}
+                charter={agent.charter}
+                budgetCents={agent.budgetCents}
+              />
             </div>
           </Card>
 

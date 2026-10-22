@@ -6,9 +6,13 @@ import {
   Check,
   FileCheck2,
   Loader2,
+  Pause,
   Play,
+  Plus,
   RotateCcw,
+  ShieldCheck,
   Sparkles,
+  UserMinus,
   X,
 } from "lucide-react";
 import { Button, Progress } from "@/components/ui";
@@ -47,20 +51,78 @@ export function TaskActions({
       setMsg(data.error ?? "操作失败");
       return;
     }
-    setMsg(label === "audit" ? `验收结果：${data.decision === "accepted" ? "通过" : "驳回"}` : "执行完成");
+    if (label === "audit") {
+      setMsg(`验收结果：${data.decision === "accepted" ? "通过" : "驳回"}`);
+    } else if (data.requiresApproval) {
+      setMsg("已提交审批，等待你批准");
+    } else if (data.suggested) {
+      setMsg("L1 只生成建议，已保存草稿");
+    } else {
+      setMsg("执行完成");
+    }
+    router.refresh();
+  }
+
+  const finished = ["accepted", "done"].includes(status);
+  const runnable = ["planned", "assigned", "approved", "rejected"].includes(
+    status,
+  );
+  const runLabel = finished
+    ? "已完成"
+    : status === "submitted" || status === "auditing"
+      ? "待验收"
+      : status === "suggested"
+        ? "待采纳"
+        : status === "awaiting_approval"
+          ? "待审批"
+          : status === "rejected"
+            ? "重新执行"
+            : "执行";
+
+  async function promote() {
+    setBusy("promote");
+    const data = await call(`/api/tasks/${taskId}/promote`, "POST");
+    setBusy(null);
+    if (!data.ok) {
+      setMsg(data.error ?? "采纳失败");
+      return;
+    }
+    setMsg("已采纳建议，可以执行");
     router.refresh();
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {status === "suggested" ? (
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={promote}
+          disabled={busy !== null}
+        >
+          {busy === "promote" ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <Check className="size-3" />
+          )}
+          采纳建议
+        </Button>
+      ) : (
       <Button
         size="sm"
         onClick={() => run(`/api/tasks/${taskId}/run`, "run")}
-        disabled={busy !== null}
+        disabled={busy !== null || !runnable}
       >
-        {busy === "run" ? <Loader2 className="size-3 animate-spin" /> : <Play className="size-3" />}
-        {["accepted", "rejected", "done"].includes(status) ? "重新执行" : "执行"}
+        {busy === "run" ? (
+          <Loader2 className="size-3 animate-spin" />
+        ) : finished ? (
+          <Check className="size-3" />
+        ) : (
+          <Play className="size-3" />
+        )}
+        {runLabel}
       </Button>
+      )}
       <Button
         size="sm"
         variant="primary"
@@ -482,5 +544,403 @@ export function BriefButton() {
       {busy ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
       重新生成
     </Button>
+  );
+}
+
+export function VerifyAuditButton() {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch("/api/audit/verify");
+    const data = await res.json();
+    setBusy(false);
+    setMsg(
+      data.ok
+        ? `链完整 · ${data.checked} 条`
+        : `首个不一致：${data.firstMismatch ?? "未知"}`,
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="ghost" onClick={run} disabled={busy}>
+        {busy ? (
+          <Loader2 className="size-3 animate-spin" />
+        ) : (
+          <ShieldCheck className="size-3" />
+        )}
+        验证审计链
+      </Button>
+      {msg ? <span className="text-[10px] text-muted">{msg}</span> : null}
+    </div>
+  );
+}
+
+export function AgentAdmin({
+  agentId,
+  status,
+  charter,
+  budgetCents,
+}: {
+  agentId: string;
+  status: string;
+  charter: string;
+  budgetCents: number;
+}) {
+  const router = useRouter();
+  const [draftCharter, setDraftCharter] = useState(charter);
+  const [budgetYuan, setBudgetYuan] = useState(String(budgetCents / 100));
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function patch(body: Record<string, unknown>, label: string) {
+    setBusy(label);
+    setMsg(null);
+    const data = await call(`/api/agents/${agentId}`, "PATCH", body);
+    setBusy(null);
+    setMsg(data.ok ? "已保存" : (data.error ?? "保存失败"));
+    if (data.ok) router.refresh();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {status === "active" ? (
+          <Button
+            size="sm"
+            onClick={() => patch({ status: "paused" }, "pause")}
+            disabled={busy !== null}
+          >
+            <Pause className="size-3" /> 暂停
+          </Button>
+        ) : null}
+        {status === "paused" ? (
+          <Button
+            size="sm"
+            variant="primary"
+            onClick={() => patch({ status: "active" }, "resume")}
+            disabled={busy !== null}
+          >
+            <Play className="size-3" /> 恢复
+          </Button>
+        ) : null}
+        {status !== "retired" ? (
+          <Button
+            size="sm"
+            variant="danger"
+            onClick={() => {
+              if (window.confirm("退休后不可恢复。确认？")) {
+                patch({ status: "retired" }, "retire");
+              }
+            }}
+            disabled={busy !== null}
+          >
+            <UserMinus className="size-3" /> 退休
+          </Button>
+        ) : null}
+      </div>
+
+      <div>
+        <div className="mb-1.5 text-[10px] uppercase tracking-[0.16em] text-faint">
+          Charter
+        </div>
+        <textarea
+          value={draftCharter}
+          onChange={(event) => setDraftCharter(event.target.value)}
+          rows={4}
+          className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-[11px] leading-relaxed text-ink focus:border-accent/50 focus:outline-none"
+        />
+        <Button
+          size="sm"
+          className="mt-2"
+          onClick={() => patch({ charter: draftCharter }, "charter")}
+          disabled={busy !== null}
+        >
+          保存宪章
+        </Button>
+      </div>
+
+      <div>
+        <div className="mb-1.5 text-[10px] uppercase tracking-[0.16em] text-faint">
+          Weekly budget (¥)
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={budgetYuan}
+            onChange={(event) => setBudgetYuan(event.target.value)}
+            className="h-8 w-24 rounded-md border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+          />
+          <Button
+            size="sm"
+            onClick={() =>
+              patch(
+                { budgetCents: Math.round(Number(budgetYuan) * 100) },
+                "budget",
+              )
+            }
+            disabled={busy !== null}
+          >
+            保存预算
+          </Button>
+        </div>
+      </div>
+
+      {msg ? <div className="text-[10px] text-muted">{msg}</div> : null}
+    </div>
+  );
+}
+
+export function QuickCreate({
+  agents,
+  goals,
+}: {
+  agents: Array<{ id: string; name: string; role: string }>;
+  goals: Array<{ id: string; title: string }>;
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function submit(
+    url: string,
+    body: Record<string, unknown>,
+    label: string,
+  ) {
+    setBusy(label);
+    setMsg(null);
+    const data = await call(url, "POST", body);
+    setBusy(null);
+    setMsg(data.ok ? "已创建" : (data.error ?? "创建失败"));
+    if (data.ok) router.refresh();
+  }
+
+  return (
+    <div className="space-y-2">
+      <details className="rounded-md border border-line bg-panel2/40 px-3 py-2">
+        <summary className="cursor-pointer text-[11px] text-muted">
+          <Plus className="mr-1 inline size-3" /> 新建任务
+        </summary>
+        <div className="mt-3 space-y-2">
+          <input
+            id="qc-task-title"
+            placeholder="任务标题"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+          />
+          <textarea
+            id="qc-task-desc"
+            placeholder="描述"
+            rows={2}
+            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+          />
+          <textarea
+            id="qc-task-criteria"
+            placeholder="验收标准"
+            rows={2}
+            className="w-full resize-none rounded border border-line bg-panel px-2 py-1.5 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              id="qc-task-assignee"
+              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+            >
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+            <select
+              id="qc-task-auditor"
+              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+            >
+              {agents
+                .filter((agent) => agent.role === "auditor")
+                .map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              id="qc-task-action"
+              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+            >
+              <option value="internal">内部动作</option>
+              <option value="external">外部动作</option>
+              <option value="spend">支出</option>
+            </select>
+            <select
+              id="qc-task-goal"
+              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+            >
+              <option value="">无目标</option>
+              {goals.map((goal) => (
+                <option key={goal.id} value={goal.id}>
+                  {goal.title}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy !== null}
+            onClick={() => {
+              const title = (
+                document.getElementById("qc-task-title") as HTMLInputElement
+              )?.value;
+              const description = (
+                document.getElementById("qc-task-desc") as HTMLTextAreaElement
+              )?.value;
+              const criteria = (
+                document.getElementById(
+                  "qc-task-criteria",
+                ) as HTMLTextAreaElement
+              )?.value;
+              const assigneeId = (
+                document.getElementById(
+                  "qc-task-assignee",
+                ) as HTMLSelectElement
+              )?.value;
+              const auditorId = (
+                document.getElementById(
+                  "qc-task-auditor",
+                ) as HTMLSelectElement
+              )?.value;
+              const actionType = (
+                document.getElementById("qc-task-action") as HTMLSelectElement
+              )?.value;
+              const goalId = (
+                document.getElementById("qc-task-goal") as HTMLSelectElement
+              )?.value;
+              submit(
+                "/api/tasks",
+                {
+                  title,
+                  description,
+                  acceptanceCriteria: criteria,
+                  assigneeId,
+                  auditorId,
+                  actionType,
+                  resource: actionType === "external" ? "calendar" : "task",
+                  goalId: goalId || null,
+                  estimateMin: 25,
+                },
+                "task",
+              );
+            }}
+          >
+            创建任务
+          </Button>
+        </div>
+      </details>
+
+      <details className="rounded-md border border-line bg-panel2/40 px-3 py-2">
+        <summary className="cursor-pointer text-[11px] text-muted">
+          <Plus className="mr-1 inline size-3" /> 新建目标
+        </summary>
+        <div className="mt-3 space-y-2">
+          <input
+            id="qc-goal-title"
+            placeholder="目标标题"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+          />
+          <input
+            id="qc-goal-why"
+            placeholder="为什么（一句话）"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+          />
+          <input
+            id="qc-goal-target"
+            placeholder="可验收的目标"
+            className="h-8 w-full rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              id="qc-goal-horizon"
+              defaultValue="6 weeks"
+              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+            />
+            <select
+              id="qc-goal-domain"
+              className="h-8 rounded border border-line bg-panel px-2 text-[11px] text-ink"
+            >
+              <option value="learning">学习</option>
+              <option value="health">健康</option>
+              <option value="work">工作</option>
+              <option value="life">生活</option>
+            </select>
+          </div>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy !== null}
+            onClick={() => {
+              const get = (id: string) =>
+                (document.getElementById(id) as HTMLInputElement)?.value ?? "";
+              submit(
+                "/api/goals",
+                {
+                  title: get("qc-goal-title"),
+                  why: get("qc-goal-why"),
+                  target: get("qc-goal-target"),
+                  horizon: get("qc-goal-horizon"),
+                  domain: get("qc-goal-domain"),
+                },
+                "goal",
+              );
+            }}
+          >
+            创建目标
+          </Button>
+        </div>
+      </details>
+
+      {msg ? <div className="text-[10px] text-muted">{msg}</div> : null}
+    </div>
+  );
+}
+
+export function NewCouncilForm() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function submit() {
+    const topic = (document.getElementById("nc-topic") as HTMLInputElement)?.value;
+    const trigger = (document.getElementById("nc-trigger") as HTMLInputElement)?.value;
+    setBusy(true);
+    const data = await call("/api/councils", "POST", { topic, trigger });
+    setBusy(false);
+    setMsg(data.ok ? "已发起" : (data.error ?? "失败"));
+    if (data.ok) router.refresh();
+  }
+
+  return (
+    <div className="space-y-2">
+      <input
+        id="nc-topic"
+        placeholder="议题"
+        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+      />
+      <input
+        id="nc-trigger"
+        placeholder="触发条件（如：单笔支出 > ¥200）"
+        className="h-8 w-full rounded border border-line bg-panel2 px-2 text-[11px] text-ink focus:border-accent/50 focus:outline-none"
+      />
+      <Button size="sm" onClick={submit} disabled={busy}>
+        {busy ? <Loader2 className="size-3 animate-spin" /> : null}
+        发起会议
+      </Button>
+      {msg ? <div className="text-[10px] text-muted">{msg}</div> : null}
+    </div>
   );
 }

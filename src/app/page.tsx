@@ -14,14 +14,20 @@ import { getTodayData } from "@/lib/engine";
 import { roleMeta } from "@/lib/agents";
 import { dateTime, pct, timeOnly } from "@/lib/format";
 import { Badge, Card, CardHeader, Dot, Progress, Stat } from "@/components/ui";
-import { ApprovalActions, BriefButton, CheckinForm } from "@/components/actions";
+import {
+  ApprovalActions,
+  BriefButton,
+  CheckinForm,
+  QuickCreate,
+} from "@/components/actions";
 import { Markdown } from "@/components/markdown";
 
 export const dynamic = "force-dynamic";
 
 function statusTone(status: string) {
   if (["accepted", "done"].includes(status)) return "teal" as const;
-  if (["submitted", "auditing"].includes(status)) return "accent" as const;
+  if (["submitted", "auditing", "awaiting_approval", "suggested"].includes(status))
+    return "accent" as const;
   if (["rejected", "failed"].includes(status)) return "danger" as const;
   if (["running"].includes(status)) return "blue" as const;
   return "neutral" as const;
@@ -31,6 +37,9 @@ function statusLabel(status: string) {
   const map: Record<string, string> = {
     planned: "待执行",
     assigned: "已指派",
+    awaiting_approval: "待审批",
+    approved: "已批准",
+    suggested: "建议",
     running: "执行中",
     submitted: "待验收",
     auditing: "验收中",
@@ -75,12 +84,16 @@ export default async function TodayPage() {
         <div className="flex items-center gap-3">
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-[0.16em] text-faint">management</div>
-            <div className="mono text-sm text-teal">2.8 min/day</div>
+            <div className="mono text-sm text-teal">
+              {data.weeklyMetrics.managementMinutes.toFixed(1)} min/day
+            </div>
           </div>
           <div className="h-8 w-px bg-line" />
           <div className="text-right">
             <div className="text-[10px] uppercase tracking-[0.16em] text-faint">AAO / week</div>
-            <div className="mono text-sm text-accent">5</div>
+            <div className="mono text-sm text-accent">
+              {data.weeklyMetrics.aao}
+            </div>
           </div>
         </div>
       </div>
@@ -331,6 +344,23 @@ export default async function TodayPage() {
                   <div className="mt-1 text-[9px] text-faint">{goal.target}</div>
                 </div>
               ))}
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader eyebrow="Create" title="快速创建" />
+            <div className="px-5 py-4">
+              <QuickCreate
+                agents={data.agents.map((agent) => ({
+                  id: agent.id,
+                  name: agent.name,
+                  role: agent.role,
+                }))}
+                goals={data.goals.map((goal) => ({
+                  id: goal.id,
+                  title: goal.title,
+                }))}
+              />
             </div>
           </Card>
 

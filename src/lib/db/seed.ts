@@ -1,7 +1,8 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
   agentGrants,
+  agentTemplates,
   agents,
   approvals,
   artifacts,
@@ -12,16 +13,21 @@ import {
   goals,
   insights,
   memories,
+  policyConfig,
   profiles,
   reviews,
   runs,
   skills,
   steps,
   tasks,
+  userActions,
   users,
 } from "./schema";
-import { sha256 } from "../ids";
+import { canonicalJson, sha256 } from "../ids";
 import { weekLabel } from "../format";
+import { SEED_POLICY_CONFIG } from "../domain/policy";
+import { startOfLocalWeek } from "../domain/time";
+import { AGENT_TEMPLATES } from "../templates";
 
 const USER_ID = "usr_zhen";
 
@@ -43,11 +49,13 @@ export async function seedDemo(): Promise<void> {
     TRUNCATE TABLE
       council_positions, councils, skills, checkins, audit_events, approvals,
       reviews, insights, memories, artifacts, steps, runs, tasks, goals,
-      agent_grants, agents, profiles, users
+      agent_grants, agent_templates, agents, profiles, policy_config,
+      idempotency_keys, user_actions, users
     CASCADE
   `);
 
   const now = new Date();
+  const weekStart = startOfLocalWeek(now, "Asia/Shanghai");
 
   await db.insert(users).values({
     id: USER_ID,
@@ -77,6 +85,18 @@ export async function seedDemo(): Promise<void> {
     managementBudgetMin: 3,
   });
 
+  await db.insert(policyConfig).values(
+    (["autonomy", "audit", "budget", "management", "cost"] as const).map(
+      (key) => ({
+        key,
+        valueJson: SEED_POLICY_CONFIG[key],
+        description: `Cabinet policy: ${key}`,
+      }),
+    ),
+  );
+
+  await db.insert(agentTemplates).values(AGENT_TEMPLATES);
+
   await db.insert(agents).values([
     {
       id: "ag_chief",
@@ -95,7 +115,7 @@ export async function seedDemo(): Promise<void> {
       lifecycleStage: "active",
       tools: ["read_all", "write_plan", "dispatch", "convene_council"],
       memoryScope: ["goals", "tasks", "reviews"],
-      budgetCents: 0,
+      budgetCents: 3000,
       spentCents: 0,
       successCount: 24,
       failCount: 2,
@@ -134,7 +154,7 @@ export async function seedDemo(): Promise<void> {
         "我负责让你真的学会，而不是让任务显示完成。我根据你的错误模式调整难度，必要时把任务拆小。",
       model: "auto",
       status: "active",
-      autonomyLevel: 1,
+      autonomyLevel: 2,
       trustScore: 66,
       lifecycleStage: "active",
       tools: ["read_notes", "write_task", "calendar_read", "quiz"],
@@ -161,7 +181,7 @@ export async function seedDemo(): Promise<void> {
       lifecycleStage: "active",
       tools: ["ledger_read", "calendar_read", "budget_veto"],
       memoryScope: ["budget", "calendar"],
-      budgetCents: 0,
+      budgetCents: 1000,
       spentCents: 0,
       successCount: 9,
       failCount: 0,
@@ -183,7 +203,7 @@ export async function seedDemo(): Promise<void> {
       lifecycleStage: "active",
       tools: ["read_artifacts", "read_runs", "audit_decision"],
       memoryScope: ["all_evidence"],
-      budgetCents: 0,
+      budgetCents: 500,
       spentCents: 0,
       successCount: 31,
       failCount: 1,
@@ -228,19 +248,23 @@ export async function seedDemo(): Promise<void> {
       lifecycleStage: "active",
       tools: ["read_plan", "read_evidence"],
       memoryScope: ["plans", "evidence"],
-      budgetCents: 0,
+      budgetCents: 500,
       spentCents: 0,
       successCount: 5,
       failCount: 1,
     },
   ]);
 
+  await db.execute(
+    sql`UPDATE agents SET budget_period_start = ${weekStart.toISOString()} WHERE user_id = ${USER_ID}`,
+  );
+
   await db.insert(agentGrants).values([
     {
       id: "grt_chief",
       agentId: "ag_chief",
       resource: "plan",
-      scope: "read_write",
+      scope: "write",
       config: { approvalRequired: ["external_action", "spend"] },
     },
     {
@@ -254,8 +278,57 @@ export async function seedDemo(): Promise<void> {
       id: "grt_coach",
       agentId: "ag_coach",
       resource: "calendar",
-      scope: "read",
+      scope: "write",
       config: { writeRequiresApproval: true },
+    },
+    {
+      id: "grt_coach_task",
+      agentId: "ag_coach",
+      resource: "task",
+      scope: "write",
+      config: {},
+    },
+    {
+      id: "grt_coach_notes",
+      agentId: "ag_coach",
+      resource: "notes",
+      scope: "read",
+      config: {},
+    },
+    {
+      id: "grt_apprentice_task",
+      agentId: "ag_apprentice",
+      resource: "task",
+      scope: "read",
+      config: {},
+    },
+    {
+      id: "grt_critic_plan",
+      agentId: "ag_critic",
+      resource: "plan",
+      scope: "read",
+      config: {},
+    },
+    {
+      id: "grt_chief_task",
+      agentId: "ag_chief",
+      resource: "task",
+      scope: "write",
+      config: {},
+    },
+    {
+      id: "grt_research_task",
+      agentId: "ag_research",
+      resource: "task",
+      scope: "write",
+      config: {},
+    },
+    {
+      id: "grt_treasurer_task",
+      agentId: "ag_treasurer",
+      resource: "task",
+      scope: "write",
+      config: {},
     },
     {
       id: "grt_treasurer",
@@ -312,6 +385,8 @@ export async function seedDemo(): Promise<void> {
       dueAt: at(-1, 18, 0),
       acceptanceCriteria: "包含 6 周计划、每周目标、验收标准；总时长不超过 90 分钟/天。",
       estimateMin: 30,
+      acceptedAt: at(-1, 18, 10),
+      acceptedAutonomyLevel: 2,
       createdBy: "user",
     },
     {
@@ -327,6 +402,8 @@ export async function seedDemo(): Promise<void> {
       dueAt: at(-1, 12, 0),
       acceptanceCriteria: "每个范式有定义、例子、来源链接；不得编造引用。",
       estimateMin: 25,
+      acceptedAt: at(-1, 12, 10),
+      acceptedAutonomyLevel: 2,
       createdBy: "agent",
     },
     {
@@ -367,7 +444,7 @@ export async function seedDemo(): Promise<void> {
       description: "外部动作：需要用户批准后才能预约。",
       assigneeId: "ag_coach",
       auditorId: "ag_auditor",
-      status: "planned",
+      status: "awaiting_approval",
       priority: 2,
       dueAt: at(1, 20, 0),
       acceptanceCriteria: "确认时间、费用、取消政策；保留确认截图。",
@@ -393,18 +470,122 @@ export async function seedDemo(): Promise<void> {
       id: "tsk_read",
       userId: USER_ID,
       goalId: "goal_rag",
-      title: "阅读 RAG 检索章节 25 分钟",
+      title: "阅读 RAG 检索章节 45 分钟",
       description: "先看例子，再看定义；结束后写 3 行笔记。",
       assigneeId: "ag_coach",
       auditorId: "ag_auditor",
       status: "planned",
       priority: 1,
       dueAt: at(0, 21, 0),
-      acceptanceCriteria: "25 分钟专注；3 行笔记；至少 1 个自己的例子。",
-      estimateMin: 25,
+      acceptanceCriteria: "45 分钟专注；3 行笔记；至少 1 个自己的例子。",
+      estimateMin: 45,
+      createdBy: "agent",
+    },
+    {
+      id: "tsk_arch_1",
+      userId: USER_ID,
+      goalId: "goal_rag",
+      title: "搭建 RAG 最小索引",
+      description: "用 20 篇文档跑通检索，记录 top-5 与延迟。",
+      assigneeId: "ag_research",
+      auditorId: "ag_auditor",
+      status: "accepted",
+      priority: 2,
+      dueAt: at(-3, 18, 0),
+      acceptanceCriteria: "20 篇文档可检索；返回 top-5；有延迟数据。",
+      estimateMin: 30,
+      acceptedAt: at(-3, 19, 0),
+      acceptedAutonomyLevel: 2,
+      createdBy: "agent",
+    },
+    {
+      id: "tsk_arch_2",
+      userId: USER_ID,
+      goalId: "goal_rag",
+      title: "读完 retrieval 综述",
+      description: "读完综述的检索章节，写 5 行笔记。",
+      assigneeId: "ag_coach",
+      auditorId: "ag_auditor",
+      status: "accepted",
+      priority: 2,
+      dueAt: at(-2, 18, 0),
+      acceptanceCriteria: "5 行笔记；至少 2 个引用。",
+      estimateMin: 30,
+      acceptedAt: at(-2, 19, 0),
+      acceptedAutonomyLevel: 2,
+      createdBy: "agent",
+    },
+    {
+      id: "tsk_arch_3",
+      userId: USER_ID,
+      goalId: "goal_rag",
+      title: "跑通 BM25 baseline",
+      description: "在 20 篇文档上跑 BM25，记录 recall@5。",
+      assigneeId: "ag_research",
+      auditorId: "ag_auditor",
+      status: "accepted",
+      priority: 2,
+      dueAt: at(-1, 18, 0),
+      acceptanceCriteria: "有 baseline 数字；脚本可复现。",
+      estimateMin: 30,
+      acceptedAt: at(-1, 19, 0),
+      acceptedAutonomyLevel: 2,
       createdBy: "agent",
     },
   ]);
+
+  const taskPolicies = [
+    {
+      id: "tsk_plan",
+      actionType: "internal",
+      resource: "plan",
+      estimatedCostCents: 60,
+    },
+    {
+      id: "tsk_research",
+      actionType: "internal_read",
+      resource: "web",
+      estimatedCostCents: 50,
+    },
+    {
+      id: "tsk_quiz",
+      actionType: "internal",
+      resource: "task",
+      estimatedCostCents: 60,
+      qualityGate: "rubric_required",
+    },
+    {
+      id: "tsk_budget",
+      actionType: "internal_read",
+      resource: "ledger",
+      estimatedCostCents: 30,
+    },
+    {
+      id: "tsk_booking",
+      actionType: "external",
+      resource: "calendar",
+      estimatedCostCents: 18000,
+      requiresApproval: true,
+      approvalThresholdCents: 20000,
+      riskLevel: "high",
+    },
+    {
+      id: "tsk_exercise",
+      actionType: "internal",
+      resource: "task",
+      estimatedCostCents: 50,
+    },
+    {
+      id: "tsk_read",
+      actionType: "internal",
+      resource: "task",
+      estimatedCostCents: 50,
+    },
+  ];
+
+  for (const { id, ...fields } of taskPolicies) {
+    await db.update(tasks).set(fields).where(eq(tasks.id, id));
+  }
 
   await db.insert(runs).values([
     {
@@ -834,13 +1015,15 @@ export async function seedDemo(): Promise<void> {
         from: "20:00",
         to: "12:30",
       },
+      beforeState: { dueAt: at(0, 20, 0).toISOString() },
+      afterState: { dueAt: at(0, 12, 30).toISOString() },
       status: "applied",
       decidedAt: at(-1, 22, 30),
     },
     {
       id: "ins_split",
       userId: USER_ID,
-      claim: "把 RAG 阅读任务拆成 25 分钟一段，先例子后定义。",
+      claim: "把 45 分钟的 RAG 阅读拆成 25 分钟一段，先例子后定义。",
       rationale:
         "过去两周 45 分钟任务完成率 40%，25 分钟任务完成率 78%。任务粒度是主要变量。",
       confidence: 0.76,
@@ -862,7 +1045,9 @@ export async function seedDemo(): Promise<void> {
         { label: "反馈 2", ref: "mem_examples", quote: "有例子好懂多了" },
       ],
       proposedChange: { type: "add_rule", rule: "讲解先给例子，再给定义" },
-      status: "accepted",
+      beforeState: { rules: [] },
+      afterState: { rules: ["讲解先给例子，再给定义"] },
+      status: "applied",
       decidedAt: at(-2, 21, 30),
     },
   ]);
@@ -877,7 +1062,7 @@ export async function seedDemo(): Promise<void> {
 
 ## 发生了什么
 - 完成 5 个被接受的结果（AAO = 5），比上周多 2 个。
-- 运动从晚上移到午休后，完成率从 40% 升到 72%。
+- 运动从晚上移到午休后，完成率明显上升。
 - RAG 学习推进到「检索基础」，rerank 仍是薄弱点。
 
 ## 什么有效
@@ -895,11 +1080,11 @@ export async function seedDemo(): Promise<void> {
 - 给 rerank 补一个对比实验。`,
       metrics: {
         aao: 5,
-        adherence: 72,
+        adherence: 63,
         managementMin: 2.8,
-        costUsd: 0.34,
+        costUsd: 0.07,
         goalProgress: 38,
-        auditRejectRate: 18,
+        auditRejectRate: 17,
       },
       decisions: [
         { action: "reschedule", target: "tsk_exercise", result: "12:30" },
@@ -969,6 +1154,51 @@ export async function seedDemo(): Promise<void> {
       createdAt: at(0, 16, 10),
     },
     {
+      id: "aud_seed_5",
+      actor: "agent:ag_auditor",
+      action: "audit.accept",
+      target: "tsk_plan",
+      before: { status: "auditing" },
+      after: { status: "accepted", reason: "路径完整，符合约束。" },
+      createdAt: at(-1, 18, 10),
+    },
+    {
+      id: "aud_seed_6",
+      actor: "agent:ag_auditor",
+      action: "audit.reject",
+      target: "tsk_arch_2",
+      before: { status: "submitted" },
+      after: { status: "rejected", reason: "引用缺失。" },
+      createdAt: at(-2, 17, 0),
+    },
+    {
+      id: "aud_seed_7",
+      actor: "agent:ag_auditor",
+      action: "audit.accept",
+      target: "tsk_arch_2",
+      before: { status: "submitted" },
+      after: { status: "accepted", reason: "引用已补齐。" },
+      createdAt: at(-2, 18, 0),
+    },
+    {
+      id: "aud_seed_8",
+      actor: "agent:ag_auditor",
+      action: "audit.accept",
+      target: "tsk_arch_1",
+      before: { status: "submitted" },
+      after: { status: "accepted" },
+      createdAt: at(-3, 19, 10),
+    },
+    {
+      id: "aud_seed_9",
+      actor: "agent:ag_auditor",
+      action: "audit.accept",
+      target: "tsk_arch_3",
+      before: { status: "submitted" },
+      after: { status: "accepted" },
+      createdAt: at(-1, 19, 10),
+    },
+    {
       id: "aud_seed_3",
       actor: "user",
       action: "autonomy.approve",
@@ -987,8 +1217,8 @@ export async function seedDemo(): Promise<void> {
         e.actor,
         e.action,
         e.target,
-        JSON.stringify(e.before),
-        JSON.stringify(e.after),
+        canonicalJson(e.before),
+        canonicalJson(e.after),
         e.createdAt.toISOString(),
       ].join("|"),
     );
@@ -1114,6 +1344,30 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       ],
       risk: "超过 7 天无法退款。",
       recommendation: "若购买，设置第 6 天提醒。",
+    },
+  ]);
+
+  await db.insert(userActions).values([
+    {
+      id: "ua_seed_1",
+      userId: USER_ID,
+      action: "approval.decide",
+      durationMs: 60000,
+      createdAt: at(-1, 20, 0),
+    },
+    {
+      id: "ua_seed_2",
+      userId: USER_ID,
+      action: "insight.accept",
+      durationMs: 60000,
+      createdAt: at(-1, 21, 0),
+    },
+    {
+      id: "ua_seed_3",
+      userId: USER_ID,
+      action: "checkin",
+      durationMs: 48000,
+      createdAt: at(-1, 22, 0),
     },
   ]);
 

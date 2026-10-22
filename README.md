@@ -31,15 +31,15 @@
 | L3 | 宪章内自主，事后报告 | 看早报 + 例外 | 信任分 ≥70 + 审计通过率 ≥90% |
 | L4 | 主动发现目标、提案、执行 | 设边界 | 不在 MVP |
 
-升级必须由用户确认；一次严重审计失败会自动降级。
+升级必须由用户确认；连续驳回达到阈值会自动暂停，需重新评估后才能恢复。
 
 ### 2. 分权验收（Separation of Duties）
 
 - 执行者提交产物 + 自评
 - Auditor 按验收标准独立检查，可以**驳回**
 - Chief 不能推翻 Auditor；只有用户能覆盖，且必须留理由
-- 连续 2 次驳回 → 换人或进入退休评估
-- 所有记录进入哈希链审计日志
+- 连续驳回达到阈值（`policy_config`，默认 2）→ 自动暂停并进入评估
+- 关键状态迁移进入哈希链审计日志，可在 Review 页一键验证
 
 > 「我凭什么信它？」——因为执行者不能自己盖章。
 
@@ -175,13 +175,13 @@ Postgres（Drizzle） · 可选 LLM（AI SDK）
 
 ---
 
-## 数据模型（18 张表）
+## 数据模型（22 张表）
 
-`users` · `profiles` · `agents` · `agent_grants` · `goals` · `tasks` · `runs` · `steps` · `artifacts` · `memories` · `insights` · `reviews` · `approvals` · `audit_events` · `skills` · `councils` · `council_positions` · `checkins`
+`users` · `profiles` · `agents` · `agent_grants` · `agent_templates` · `goals` · `tasks` · `runs` · `steps` · `artifacts` · `memories` · `insights` · `reviews` · `approvals` · `audit_events` · `skills` · `councils` · `council_positions` · `checkins` · `policy_config` · `idempotency_keys` · `user_actions`
 
 核心状态机：
 
-- **Task**：`planned → assigned → running → submitted → auditing → accepted / rejected → done`
+- **Task**：`planned → assigned → running → submitted → auditing → accepted / rejected → done`；外部动作：`assigned → awaiting_approval → approved → running`
 - **Run**：`queued → running → succeeded / failed`
 - **Agent**：`probation → active → paused → retired`
 - **Apprentice**：`shadowing → drafting → examining → active / retired`
@@ -195,28 +195,53 @@ Postgres（Drizzle） · 可选 LLM（AI SDK）
 
 | 部分 | 状态 |
 |---|---|
-| 数据库、任务/运行状态机、审计哈希链 | ✅ 真实 |
-| 授权门禁、审批、回滚 | ✅ 真实 |
+| 数据库、任务/运行状态机、审计哈希链 | ✅ 真实，哈希链可验证 |
+| 授权门禁、审批、预算、回滚 | ✅ 真实（paused / self-audit / budget / approval） |
 | 记忆存储、证据链、冲突标记 | ✅ 真实 |
 | 学徒考试、转正、技能状态 | ✅ 真实（结果为确定性） |
 | Agent 产物 | ✅ 默认确定性模板；设置 API Key 后走真实模型，失败自动回退 |
-| 内阁会议 | ✅ 预置一场会议；决议与审计真实；自动召集是 P1 |
+| 指标（AAO / 依从性 / 成本 / 驳回率） | ✅ 从事件实时计算 |
+| 内阁会议 | ✅ 预置会议 + 手动发起；决议与审计真实；自动召集是 P1 |
 | 反思 | ✅ 规则驱动，生成可采纳/回滚的洞察；LLM 反思是 P1 |
-| 外部动作（预订、支付） | ❌ 只做审批流，不真实执行 |
+| 外部动作（预订、支付） | ✅ 审批流真实；不真实执行预订/支付 |
+| 鉴权 | ❌ 本地 demo 无登录；公网部署前必须补 |
 | 社区 / 市场 / 链上身份 | ❌ 不在 MVP |
 
 ---
 
 ## 当前指标（演示数据）
 
-- AAO / week：5
-- 每日管理时间：2.8 min
-- 计划依从性：72%
-- 审计驳回率：18%
-- 周模型成本：$0.34
+- AAO / week：5（实时计算：`accepted_at` 在本周且 `accepted_autonomy_level ≥ 2`）
+- 每日管理时间：2.8 min（来自 `user_actions`，不是写死）
+- 计划依从性：63%（本周到期任务完成率）
+- 审计驳回率：17%（本周 audit 事件）
+- 周模型成本：约 $0.07（`runs.cost_cents` 求和）
 - 记忆：7 条，平均置信度 80%，1 条冲突待确认
 
 ---
+
+## 测试与 CI
+
+```bash
+pnpm test          # 82 tests: policy matrix, state machines, timezone, integration
+pnpm typecheck
+pnpm lint
+pnpm build
+```
+
+- 单元测试：`tests/unit/policy.test.ts`、`state.test.ts`、`time.test.ts`
+- 集成测试：run/audit、审批、洞察、学徒、授权、审计链、管理动作
+- CI：`.github/workflows/ci.yml`（Postgres service + typecheck + lint + test + build）
+- 迁移基线：`drizzle/0000_baseline.sql`；新库用 `pnpm db:migrate`，本地已有库用 `pnpm db:push`
+
+## 已知边界（下一步）
+
+- **鉴权**：当前是单用户 demo；公网部署前需要 session、租户作用域、CSRF 与 reset 保护。
+- **Onboarding**：仍依赖 `db:seed`；`/setup` 创建真实 workspace 是 P1。
+- **自动内阁**：会议目前是预置/手动的；规则触发 + LLM 立场生成是 P1。
+- **技能评测**：学徒转正是状态机；留出集、灰度、回滚的评测管线是 P1。
+- **外键/约束**：核心表尚未全部加 FK；迁移基线已就绪，下一步收紧。
+- **成本模型**：`estimated_cost_cents` 目前由任务声明；模型路由与真实 token 计费是 P2。
 
 ## 路线图
 

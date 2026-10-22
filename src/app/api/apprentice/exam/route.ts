@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { runApprenticeExam } from "@/lib/engine";
+import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function POST() {
   try {
@@ -9,9 +10,7 @@ export async function POST() {
     revalidatePath("/review");
     return Response.json({ ok: true, ...result });
   } catch (error) {
-    return Response.json(
-      { ok: false, error: error instanceof Error ? error.message : "failed" },
-      { status: 400 },
-    );
+    const { status, body } = toErrorResponse(error);
+    return Response.json(body, { status });
   }
 }

@@ -17,7 +17,12 @@ import {
   SectionTitle,
   Stat,
 } from "@/components/ui";
-import { InsightCard, ReflectButton } from "@/components/actions";
+import {
+  InsightCard,
+  ReflectButton,
+  VerifyAuditButton,
+} from "@/components/actions";
+import type { PolicyConfig } from "@/lib/domain/policy";
 import { Markdown } from "@/components/markdown";
 
 export const dynamic = "force-dynamic";
@@ -28,20 +33,33 @@ function successRate(success: number, fail: number) {
   return Math.round((success / total) * 100);
 }
 
-function recommendation(agent: {
-  role: string;
-  lifecycleStage: string;
-  trustScore: number;
-  successCount: number;
-  failCount: number;
-}) {
+type AuditStat = { accepts: number; total: number; passRate: number };
+
+function recommendation(
+  agent: {
+    role: string;
+    lifecycleStage: string;
+    trustScore: number;
+    successCount: number;
+    failCount: number;
+  },
+  stats: AuditStat,
+  config: PolicyConfig,
+) {
   if (agent.role === "apprentice" && agent.lifecycleStage !== "active") {
     return { label: "待转正", tone: "accent" as const };
+  }
+  if (stats.total === 0) {
+    return { label: "暂无审计", tone: "neutral" as const };
   }
   if (agent.failCount > agent.successCount) {
     return { label: "考虑退休", tone: "danger" as const };
   }
-  if (agent.trustScore >= 75 && agent.successCount >= 3) {
+  if (
+    agent.trustScore >= config.autonomy.minTrust &&
+    agent.successCount >= config.autonomy.minSuccesses &&
+    stats.passRate >= config.autonomy.minAuditPassRate
+  ) {
     return { label: "可升级", tone: "teal" as const };
   }
   if (agent.trustScore < 60) {
@@ -52,7 +70,7 @@ function recommendation(agent: {
 
 export default async function ReviewPage() {
   const data = await getReviewData();
-  const metrics = (data.weekly?.metrics ?? {}) as Record<string, number | string>;
+  const metrics = data.weeklyMetrics;
   const applied = data.insights.filter((i) => i.status === "applied");
   const proposed = data.insights.filter((i) => i.status === "proposed");
 
@@ -76,12 +94,12 @@ export default async function ReviewPage() {
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {[
-          ["AAO / week", String(metrics.aao ?? "—"), "被接受的自主结果"],
-          ["Adherence", `${metrics.adherence ?? "—"}%`, "计划依从性"],
-          ["Management", `${metrics.managementMin ?? "—"}m`, "每日管理时间"],
-          ["Cost", `$${metrics.costUsd ?? "—"}`, "本周模型成本"],
-          ["Goal", `${metrics.goalProgress ?? "—"}%`, "主目标进度"],
-          ["Audit reject", `${metrics.auditRejectRate ?? "—"}%`, "驳回率"],
+          ["AAO / week", String(metrics.aao), "被接受的自主结果"],
+          ["Adherence", `${metrics.adherence.toFixed(0)}%`, "计划依从性"],
+          ["Management", `${metrics.managementMinutes.toFixed(1)}m`, "每日管理时间"],
+          ["Cost", `$${metrics.costUsd.toFixed(2)}`, "本周模型成本"],
+          ["Goal", `${metrics.goalProgress.toFixed(0)}%`, "主目标进度"],
+          ["Audit reject", `${metrics.auditRejectRate.toFixed(0)}%`, "驳回率"],
         ].map(([label, value, hint]) => (
           <Card key={label} className="px-4 py-3">
             <Stat label={label} value={value} hint={hint} />
@@ -160,7 +178,15 @@ export default async function ReviewPage() {
             <div className="divide-y divide-line">
               {data.agents.map((agent) => {
                 const rate = successRate(agent.successCount, agent.failCount);
-                const rec = recommendation(agent);
+                const rec = recommendation(
+                  agent,
+                  data.auditStats[agent.id] ?? {
+                    accepts: 0,
+                    total: 0,
+                    passRate: 0,
+                  },
+                  data.config,
+                );
                 const meta = roleMeta(agent.role);
                 return (
                   <Link
@@ -183,7 +209,11 @@ export default async function ReviewPage() {
           </Card>
 
           <Card>
-            <CardHeader eyebrow="Audit trail" title="审计日志" right={<ShieldCheck className="size-3.5 text-teal" />} />
+            <CardHeader
+              eyebrow="Audit trail"
+              title="审计日志"
+              right={<VerifyAuditButton />}
+            />
             <div className="divide-y divide-line">
               {data.audit.slice(0, 8).map((event) => (
                 <div key={event.id} className="px-5 py-2.5">

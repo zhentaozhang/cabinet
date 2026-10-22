@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { decideCouncil } from "@/lib/engine";
+import { toErrorResponse } from "@/lib/domain/errors";
 
 export async function PATCH(
   req: Request,
@@ -18,9 +19,7 @@ export async function PATCH(
     revalidatePath("/review");
     return Response.json({ ok: true });
   } catch (error) {
-    return Response.json(
-      { ok: false, error: error instanceof Error ? error.message : "failed" },
-      { status: 400 },
-    );
+    const { status, body } = toErrorResponse(error);
+    return Response.json(body, { status });
   }
 }
