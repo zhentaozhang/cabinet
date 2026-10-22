@@ -45,3 +45,6 @@ next-env.d.ts
 
 # local code intelligence index
 .codegraph/
+
+# local pnpm store (accidentally committed)
+.pnpm-home/
