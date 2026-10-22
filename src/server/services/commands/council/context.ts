@@ -13,8 +13,7 @@ import {
 } from "@/lib/db/schema";
 import type { FalsificationCondition } from "@/lib/db/schema";
 import { getPolicyConfig } from "@/lib/policy/config";
-import { startOfLocalWeek } from "@/lib/domain/time";
-import { loadSpentCents } from "../tasks/execution";
+import { loadWeeklyUsage } from "../tasks/execution";
 import type {
   CouncilPositionDraft,
 } from "@/lib/domain/council";
@@ -85,12 +84,15 @@ export async function loadCouncilContext(
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
-  const weekStart = startOfLocalWeek(new Date(), user?.timezone ?? "UTC");
-  const spentCents = (
-    await Promise.all(
-      allAgents.map((agent) => loadSpentCents(agent.id, weekStart)),
-    )
-  ).reduce((sum, value) => sum + value, 0);
+  const timezone = user?.timezone ?? "UTC";
+  // The weekly ledger is the only budget authority; reservations are separate.
+  const weeklyUsage = await Promise.all(
+    allAgents.map((agent) => loadWeeklyUsage(agent.id, timezone)),
+  );
+  const spentCents = weeklyUsage.reduce(
+    (sum, usage) => sum + usage.settledCents + usage.unknownCents,
+    0,
+  );
 
   return {
     agents: allAgents,

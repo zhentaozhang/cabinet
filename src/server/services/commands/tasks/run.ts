@@ -1,6 +1,7 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  agentBudgetReservations,
   agentGrants,
   agents,
   approvals,
@@ -17,6 +18,7 @@ import { generateArtifact } from "@/lib/llm";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { decideRun } from "@/lib/domain/policy";
+import { usageCents } from "@/lib/domain/agent-budget";
 import { assertTransition } from "@/lib/domain/state";
 import {
   ConflictError,
@@ -24,9 +26,13 @@ import {
   PolicyDenied,
   ValidationError,
 } from "@/lib/domain/errors";
-import { startOfLocalWeek } from "@/lib/domain/time";
 import { draftFor } from "../../shared/draft";
-import { loadLatestApproval, loadSpentCents } from "./execution";
+import {
+  loadLatestApproval,
+  loadWeeklyUsage,
+  reserveBudget,
+  settleBudget,
+} from "./execution";
 import { requestApproval } from "./approvals";
 
 export async function runTask(taskId: string, userId: string) {
@@ -86,8 +92,8 @@ export async function runTask(taskId: string, userId: string) {
     .select()
     .from(agentGrants)
     .where(eq(agentGrants.agentId, agent.id));
-  const periodStart = startOfLocalWeek(new Date(), timezone);
-  const spentCents = await loadSpentCents(agent.id, periodStart);
+  // One accounting authority: the persisted weekly period ledger.
+  const usage = await loadWeeklyUsage(agent.id, timezone);
   let approval: Awaited<ReturnType<typeof loadLatestApproval>> =
     await loadLatestApproval(taskId);
   // A consumed approval is historical. A rejected task gets a fresh approval
@@ -121,8 +127,8 @@ export async function runTask(taskId: string, userId: string) {
       scope: grant.scope,
     })),
     budget: {
-      limitCents: agent.budgetCents,
-      spentCents,
+      limitCents: usage.limitCents,
+      spentCents: usageCents(usage),
     },
     approval: approval
       ? { status: approval.status, consumedAt: approval.consumedAt }
@@ -253,6 +259,23 @@ export async function runTask(taskId: string, userId: string) {
     });
   }
 
+  // Reserve the per-run ceiling BEFORE any provider request. The hold is always
+  // created and then released when the call never happens, so a simulated
+  // fallback records "attempted, no provider contact" instead of vanishing. A
+  // denial happens before the task leaves planned, so it never fails the task.
+  let reservation: { reservationId: string; amountCents: number } | null = null;
+  if (config.cost.maxRunCents > 0) {
+    const hold = await reserveBudget({
+      userId: task.userId,
+      agentId: agent.id,
+      taskId,
+      timezone,
+      amountCents: config.cost.maxRunCents,
+    });
+    if (!hold.allowed) throw new PolicyDenied(hold.reason);
+    reservation = hold;
+  }
+
   const runId = newId("run");
   const startedAt = new Date();
   await db.transaction(async (tx) => {
@@ -301,9 +324,18 @@ export async function runTask(taskId: string, userId: string) {
       startedAt,
       replayKey: `replay_${taskId}_${prior.length + 1}`,
     });
+
+    if (reservation) {
+      await tx
+        .update(agentBudgetReservations)
+        .set({ runId })
+        .where(eq(agentBudgetReservations.id, reservation.reservationId));
+    }
   });
 
   let idx = 0;
+  // Whether a provider request may have happened; drives ledger settlement.
+  let providerContact: "unknown" | "none" | "real" = "unknown";
   // Provider attempt identity for this run; set only after the model call.
   let attempt: {
     attemptId: string;
@@ -421,6 +453,7 @@ export async function runTask(taskId: string, userId: string) {
       maxOutputTokens: config.cost.maxOutputTokens,
     });
 
+    providerContact = modelResult.status === "not_configured" ? "none" : "real";
     if (modelResult.status !== "not_configured") {
       attempt = {
         attemptId: modelResult.attemptId,
@@ -492,11 +525,8 @@ export async function runTask(taskId: string, userId: string) {
           ).toFixed(2),
         )
       : 0;
-    if (cost > config.cost.maxRunCents) {
-      throw new PolicyDenied(
-        `Run cost ${cost}c exceeds the configured cap of ${config.cost.maxRunCents}c.`,
-      );
-    }
+    // An overrun is recorded by the ledger and blocks later reservations. A
+    // successful generation is never discarded for cost reasons.
 
     await db.transaction(async (tx) => {
       await tx.insert(artifacts).values({
@@ -533,24 +563,20 @@ export async function runTask(taskId: string, userId: string) {
         })
         .where(eq(runs.id, runId));
 
-      // Conditional charge: the budget pre-check reads a snapshot, so two
-      // concurrent runs can both pass it. The increment itself must decide.
-      if (cost > 0) {
-        const [charged] = await tx
-          .update(agents)
-          .set({ spentCents: sql`${agents.spentCents} + ${cost}` })
-          .where(
-            and(
-              eq(agents.id, agent.id),
-              sql`${agents.spentCents} + ${cost} <= ${agents.budgetCents}`,
-            ),
-          )
-          .returning({ id: agents.id });
-        if (!charged) {
-          throw new PolicyDenied(
-            "Budget exhausted while this run was in progress.",
-          );
-        }
+      // Settle the hold in the same transaction as the run telemetry.
+      if (reservation) {
+        await settleBudget(tx, {
+          runId,
+          settlement:
+            providerContact === "real" &&
+            modelResult.status === "success" &&
+            modelResult.costSource === "actual"
+              ? { state: "known_usage", estimatedCents: cost }
+              : providerContact === "none"
+                ? { state: "not_contacted" }
+                : { state: "unknown_usage" },
+          providerAttemptId: attempt?.attemptId ?? null,
+        });
       }
 
       await logAuditTx(tx, {
@@ -583,6 +609,21 @@ export async function runTask(taskId: string, userId: string) {
           costSource: attempt?.costSource ?? null,
         })
         .where(eq(runs.id, runId));
+
+      if (reservation) {
+        // A failed attempt that may have reached the provider keeps its full
+        // exposure as unknown; one that never left the process is released.
+        await settleBudget(tx, {
+          runId,
+          settlement:
+            providerContact === "none"
+              ? { state: "not_contacted" }
+              : { state: "unknown_usage" },
+          providerAttemptId: attempt?.attemptId ?? null,
+          reason: error instanceof Error ? error.name : "run_failed",
+        });
+      }
+
       await tx
         .update(tasks)
         .set({ status: "failed", updatedAt: new Date() })

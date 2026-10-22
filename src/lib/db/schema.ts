@@ -735,3 +735,88 @@ export const rateLimits = pgTable(
     ),
   ],
 );
+
+/**
+ * Weekly budget ledger, one row per (Agent, user-local week).
+ *
+ * This table, not `runs.cost_cents` and not the legacy `agents.spent_cents`
+ * columns, is the accounting authority for budget admission. `limitCents` is a
+ * snapshot taken when the row is created so later policy edits do not rewrite
+ * already-observed history.
+ */
+export const agentBudgetPeriods = pgTable(
+  "agent_budget_periods",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id),
+    // The timezone that defines the local week boundaries of this period.
+    timezone: text("timezone").notNull(),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    limitCents: real("limit_cents").notNull(),
+    reservedCents: real("reserved_cents").notNull().default(0),
+    settledCents: real("settled_cents").notNull().default(0),
+    unknownCents: real("unknown_cents").notNull().default(0),
+    overrun: boolean("overrun").notNull().default(false),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("agent_budget_periods_key").on(t.agentId, t.periodStart),
+    check("agent_budget_periods_limit_check", sql`${t.limitCents} >= 0`),
+    check("agent_budget_periods_reserved_check", sql`${t.reservedCents} >= 0`),
+    check("agent_budget_periods_settled_check", sql`${t.settledCents} >= 0`),
+    check("agent_budget_periods_unknown_check", sql`${t.unknownCents} >= 0`),
+  ],
+);
+
+/**
+ * One row per provider attempt that holds budget. `state = "reserved"` means
+ * the allowance is still held; settlement moves it to `settled`, `released`,
+ * or `unknown_charged`. The unique key is the run id (partial index, since a
+ * hold may exist before its run row does).
+ */
+export const agentBudgetReservations = pgTable(
+  "agent_budget_reservations",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    periodId: text("period_id")
+      .notNull()
+      .references(() => agentBudgetPeriods.id),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => agents.id),
+    taskId: text("task_id").references(() => tasks.id),
+    runId: text("run_id").references(() => runs.id),
+    state: text("state").notNull().default("reserved"),
+    amountCents: real("amount_cents").notNull(),
+    settledCents: real("settled_cents").notNull().default(0),
+    providerAttemptId: text("provider_attempt_id"),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (t) => [
+    // Partial unique index (`WHERE run_id IS NOT NULL`) is added in the
+    // migration SQL; Drizzle's builder cannot express the predicate.
+    index("agent_budget_reservations_period_idx").on(t.periodId),
+    index("agent_budget_reservations_run_idx").on(t.runId),
+    check(
+      "agent_budget_reservations_state_check",
+      sql`${t.state} IN ('reserved', 'settled', 'released', 'unknown_charged')`,
+    ),
+    check("agent_budget_reservations_amount_check", sql`${t.amountCents} >= 0`),
+  ],
+);

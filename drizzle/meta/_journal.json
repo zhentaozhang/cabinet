@@ -127,6 +127,13 @@
       "when": 1792662366951,
       "tag": "0017_provider_attempt",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792662779469,
+      "tag": "0018_agent_budget",
+      "breakpoints": true
     }
   ]
 }

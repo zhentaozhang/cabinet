@@ -17,7 +17,6 @@ import {
 } from "@/contracts/templates";
 import { SEED_POLICY_CONFIG } from "@/lib/domain/policy";
 import { newId } from "@/lib/ids";
-import { startOfLocalWeek } from "@/lib/domain/time";
 import { logAuditTx } from "@/lib/audit";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
 
@@ -66,7 +65,6 @@ export async function setupWorkspace(input: SetupInput) {
     .limit(1);
 
   const timezone = input.timezone.trim() || user.timezone;
-  const weekStart = startOfLocalWeek(new Date(), timezone);
 
   const result = await db.transaction(async (tx) => {
     // Serialise concurrent setup calls for the same user. The pre-check above
@@ -163,8 +161,8 @@ export async function setupWorkspace(input: SetupInput) {
         tools: template.tools,
         memoryScope: template.memoryScope,
         budgetCents: template.budgetCents,
-        spentCents: 0,
-        budgetPeriodStart: weekStart,
+        // `spentCents` / `budgetPeriodStart` are frozen legacy columns; weekly
+        // accounting lives in `agent_budget_periods`.
       });
 
       for (const grant of ROLE_GRANTS[template.role] ?? []) {

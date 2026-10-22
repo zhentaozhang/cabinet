@@ -1,11 +1,11 @@
 import { and, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  agentBudgetPeriods,
   agents,
   auditEvents,
   checkins,
   goals,
-  runs,
   tasks,
   userActions,
   users,
@@ -72,16 +72,19 @@ export async function getWeeklyMetrics(userId: string) {
           inArray(tasks.status, ["accepted", "done"]),
         ),
       ),
+    // Estimated weekly model spend comes from the budget ledger, not from
+    // `runs.cost_cents` telemetry.
     db
-      .select({ total: sql<number>`coalesce(sum(${runs.costCents}), 0)` })
-      .from(runs)
-      .innerJoin(agents, eq(agents.id, runs.agentId))
+      .select({
+        total: sql<number>`coalesce(sum(${agentBudgetPeriods.settledCents} + ${agentBudgetPeriods.unknownCents}), 0)`,
+      })
+      .from(agentBudgetPeriods)
+      .innerJoin(agents, eq(agents.id, agentBudgetPeriods.agentId))
       .where(
         and(
           eq(agents.userId, userId),
-          eq(runs.sourceType, "system_event"),
-          gte(runs.createdAt, range.start),
-          lt(runs.createdAt, range.end),
+          gte(agentBudgetPeriods.periodStart, range.start),
+          lt(agentBudgetPeriods.periodStart, range.end),
         ),
       ),
     db

@@ -12,8 +12,7 @@ import type { Evidence, ProposedChange } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { getPolicyConfig } from "@/lib/policy/config";
-import { startOfLocalWeek } from "@/lib/domain/time";
-import { loadSpentCents } from "./tasks/execution";
+import { loadWeeklyUsage } from "./tasks/execution";
 import { getWorkspace } from "../queries/workspace";
 import { evaluateDissents } from "./council/dissent";
 import { short } from "../shared/text";
@@ -209,12 +208,19 @@ export async function runReflection(
     });
   }
 
-  const weekStart = startOfLocalWeek(new Date(), user.timezone);
-  const spentCents = (
-    await Promise.all(
-      allAgents.map((agent) => loadSpentCents(agent.id, weekStart)),
-    )
-  ).reduce((sum, value) => sum + value, 0);
+  // Budget pressure reads the weekly ledger; unused reservations are reported
+  // separately and never merged into settled spend.
+  const weeklyUsage = await Promise.all(
+    allAgents.map((agent) => loadWeeklyUsage(agent.id, user.timezone)),
+  );
+  const spentCents = weeklyUsage.reduce(
+    (sum, usage) => sum + usage.settledCents + usage.unknownCents,
+    0,
+  );
+  const reservedCents = weeklyUsage.reduce(
+    (sum, usage) => sum + usage.reservedCents,
+    0,
+  );
   const budgetRatio =
     config.budget.weeklyLimitCents > 0
       ? spentCents / config.budget.weeklyLimitCents
@@ -225,7 +231,7 @@ export async function runReflection(
     if (treasurer) {
       candidates.push({
         claim: `本周预算已用 ${Math.round(budgetRatio * 100)}%（${spentCents}/${config.budget.weeklyLimitCents} 分），建议把非必要支出改成二次审批。`,
-        rationale: `按 runs.cost_cents 汇总，本周已支出 ${spentCents} 分，预算上限 ${config.budget.weeklyLimitCents} 分；触发阈值 ${Math.round(
+        rationale: `按周预算台账汇总（已结算 ${spentCents} 分，未结算预留 ${reservedCents} 分），预算上限 ${config.budget.weeklyLimitCents} 分；触发阈值 ${Math.round(
           config.reflection.budgetPressureRatio * 100,
         )}%。`,
         confidence: config.reflection.confidence,
