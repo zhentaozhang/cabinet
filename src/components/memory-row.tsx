@@ -2,8 +2,10 @@ import Link from "next/link";
 import { Link2 } from "lucide-react";
 import type { MemoryDto } from "@/contracts";
 import { dateTime } from "@/lib/format";
-import { Badge, Card, Progress } from "@/components/ui";
+import { Badge, Card, Progress, StatusBadge } from "@/components/ui";
 import { MemoryActions } from "@/components/memory-actions";
+import { memoryTypeLabel } from "@/contracts/labels";
+import { isSimulatedSource, sourceLabel } from "@/lib/domain/provenance";
 
 function typeTone(type: string) {
   if (type === "semantic") return "blue" as const;
@@ -47,15 +49,26 @@ export function MemoryRow({
       <div className="lg:grid lg:grid-cols-[1.55fr_1fr] lg:gap-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
-            <Badge tone={typeTone(memory.type)}>{memory.type}</Badge>
+            <Badge tone={typeTone(memory.type)}>{memoryTypeLabel(memory.type)}</Badge>
             <Badge tone="neutral">{memory.domain}</Badge>
             {memory.factKey ? <Badge tone="blue">{memory.factKey}</Badge> : null}
             {memory.status !== "active" ? (
-              <Badge tone="danger">{memory.status}</Badge>
+              <StatusBadge status={memory.status} />
             ) : null}
+            {/*
+              Provenance, always shown. Demo and rule-written memories would
+              otherwise read exactly like something the user or a model
+              established, which is the one confusion this page must not allow.
+            */}
+            <Badge
+              tone={isSimulatedSource(memory.sourceType) ? "violet" : "neutral"}
+              title={`来源：${sourceLabel(memory.sourceType)}`}
+            >
+              {sourceLabel(memory.sourceType)}
+            </Badge>
           </div>
 
-          <p className="mt-2.5 text-xs leading-relaxed text-ink-soft">
+          <p className="mt-2.5 text-label leading-relaxed text-ink-soft">
             {memory.content}
           </p>
           {memory.value ? (
@@ -96,9 +109,14 @@ export function MemoryRow({
             <span className="text-eyebrow tracking-[0.14em] text-faint uppercase">
               confidence
             </span>
-            <span className="mono text-sm text-ink">{confidence}%</span>
+            <span className="mono text-emphasis text-ink">{confidence}%</span>
           </div>
-          <Progress value={confidence} tone={tone} className="mt-1.5" />
+          <Progress
+            value={confidence}
+            tone={tone}
+            label="记忆置信度"
+            className="mt-1.5"
+          />
 
           <dl className="mt-3 space-y-1 text-label">
             <Meta label="生效" value={dateTime(memory.validFrom, tz)} />

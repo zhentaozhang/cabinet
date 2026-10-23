@@ -3,12 +3,10 @@
 import { useState } from "react";
 import { Loader2, PlugZap } from "lucide-react";
 
-import {
-  API_ROUTES,
-  connectorTestSchema,
-  type ConnectorTestDto,
-} from "@/contracts";
+import { API_ROUTES } from "@/contracts/routes";
+import { type ConnectorTestDto } from "@/contracts";
 import { browserApi } from "@/lib/api/browser";
+import { parseConnectorTest } from "@/lib/api/parsers";
 import { Badge, Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 
@@ -50,7 +48,7 @@ export function ConnectorTestButton({ disabled = false }: { disabled?: boolean }
     const response = await browserApi.mutate(API_ROUTES.connectorTest, {
       method: "POST",
       body: {},
-      schema: connectorTestSchema,
+      parse: parseConnectorTest,
     });
     setBusy(false);
 

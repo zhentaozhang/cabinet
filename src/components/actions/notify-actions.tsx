@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 
-import { API_ROUTES, type NotifyPrefsDto } from "@/contracts";
+import { API_ROUTES } from "@/contracts/routes";
+import { type NotifyPrefsDto } from "@/contracts";
 import type { DeliveryRunDto } from "@/contracts/dto/aggregates";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";

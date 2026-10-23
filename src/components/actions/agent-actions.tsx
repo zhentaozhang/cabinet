@@ -213,6 +213,9 @@ export function AgentAdmin({
         <textarea
           value={draftCharter}
           onChange={(event) => setDraftCharter(event.target.value)}
+          /* The visible "Charter" heading is a sibling div, not a <label>, so
+             the field needs its own accessible name. */
+          aria-label="宪章"
           rows={4}
           className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-label leading-relaxed text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         />
@@ -236,6 +239,7 @@ export function AgentAdmin({
             min={0}
             step={1}
             value={budgetYuan}
+            aria-label="每周预算（元）"
             onChange={(event) => setBudgetYuan(event.target.value)}
             className="h-8 w-24 rounded-md border border-line bg-panel2 px-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           />

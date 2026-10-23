@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, ShieldCheck } from "lucide-react";
-import { Badge, Button, Card, CardHeader } from "@/components/ui";
-import { API_ROUTES } from "@/contracts";
+import { Badge, Button, Card, CardHeader, ErrorState } from "@/components/ui";
+import { API_ROUTES } from "@/contracts/routes";
 import { browserApi } from "@/lib/api/browser";
 
 type AgentPreview = {
@@ -72,7 +72,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
               name="timezone"
               value={timezone}
               onChange={(event) => setTimezone(event.target.value)}
-              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink"
+              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-label text-ink"
             >
               <option value="Asia/Shanghai">Asia/Shanghai</option>
               <option value="Asia/Tokyo">Asia/Tokyo</option>
@@ -95,7 +95,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               placeholder="你想改善什么？例如：六周完成 RAG 基础"
-              className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <label htmlFor="setup-goal-why" className="sr-only">
               为什么
@@ -106,7 +106,7 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
               value={why}
               onChange={(event) => setWhy(event.target.value)}
               placeholder="为什么"
-              className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              className="mb-2 h-9 w-full rounded-md border border-line bg-panel2 px-3 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
             <label htmlFor="setup-goal-target" className="sr-only">
               可验收的目标
@@ -117,14 +117,12 @@ export function SetupForm({ agents }: { agents: AgentPreview[] }) {
               value={target}
               onChange={(event) => setTarget(event.target.value)}
               placeholder="可验收的目标"
-              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
           </div>
 
           {error ? (
-            <div className="rounded-md border border-danger/30 bg-danger/[0.05] px-3 py-2 text-label text-danger">
-              {error}
-            </div>
+            <ErrorState title="创建工作区失败" description={error} />
           ) : null}
 
           <Button

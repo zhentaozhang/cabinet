@@ -1,10 +1,4 @@
-import { z } from "zod";
-
-import {
-  apiFailureSchema,
-  ERROR_CODE_LABEL,
-  type ErrorCode,
-} from "@/contracts/errors";
+import { ERROR_CODE_LABEL, type ErrorCode } from "@/contracts/error-labels";
 import { attemptScope, beginAttempt, settleAttempt } from "./attempt";
 
 /**
@@ -21,6 +15,13 @@ import { attemptScope, beginAttempt, settleAttempt } from "./attempt";
 export type ClientResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string; code: ErrorCode; status: number };
+
+/**
+ * Response validator. A plain function instead of a zod schema: the client
+ * bundle should not carry a schema library to check one small payload — the
+ * server already validated the DTO, and this is a drift check, not a parser.
+ */
+export type Parser<T> = (value: unknown) => T;
 
 export type ApiClientConfig = {
   /** "" for same-origin calls from the browser, absolute URL from the server. */
@@ -66,6 +67,16 @@ const PLACEHOLDER_MESSAGES = new Set([
   "Conflict",
 ]);
 
+/** The failure envelope, checked by hand: three fields, no library needed. */
+function parseFailure(
+  value: Record<string, unknown>,
+): { error: string; code: ErrorCode } | null {
+  const code = value.code;
+  if (typeof value.error !== "string") return null;
+  if (typeof code !== "string" || !(code in ERROR_CODE_LABEL)) return null;
+  return { error: value.error, code: code as ErrorCode };
+}
+
 function failure(
   code: ErrorCode,
   error: string,
@@ -81,7 +92,7 @@ export function createApiClient(config: ApiClientConfig) {
 
   async function request<T>(
     path: string,
-    options: RequestOptions & { schema?: z.ZodType<T> } = {},
+    options: RequestOptions & { parse?: Parser<T> } = {},
   ): Promise<ClientResult<T>> {
     const method = options.method ?? "GET";
     const base = config.baseUrl.replace(/\/$/, "");
@@ -167,14 +178,14 @@ export function createApiClient(config: ApiClientConfig) {
     const asRecord = payload as Record<string, unknown>;
 
     if (!response.ok || asRecord.ok === false) {
-      const parsed = apiFailureSchema.safeParse(payload);
-      if (parsed.success) {
+      const parsedFailure = parseFailure(asRecord);
+      if (parsedFailure) {
         return {
           ok: false,
-          error: PLACEHOLDER_MESSAGES.has(parsed.data.error)
-            ? ERROR_CODE_LABEL[parsed.data.code]
-            : parsed.data.error,
-          code: parsed.data.code,
+          error: PLACEHOLDER_MESSAGES.has(parsedFailure.error)
+            ? ERROR_CODE_LABEL[parsedFailure.code]
+            : parsedFailure.error,
+          code: parsedFailure.code,
           status: response.status,
         };
       }
@@ -192,19 +203,18 @@ export function createApiClient(config: ApiClientConfig) {
           // so a forgotten option cannot silently hand back the whole envelope.
           (asRecord.data as T);
 
-    if (options.schema) {
-      const parsed = options.schema.safeParse(data);
-      if (!parsed.success) {
+    if (options.parse) {
+      try {
+        return { ok: true, data: options.parse(data) };
+      } catch (error) {
         return failure(
           "internal_error",
-          `接口返回不符合契约：${parsed.error.issues
-            .slice(0, 3)
-            .map((issue) => `${issue.path.join(".") || "(root)"} ${issue.message}`)
-            .join("; ")}`,
+          `接口返回不符合契约：${
+            error instanceof Error ? error.message : "shape mismatch"
+          }`,
           502,
         );
       }
-      return { ok: true, data: parsed.data };
     }
 
     return { ok: true, data: data as T };
@@ -212,12 +222,12 @@ export function createApiClient(config: ApiClientConfig) {
 
   return {
     request,
-    query<T>(path: string, schema: z.ZodType<T>): Promise<ClientResult<T>> {
-      return request(path, { schema, envelope: "data" });
+    query<T>(path: string, parse: Parser<T>): Promise<ClientResult<T>> {
+      return request(path, { parse, envelope: "data" });
     },
     async mutate<T = Record<string, unknown>>(
       path: string,
-      options: RequestOptions & { schema?: z.ZodType<T> } = {},
+      options: RequestOptions & { parse?: Parser<T> } = {},
     ): Promise<ClientResult<T>> {
       const method = options.method ?? "POST";
       const scope = attemptScope(method, path, options.body);
@@ -232,7 +242,7 @@ export function createApiClient(config: ApiClientConfig) {
         body: options.body,
         idempotencyKey,
         signal: options.signal,
-        schema: options.schema,
+        parse: options.parse,
         envelope: options.envelope ?? "data",
       });
 

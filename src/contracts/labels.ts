@@ -99,6 +99,63 @@ export function autonomyLabel(level: number): string {
   return AUTONOMY_LABELS[level] ?? `L${level}`;
 }
 
+/**
+ * Memory kinds are a taxonomy, not a lifecycle — kept apart from STATUS_LABELS
+ * so "语义记忆" never renders with a workflow tone.
+ */
+export const MEMORY_TYPE_LABELS: Record<string, string> = {
+  episodic: "情景记忆",
+  semantic: "语义记忆",
+  procedural: "程序记忆",
+};
+
+export function memoryTypeLabel(type: string): string {
+  return MEMORY_TYPE_LABELS[type] ?? type;
+}
+
+/**
+ * Task metadata that the API stores as enums but a person reads as words.
+ *
+ * `actionType` decides whether a task can cost money or touch the outside
+ * world, so it is the last field that should render as `internal_read`.
+ */
+export const ACTION_TYPE_LABELS: Record<string, string> = {
+  internal: "内部任务",
+  internal_read: "只读内部数据",
+  external: "外部调用",
+  spend: "产生花费",
+  publish: "对外发布",
+  message: "发送消息",
+  book: "代订",
+};
+
+export function actionTypeLabel(actionType: string): string {
+  return ACTION_TYPE_LABELS[actionType] ?? actionType;
+}
+
+/** What the action touches. Paired with the action type, not a replacement. */
+export const RESOURCE_LABELS: Record<string, string> = {
+  task: "任务记录",
+  calendar: "日历",
+  ledger: "账本",
+  web: "网页检索",
+  plan: "计划",
+};
+
+export function resourceLabel(resource: string): string {
+  return RESOURCE_LABELS[resource] ?? resource;
+}
+
+export const RISK_LABELS: Record<string, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+};
+
+export function riskLabel(risk: string): string {
+  return RISK_LABELS[risk] ?? risk;
+}
+
 /** One vocabulary for agents, tasks, approvals, insights, councils, runs. */
 export const STATUS_LABELS: Record<string, string> = {
   // agent
@@ -128,12 +185,25 @@ export const STATUS_LABELS: Record<string, string> = {
   // run
   queued: "排队中",
   succeeded: "成功",
+  // skill
+  draft: "草案",
+  // memory
+  superseded: "已被取代",
+  conflicted: "自相矛盾",
+  // audit log kind (the first segment of `audit_events.action`)
+  task: "任务",
+  audit: "验收",
+  checkin: "打卡",
+  autonomy: "自治",
   // approval / insight / council
   pending: "待决定",
+  expired: "已过期",
   proposed: "待采纳",
   applied: "已生效",
   rolled_back: "已回滚",
   open: "进行中",
+  deliberating: "生成立场中",
+  degraded: "立场生成失败",
   decided: "已决议",
 };
 
@@ -157,9 +227,14 @@ export function statusTone(status: string): BadgeTone {
     ].includes(status)
   )
     return "accent";
-  if (["rejected", "failed", "retired", "rolled_back"].includes(status))
+  if (
+    ["rejected", "failed", "retired", "rolled_back", "conflicted", "degraded"].includes(
+      status,
+    )
+  )
     return "danger";
-  if (["running", "assigned", "approved"].includes(status)) return "blue";
+  if (["running", "assigned", "approved", "deliberating"].includes(status))
+    return "blue";
   if (
     ["paused", "shadowing", "drafting", "examining", "practice_passed"].includes(
       status,
@@ -256,4 +331,71 @@ export function grantStateLabel(state: string): string {
 
 export function grantStateTone(state: string): BadgeTone {
   return GRANT_STATE_TONE[state] ?? "neutral";
+}
+
+/**
+ * Non-workflow states: deployment facts and provenance.
+ *
+ * These are deliberately *not* part of STATUS_LABELS. A workflow status says
+ * where a task is; a capability state says what this deployment can actually
+ * do right now — whether a connector is wired, whether the numbers on screen
+ * are real or simulated. Mixing them made "未配置" render as a red failure.
+ *
+ * Rendered with text + icon, never colour alone.
+ */
+export const CAPABILITY_LABELS = {
+  configured: "已配置",
+  not_configured: "未配置",
+  simulated: "模拟数据",
+  unknown: "未知",
+  unavailable: "暂不可用",
+  degraded: "降级运行",
+} as const;
+
+export type CapabilityState = keyof typeof CAPABILITY_LABELS;
+
+export function capabilityLabel(state: CapabilityState): string {
+  return CAPABILITY_LABELS[state] ?? state;
+}
+
+/**
+ * Tone rules, and the one that matters:
+ *
+ * `not_configured` and `unavailable` are `neutral`, NOT `danger`. Not wiring a
+ * connector is a deployment fact, not a failure — nothing broke and there is
+ * nothing to apologise for. Painting it red trains people to read the whole
+ * page as broken and to ignore the red that does matter. Red is reserved for
+ * states where something was attempted and went wrong.
+ */
+export function capabilityTone(state: CapabilityState): BadgeTone {
+  if (state === "configured") return "teal";
+  if (state === "degraded") return "accent";
+  if (state === "simulated") return "violet";
+  return "neutral";
+}
+
+/**
+ * What the human is expected to do while a task sits in this state.
+ *
+ * A status label alone answers "what is happening"; this answers "do I need to
+ * do anything". Without it every screen is a puzzle the user has to decode,
+ * and `awaiting_approval` looks the same as `running` — one needs them, one
+ * does not.
+ */
+export const STATUS_NEXT_ACTION: Record<string, string> = {
+  queued: "等待调度，无需操作。",
+  running: "Agent 正在执行，可留在本页等待。",
+  awaiting_approval: "需要你批准后才会真正执行。",
+  submitted: "已提交，等待 Auditor 验收。",
+  auditing: "Auditor 正在核对验收标准。",
+  accepted: "已通过验收，无需操作。",
+  rejected: "被驳回，需要你查看原因并修改或重试。",
+  failed: "执行失败，需要你判断是否重试。",
+  done: "已完成。",
+  cancelled: "已取消，如需继续请重新创建任务。",
+};
+
+/** `null` means there is no generic advice — the page owns this state. */
+export function statusNextAction(status: string): string | null {
+  return STATUS_NEXT_ACTION[status] ?? null;
 }

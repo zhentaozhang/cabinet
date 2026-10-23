@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
-import { Button, Card } from "@/components/ui";
+import { Button, Card, ErrorState } from "@/components/ui";
 import { safeInternalPath } from "@/lib/safe-redirect";
 type Mode = "signin" | "signup";
 
@@ -75,7 +75,46 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
   }
 
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center">
+    <div className="mx-auto grid min-h-[78vh] max-w-4xl items-center gap-10 lg:grid-cols-[1fr_minmax(360px,400px)]">
+      {/*
+        A bare form on an empty page says nothing about what the product is.
+        This panel carries the value proposition, and it is the only thing on
+        the screen a first-time visitor can read before committing.
+      */}
+      <section className="hidden lg:block">
+        <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-line2 bg-panel2/60 px-3 py-1 text-eyebrow tracking-[0.16em] text-faint uppercase">
+          <ShieldCheck className="size-3 text-accent" />
+          personal agent org
+        </div>
+        <h1 className="max-w-md text-page font-semibold tracking-tight text-ink">
+          你的个人内阁：一组会执行、也会被审计的 Agent
+        </h1>
+        <p className="mt-3 max-w-md text-body leading-relaxed text-muted">
+          Chief 拆解任务，Researcher 检索真实来源，Auditor 独立验收，
+          Critic 专门唱反调。每一次结论都要能点回证据，每一次放行都要你点头。
+        </p>
+        <ul className="mt-6 space-y-3">
+          {[
+            ["执行与验收分离", "执行者不能验收自己的产物，驳回要写明理由。"],
+            ["证据落库", "检索不到真实来源时，页面不会显示虚假引用。"],
+            ["权限按信用发放", "L1 只给建议，升级靠历史审计样本，不靠配置。"],
+          ].map(([title, detail]) => (
+            <li key={title} className="flex gap-3">
+              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-teal/40 bg-teal/10">
+                <span className="size-1.5 rounded-full bg-teal" />
+              </span>
+              <span>
+                <span className="block text-label font-medium text-ink">{title}</span>
+                <span className="block text-label leading-relaxed text-faint">
+                  {detail}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <div className="w-full">
       <Link
         href="/"
         className="mb-6 inline-flex items-center gap-1 text-label text-faint hover:text-muted"
@@ -89,9 +128,9 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
             <ShieldCheck className="size-3 text-accent" />
             Cabinet · access
           </div>
-          <h1 className="text-lg font-semibold tracking-tight text-ink">
+          <h2 className="text-section font-semibold tracking-tight text-ink">
             {mode === "signin" ? "登录你的内阁" : "创建你的账号"}
-          </h1>
+          </h2>
           <p className="mt-1 text-label leading-relaxed text-muted">
             {mode === "signin"
               ? demoEnabled
@@ -123,7 +162,7 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="你的名字"
-                className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               />
             </div>
           ) : null}
@@ -142,7 +181,7 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
           </div>
           <div>
@@ -159,15 +198,11 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+              className="h-9 w-full rounded-md border border-line bg-panel2 px-3 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             />
           </div>
 
-          {error ? (
-            <div className="rounded-md border border-danger/30 bg-danger/[0.05] px-3 py-2 text-label text-danger">
-              {error}
-            </div>
-          ) : null}
+          {error ? <ErrorState title="没有登录成功" description={error} /> : null}
 
           <Button
             type="submit"
@@ -211,6 +246,7 @@ export function LoginForm({ demoEnabled }: { demoEnabled: boolean }) {
           </div>
         </form>
       </Card>
+      </div>
     </div>
   );
 }

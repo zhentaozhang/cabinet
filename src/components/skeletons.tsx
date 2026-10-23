@@ -1,4 +1,5 @@
 import { cn } from "@/lib/format";
+import { LoadingBlock } from "@/components/ui";
 
 function Bar({ className }: { className?: string }) {
   return (
@@ -6,7 +7,13 @@ function Bar({ className }: { className?: string }) {
   );
 }
 
-/** Route-level placeholder: keeps the shell stable while a page's data lands. */
+/**
+ * Route-level placeholder: keeps the shell stable while a page's data lands.
+ *
+ * The text lines come from `LoadingBlock` rather than local bars so the route
+ * fallback and any in-page placeholder pulse at the same rhythm — two loading
+ * languages on one screen reads as a glitch.
+ */
 export function PageSkeleton({
   title = "正在加载…",
   cards = 3,
@@ -28,9 +35,7 @@ export function PageSkeleton({
               className="rounded-xl border border-line bg-panel/80 p-4"
             >
               <Bar className="mb-3 h-3 w-24" />
-              <Bar className="mb-2 h-2.5 w-full" />
-              <Bar className="mb-2 h-2.5 w-5/6" />
-              <Bar className="h-2.5 w-2/3" />
+              <LoadingBlock rows={3} />
             </div>
           ))}
         </div>
@@ -42,8 +47,7 @@ export function PageSkeleton({
                 className="rounded-xl border border-line bg-panel/80 p-4"
               >
                 <Bar className="mb-3 h-3 w-20" />
-                <Bar className="mb-2 h-2.5 w-full" />
-                <Bar className="h-2.5 w-4/5" />
+                <LoadingBlock rows={2} />
               </div>
             ))}
           </div>

@@ -42,23 +42,26 @@ export function CouncilActions({ councilId }: { councilId: string }) {
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
+        aria-label="决定理由"
         placeholder="决定理由（会写入审计）"
         rows={2}
-        className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-label text-ink focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="primary" onClick={() => decide("approve")} disabled={busy !== null}>
-          批准
+          批准这个议题
         </Button>
         <Button size="sm" onClick={() => decide("conditions")} disabled={busy !== null}>
           有条件批准
         </Button>
         <Button size="sm" variant="danger" onClick={() => decide("reject")} disabled={busy !== null || !note.trim()}>
-          否决
+          否决这个议题
         </Button>
       </div>
       <div className="text-label text-faint">否决必须填写理由，理由会写入审计链。</div>
-      {msg ? <div className="text-label text-muted">{msg}</div> : null}
+      <div role="status" aria-live="polite" className="text-label text-muted">
+        {msg}
+      </div>
     </div>
   );
 }
@@ -117,7 +120,9 @@ export function NewCouncilForm() {
         {busy ? <Loader2 className="size-3 animate-spin" /> : null}
         发起会议
       </Button>
-      {msg ? <div className="text-label text-muted">{msg}</div> : null}
+      <div role="status" aria-live="polite" className="text-label text-muted">
+        {msg}
+      </div>
     </form>
   );
 }

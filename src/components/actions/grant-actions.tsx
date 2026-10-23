@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, ShieldOff } from "lucide-react";
 
-import { API_ROUTES } from "@/contracts";
+import { API_ROUTES } from "@/contracts/routes";
 import { browserApi } from "@/lib/api/browser";
 import { toast } from "@/components/ui/toast";
 

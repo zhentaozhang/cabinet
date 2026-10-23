@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { Loader2, RotateCcw, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
-import { API_ROUTES, auditVerificationSchema } from "@/contracts";
+import { API_ROUTES } from "@/contracts/routes";
 import { browserApi } from "@/lib/api/browser";
+import { parseAuditVerification } from "@/lib/api/parsers";
 import { call } from "./shared";
 
 export function ReflectButton() {
@@ -97,7 +98,7 @@ export function VerifyAuditButton() {
     setMsg(null);
     const result = await browserApi.query(
       API_ROUTES.verifyAudit,
-      auditVerificationSchema,
+      parseAuditVerification,
     );
     setBusy(false);
     if (!result.ok) {

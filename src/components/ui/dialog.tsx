@@ -29,11 +29,38 @@ export function ConfirmDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<Element | null>(null);
   const cancelRef = useRef(onCancel);
+  const busyRef = useRef(busy);
 
   useEffect(() => {
     cancelRef.current = onCancel;
   }, [onCancel]);
 
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+
+  /*
+   * Disabling the focused button moves focus to `<body>`, which drops a screen
+   * reader out of the dialog at exactly the moment it is announcing progress.
+   * Park focus on the surface instead — it is `tabIndex={-1}`, so Tab still
+   * walks into the controls from there.
+   */
+  useEffect(() => {
+    if (!open || !busy) return;
+    const active = document.activeElement;
+    if (active instanceof Node && dialogRef.current?.contains(active)) return;
+    dialogRef.current?.focus();
+  }, [open, busy]);
+
+  /*
+   * Depends on `open` alone. `busy` flips as the confirm runs and again when it
+   * settles, and re-running this effect on each flip would tear the modal down
+   * mid-flight: the cleanup returns focus to the page behind the dialog, and
+   * `previousFocus` gets re-captured as whatever is focused at that instant —
+   * often a control inside the dialog, so closing it later would try to restore
+   * focus to a node that no longer exists. The keyboard handler reads `busy`
+   * through a ref instead.
+   */
   useEffect(() => {
     if (!open) return;
     previousFocus.current = document.activeElement;
@@ -52,7 +79,7 @@ export function ConfirmDialog({
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) {
+      if (event.key === "Escape" && !busyRef.current) {
         event.preventDefault();
         cancelRef.current();
         return;
@@ -70,6 +97,20 @@ export function ConfirmDialog({
 
       const first = nodes[0];
       const last = nodes[nodes.length - 1];
+
+      /*
+       * Focus can end up outside the dialog — a click on the backdrop, a stray
+       * programmatic focus, or the browser restoring focus after a re-render.
+       * The wrap-around checks below only fire when focus sits exactly on the
+       * first or last control, so an outside focus would tab through the page
+       * behind the modal. Pull it back in first.
+       */
+      if (!dialogRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
@@ -88,7 +129,7 @@ export function ConfirmDialog({
         previousFocus.current.focus();
       }
     };
-  }, [open, busy]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -126,13 +167,13 @@ export function ConfirmDialog({
           <div className="min-w-0 flex-1">
             <h3
               id="confirm-dialog-title"
-              className="text-base font-semibold tracking-tight text-ink"
+              className="text-section font-semibold tracking-tight text-ink"
             >
               {title}
             </h3>
             <div
               id="confirm-dialog-description"
-              className="mt-2 text-sm leading-relaxed text-muted"
+              className="mt-2 text-emphasis leading-relaxed text-muted"
             >
               {description}
             </div>

@@ -44,7 +44,9 @@ async function loadPage<T>(
   schema: z.ZodType<T>,
 ): Promise<{ missing: true } | { data: T }> {
   const api = await serverApi();
-  const result = await api.query(path, schema);
+  // The transport takes a plain validator; zod lives on this side, where page
+  // rendering already runs, and never enters the browser bundle.
+  const result = await api.query(path, (value) => schema.parse(value));
 
   if (result.ok) return { data: result.data };
   if (result.code === "unauthorized") redirect("/login");
@@ -140,7 +142,9 @@ export async function fetchTaskPage(
 
 export async function fetchWorkspaceReady(): Promise<boolean> {
   const api = await serverApi();
-  const result = await api.query("/api/setup", workspaceStateSchema);
+  const result = await api.query("/api/setup", (value) =>
+    workspaceStateSchema.parse(value),
+  );
   if (!result.ok) {
     if (result.code === "unauthorized") redirect("/login");
     throw new Error(result.error);
@@ -155,7 +159,9 @@ export async function fetchWorkspaceReady(): Promise<boolean> {
  */
 export const fetchShellContext = cache(async (): Promise<ShellContextDto> => {
   const api = await serverApi();
-  const result = await api.query("/api/shell", shellContextSchema);
+  const result = await api.query("/api/shell", (value) =>
+    shellContextSchema.parse(value),
+  );
   if (!result.ok) throw new Error(result.error);
   return result.data;
 });
