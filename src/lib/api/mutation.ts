@@ -3,6 +3,9 @@ import { ForbiddenError, toErrorResponse } from "@/lib/domain/errors";
 import { withIdempotency } from "./idempotency";
 import { envPositiveInt } from "@/lib/config/env-int";
 import { checkRateLimit } from "./rate-limit";
+import { currentRequestElapsedMs, runWithRequestScope } from "@/lib/observability/context";
+import { logEvent } from "@/lib/observability/log";
+import { withRequestIdHeader } from "./read";
 
 type MutationResult = {
   status: number;
@@ -76,6 +79,18 @@ export async function handleMutation(input: {
   body?: unknown;
   handler: (userId: string) => Promise<MutationResult>;
 }): Promise<Response> {
+  const { result, requestId } = await runWithRequestScope(input.request, () =>
+    executeMutation(input),
+  );
+  return withRequestIdHeader(result, requestId);
+}
+
+async function executeMutation(input: {
+  request: Request;
+  endpoint: string;
+  body?: unknown;
+  handler: (userId: string) => Promise<MutationResult>;
+}): Promise<Response> {
   try {
     assertSameOrigin(input.request);
     const userId = await getApiUserId();
@@ -108,6 +123,12 @@ export async function handleMutation(input: {
     });
   } catch (error) {
     const { status, body } = toErrorResponse(error);
+    logEvent("warn", "mutation.failed", {
+      endpoint: input.endpoint,
+      ms: currentRequestElapsedMs(),
+      status,
+      code: body.code,
+    });
     return Response.json(body, { status });
   }
 }

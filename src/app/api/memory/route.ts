@@ -1,4 +1,4 @@
-import { handleQuery } from "@/lib/api/read";
+import { handleQueryWithRequest } from "@/lib/api/read";
 import { loadMemory } from "@/server/readmodels";
 
 export async function GET(request: Request) {
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   const view = params.get("view") === "history" ? "history" : "current";
   const limit = Number(params.get("limit") ?? 25);
   const offset = Number(params.get("offset") ?? 0);
-  return handleQuery((userId) =>
+  return handleQueryWithRequest(request, (userId) =>
     loadMemory(userId, type, view, {
       limit: Number.isFinite(limit) ? limit : 25,
       offset: Number.isFinite(offset) ? offset : 0,

@@ -1,4 +1,4 @@
-import { handleQuery } from "@/lib/api/read";
+import { handleQueryWithRequest } from "@/lib/api/read";
 import { loadAudit } from "@/server/readmodels";
 
 export async function GET(request: Request) {
@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const limit = Number(params.get("limit") ?? 40);
   const offset = Number(params.get("offset") ?? 0);
   const kind = params.get("kind");
-  return handleQuery((userId) =>
+  return handleQueryWithRequest(request, (userId) =>
     loadAudit(userId, {
       limit: Number.isFinite(limit) ? limit : 40,
       offset: Number.isFinite(offset) ? offset : 0,

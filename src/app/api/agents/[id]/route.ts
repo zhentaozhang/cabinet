@@ -1,17 +1,17 @@
 import { revalidatePath } from "next/cache";
 import { updateAgent } from "@/server/services/commands/agents";
 import { handleMutation } from "@/lib/api/mutation";
-import { handleQuery } from "@/lib/api/read";
+import { handleQueryWithRequest } from "@/lib/api/read";
 import { agentUpdateSchema } from "@/lib/validation/schemas";
 import { parseBody } from "@/lib/validation/parse";
 import { loadAgent } from "@/server/readmodels";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  return handleQuery((userId) => loadAgent(id, userId));
+  return handleQueryWithRequest(request, (userId) => loadAgent(id, userId));
 }
 
 export async function PATCH(

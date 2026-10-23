@@ -13,6 +13,8 @@ export function proxy(request: NextRequest) {
     pathname.startsWith("/api/auth") ||
     // Liveness must answer before anyone can sign in: a monitor has no cookie.
     pathname === "/api/health" ||
+    // Operator metrics carry their own token; a session would be the wrong key.
+    pathname === "/api/metrics" ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico"
   ) {

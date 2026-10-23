@@ -1,4 +1,4 @@
-import { handleQuery } from "@/lib/api/read";
+import { handleQueryWithRequest } from "@/lib/api/read";
 import { loadReview } from "@/server/readmodels";
 
 export async function GET(request: Request) {
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   const insightOffset = Number(params.get("insightOffset") ?? 0);
   const dissentOffset = Number(params.get("dissentOffset") ?? 0);
 
-  return handleQuery((userId) =>
+  return handleQueryWithRequest(request, (userId) =>
     loadReview(userId, {
       limit: Number.isFinite(limit) ? limit : 20,
       insightOffset: Number.isFinite(insightOffset) ? insightOffset : 0,

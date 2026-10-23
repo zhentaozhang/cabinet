@@ -2,6 +2,8 @@ import type { ErrorCode } from "@/contracts/errors";
 
 export type { ErrorCode };
 
+import { logError } from "@/lib/observability/log";
+
 export class DomainError extends Error {
   readonly code: ErrorCode;
   readonly status: number;
@@ -67,9 +69,9 @@ export function toErrorResponse(error: unknown): {
     };
   }
 
-  if (process.env.NODE_ENV !== "production") {
-    console.error("[cabinet] unhandled API error", error);
-  }
+  // Unhandled errors are logged in every environment: a production 500 with no
+  // trace is the one thing an operator cannot debug at all.
+  logError("api.unhandled", error);
 
   return {
     status: 500,
