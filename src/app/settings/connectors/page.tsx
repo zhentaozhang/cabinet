@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CheckCircle2, CircleSlash, Mail, Search, Sparkles } from "lucide-react";
+import { CircleSlash, Mail, Search, Sparkles } from "lucide-react";
 
-import { Badge, Card, CardHeader, SectionTitle } from "@/components/ui";
+import {
+  CapabilityBadge,
+  Card,
+  CardHeader,
+  SectionTitle,
+} from "@/components/ui";
 import { ConnectorTestButton } from "@/components/actions";
 import { fetchConnectorStatus } from "@/lib/api/pages";
+import { money } from "@/lib/format";
 
 export const metadata: Metadata = {
   title: "连接器 · Cabinet",
@@ -15,12 +21,13 @@ export const dynamic = "force-dynamic";
 
 export default async function ConnectorsPage() {
   const status = await fetchConnectorStatus();
-  const { search, model, email, demoMode } = status;
+  const { search, model, email, demoMode, retrieval } = status;
 
   return (
     <div className="space-y-5">
       <div>
         <SectionTitle
+        as="h1"
           title="连接器"
           hint="这里显示的是配置事实，不是愿望。没配就是没配，不会假装能用。"
         />
@@ -31,11 +38,9 @@ export default async function ConnectorsPage() {
           eyebrow="Web search"
           title="检索"
           right={
-            search.configured ? (
-              <Badge tone="teal">已配置</Badge>
-            ) : (
-              <Badge tone="neutral">未配置</Badge>
-            )
+            <CapabilityBadge
+              state={search.configured ? "configured" : "not_configured"}
+            />
           }
         />
         <div className="space-y-4 px-5 py-4">
@@ -59,6 +64,20 @@ export default async function ConnectorsPage() {
             }
             hint="主提供方遇到限流、5xx 或超时才会切换；密钥被拒绝不会切换，以免掩盖配置错误。"
           />
+          <Row
+            icon={<Search className="size-4 text-muted" aria-hidden />}
+            label="每周检索上限"
+            value={
+              retrieval.budgetCents > 0
+                ? money(retrieval.budgetCents)
+                : "未设上限"
+            }
+            hint={
+              retrieval.budgetCents > 0
+                ? "达到上限后不再发起外部检索，运行记录为「未执行」而不是失败。"
+                : "设置 RETRIEVAL_WEEKLY_BUDGET_CENTS 可以给检索加一个每周上限；本周实际花费显示在 Today 页。"
+            }
+          />
           <div className="border-t border-line/70 pt-4">
             <ConnectorTestButton disabled={!search.configured} />
             <p className="mt-2 text-label text-faint">
@@ -73,11 +92,9 @@ export default async function ConnectorsPage() {
           eyebrow="Email"
           title="邮件通道"
           right={
-            email.configured ? (
-              <Badge tone="teal">已配置</Badge>
-            ) : (
-              <Badge tone="neutral">未配置</Badge>
-            )
+            <CapabilityBadge
+              state={email.configured ? "configured" : "not_configured"}
+            />
           }
         />
         <div className="space-y-4 px-5 py-4">
@@ -113,14 +130,9 @@ export default async function ConnectorsPage() {
           eyebrow="Model"
           title="模型"
           right={
-            model.configured ? (
-              <div className="flex items-center gap-1 text-teal">
-                <CheckCircle2 className="size-3.5" aria-hidden />
-                <span className="text-label">已配置</span>
-              </div>
-            ) : (
-              <Badge tone="neutral">未配置</Badge>
-            )
+            <CapabilityBadge
+              state={model.configured ? "configured" : "not_configured"}
+            />
           }
         />
         <div className="space-y-4 px-5 py-4">

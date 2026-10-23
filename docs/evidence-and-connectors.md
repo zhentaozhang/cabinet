@@ -126,3 +126,13 @@ node node_modules/vitest/vitest.mjs run tests/unit/connectors.test.ts \
 系统**不**做的那件事：判断一句原文是否真的支撑这条主张。所以 `claims_table` 规则永远返回「需人工复核」，不会自己变成「通过」。验收页把第三列留空给你填——填之前，那一行就是一条没有证据的结论。
 
 这条规则和 `min_evidence` 的分工：`min_evidence` 数的是「引用了几条真实证据」（数量门槛），`claims_table` 管的是「哪句话用哪条证据」（对应关系）。两者都过，也只证明**引用是真实的**，不证明**结论是对的**。
+
+## 检索也有上限
+
+模型花费有周预算和硬上限，检索原本没有——这是唯一一处「配置写错就会无限花钱」的地方。
+现在 `RETRIEVAL_WEEKLY_BUDGET_CENTS` 给它一个每周上限（默认不设）：
+
+- 上限在**发请求之前**检查，超出后运行记为 `skipped`（未执行），并在 trace 里写明原因
+- 「未设上限」不是「上限为 0」：前者照常检索，后者不存在
+- 每次调用的单价在调用时快照进 `retrieval_calls.unitPriceCents`，改环境变量不会改写历史账单
+- 本周实际花费显示在 Today 页，上限配置显示在 `/settings/connectors`

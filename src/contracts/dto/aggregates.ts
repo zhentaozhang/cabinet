@@ -328,6 +328,10 @@ export const connectorStatusSchema = z.object({
     secure: z.boolean(),
     envVars: z.array(z.string()),
   }),
+  /** Weekly retrieval ceiling in cents; 0 means none was configured. */
+  retrieval: z.object({
+    budgetCents: z.number(),
+  }),
   demoMode: z.boolean(),
 });
 export type ConnectorStatusDto = z.infer<typeof connectorStatusSchema>;

@@ -10,6 +10,7 @@ import {
 } from "@/lib/connectors/registry";
 import { smtpConfigFromEnv } from "@/lib/connectors/email";
 import type { ConnectorErrorCode } from "@/lib/connectors/types";
+import { retrievalWeeklyBudgetCents } from "@/lib/config/pricing";
 import { asDto } from "@/server/dto-guard";
 
 /** `DEMO_MODE` is read in one place so the UI and the run agree on it. */
@@ -59,6 +60,7 @@ export function loadConnectors(demoMode = demoModeEnabled()): ConnectorStatusDto
           envVars: ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"],
         };
       })(),
+      retrieval: { budgetCents: retrievalWeeklyBudgetCents() },
       demoMode,
     },
     "ConnectorStatus",

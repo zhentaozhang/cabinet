@@ -17,6 +17,7 @@ import { newId } from "@/lib/ids";
 import { generateArtifact } from "@/lib/llm";
 import { recordRetrievalCall } from "@/server/services/connectors/ledger";
 import { searchAndPersist } from "@/server/services/connectors/search";
+import { retrievalBudgetState } from "@/server/services/connectors/ledger";
 import { fetchAndPersist } from "@/server/services/connectors/page";
 import { extractFirstUrl } from "@/lib/connectors/page";
 import { retrieveMemories } from "@/lib/memory/retrieval";
@@ -554,6 +555,25 @@ export async function runTask(taskId: string, userId: string) {
       // A real external call. Its outcome is recorded as-is; a failure stays a
       // failure instead of being papered over by a template draft.
       toolQuery = `${task.title} ${task.description}`.trim();
+      const retrievalBudget = await retrievalBudgetState(task.userId);
+      if (retrievalBudget.exhausted) {
+        // The ceiling is checked before the call, not after: a limit that only
+        // reports overspend is a report.
+        toolStatus = "skipped";
+        toolReason = `本周检索预算已用尽（上限 ${(retrievalBudget.limitCents / 100).toFixed(2)} 元），本次未发起外部检索。`;
+        await recordRetrievalCall({
+          userId: task.userId,
+          taskId,
+          runId,
+          tool: "web_search",
+          provider: null,
+          status: toolStatus,
+          hits: 0,
+          latencyMs: 0,
+          billable: false,
+        });
+        search = null;
+      } else {
       search = await searchAndPersist({
         userId: task.userId,
         taskId,
@@ -574,6 +594,7 @@ export async function runTask(taskId: string, userId: string) {
         latencyMs: search.latencyMs,
         billable: true,
       });
+      }
     } else if (toolPlan.planned.tool === "web_fetch") {
       // One URL, named by the task itself. No URL means the tool has nothing to
       // do — recorded as skipped, not as a failed fetch.
