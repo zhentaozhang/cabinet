@@ -42,6 +42,48 @@ export function errorForStatus(status: number, provider: string): ConnectorError
 }
 
 /**
+ * Read a body with a hard byte cap.
+ *
+ * `response.text()` buffers the whole thing before anyone can object, so a
+ * 500 MB error page (or a stuck chunked stream) would be read in full. This
+ * cancels the stream the moment the cap is crossed and returns null instead.
+ */
+export async function readTextCapped(
+  response: Response,
+  maxBytes: number,
+): Promise<string | null> {
+  const declared = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > maxBytes) return null;
+  const body = response.body;
+  if (!body) {
+    const text = await response.text();
+    return text.length > maxBytes ? null : text;
+  }
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: false }).decode(merged);
+}
+
+/**
  * GET/POST JSON with a hard timeout and typed failures.
  *
  * Returns `{ ok: false }` for every provider condition, so a caller can record
@@ -72,9 +114,9 @@ export async function requestJson(input: {
     });
 
     if (!response.ok) {
-      // Drain the body so the socket can be reused, and time the whole
+      // Drain (capped) so the socket can be reused, and time the whole
       // exchange: a body that takes two seconds is part of the latency.
-      await response.text().catch(() => "");
+      await readTextCapped(response, MAX_RESPONSE_CHARS).catch(() => null);
       return {
         ok: false,
         error: errorForStatus(response.status, input.provider),
@@ -82,9 +124,9 @@ export async function requestJson(input: {
       };
     }
 
-    const text = await response.text();
+    const text = await readTextCapped(response, MAX_RESPONSE_CHARS);
     const latencyMs = Date.now() - startedAt;
-    if (text.length > MAX_RESPONSE_CHARS) {
+    if (text === null) {
       return {
         ok: false,
         latencyMs,

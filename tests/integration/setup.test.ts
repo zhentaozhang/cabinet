@@ -10,6 +10,8 @@ import {
   dissents,
   goals,
   profiles,
+  runs,
+  steps,
   tasks,
   users,
 } from "@/lib/db/schema";
@@ -184,7 +186,38 @@ describe("account export and deletion", () => {
       settledCents: 120,
     });
 
+    // A run keeps its trace in `steps`; an export without them cannot explain
+    // what happened, so the run is deliberately given one.
+    await db.insert(runs).values({
+      id: "run_account_test",
+      taskId: "tsk_account_test",
+      agentId: agent.id,
+      status: "submitted",
+      replayKey: "replay-account-test",
+      mode: "demo",
+    });
+    await db.insert(steps).values([
+      {
+        id: "stp_account_1",
+        runId: "run_account_test",
+        idx: 1,
+        type: "plan",
+        input: {},
+        output: {},
+      },
+      {
+        id: "stp_account_2",
+        runId: "run_account_test",
+        idx: 2,
+        type: "tool",
+        input: {},
+        output: {},
+      },
+    ]);
+
     const exported = await exportAccount(NEW_USER);
+    expect(exported.steps).toHaveLength(2);
+    expect(exported.steps.every((step) => step.runId === "run_account_test")).toBe(true);
     expect(exported.agentBudgetReservations).toHaveLength(1);
     expect(exported.agentBudgetPeriods).toHaveLength(1);
     expect(exported.dissents).toHaveLength(1);

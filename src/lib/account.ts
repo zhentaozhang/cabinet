@@ -116,6 +116,13 @@ export async function exportAccount(userId: string) {
         .where(eq(apprenticeExamSnapshots.userId, userId)),
     ]);
 
+  // Steps hang off runs, not users, so they can only be fetched once the run
+  // ids are known. Without them an export cannot rebuild what a run did.
+  const runIds = (runRows as Array<{ id: string }>).map((row) => row.id);
+  const stepRows = runIds.length
+    ? await db.select().from(steps).where(inArray(steps.runId, runIds))
+    : [];
+
   return {
     exportedAt: new Date().toISOString(),
     user: userRows[0] ?? null,
@@ -124,6 +131,7 @@ export async function exportAccount(userId: string) {
     goals: goalRows,
     tasks: taskRows,
     runs: runRows,
+    steps: stepRows,
     memories: memoryRows,
     insights: insightRows,
     reviews: reviewRows,

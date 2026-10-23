@@ -1,3 +1,4 @@
+import { readTextCapped } from "./http";
 import type { ConnectorError, SearchHit } from "./types";
 
 /**
@@ -143,37 +144,6 @@ export function firstQuote(text: string): string {
   return `${(boundary > 120 ? cut.slice(0, boundary) : cut).trim()}…`;
 }
 
-async function readCapped(response: Response, maxBytes: number): Promise<string | null> {
-  const declared = Number(response.headers.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > maxBytes) return null;
-  const body = response.body;
-  if (!body) {
-    const text = await response.text();
-    return text.length > maxBytes ? null : text;
-  }
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      total += value.byteLength;
-      if (total > maxBytes) {
-        await reader.cancel().catch(() => undefined);
-        return null;
-      }
-      chunks.push(value);
-    }
-  }
-  const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder("utf-8", { fatal: false }).decode(merged);
-}
 
 /** Fetch one URL and reduce it to a title, text and quotable sentence. */
 export async function fetchPage(input: {
@@ -263,7 +233,7 @@ export async function fetchPage(input: {
     }
 
     if (!response.ok) {
-      await readCapped(response, MAX_BODY_BYTES).catch(() => null);
+      await readTextCapped(response, MAX_BODY_BYTES).catch(() => null);
       const retryable = response.status === 429 || response.status >= 500;
       return {
         ok: false,
@@ -300,7 +270,7 @@ export async function fetchPage(input: {
       };
     }
 
-    const raw = await readCapped(response, MAX_BODY_BYTES);
+    const raw = await readTextCapped(response, MAX_BODY_BYTES);
     const latencyMs = Date.now() - startedAt;
     if (raw === null) {
       return {

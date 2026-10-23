@@ -594,13 +594,15 @@ export async function runTask(taskId: string, userId: string) {
       taskDescription: task.description,
       acceptanceCriteria: task.acceptanceCriteria,
       memories: agentMemories.map((m) => m.content),
-      evidence: (search?.evidence ?? []).map((item) => ({
-        id: item.id,
-        title: item.title,
-        url: item.url,
-        publisher: item.publisher,
-        quote: item.quote,
-      })),
+      evidence: [...(search?.evidence ?? []), ...(page?.evidence ?? [])].map(
+        (item) => ({
+          id: item.id,
+          title: item.title,
+          url: item.url,
+          publisher: item.publisher,
+          quote: item.quote,
+        }),
+      ),
       maxOutputTokens: config.cost.maxOutputTokens,
     });
 
