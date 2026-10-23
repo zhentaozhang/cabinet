@@ -177,8 +177,10 @@ describe("tool trace honesty", () => {
     return rows[0];
   };
 
-  it("records web_fetch as not connected instead of running a search", async () => {
-    // Only web_fetch is granted, so the planner must pick it.
+  it("never runs a keyword search in the name of web_fetch", async () => {
+    // Only web_fetch is granted, so the planner must pick it. The task names no
+    // URL, so a fetch has nothing to do — and a search would be a different
+    // tool entirely. Either way no provider is contacted.
     await db
       .update(agents)
       .set({ tools: ["web_fetch"] })
@@ -188,13 +190,17 @@ describe("tool trace honesty", () => {
       .set({ status: "planned" })
       .where(eq(tasks.id, RESEARCH_TASK));
 
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
     await runTask(RESEARCH_TASK, DEMO_USER_ID);
 
     const step = await lastToolStep();
     const output = step.output as Record<string, unknown>;
     expect(output.tool).toBe("web_fetch");
-    expect(output.status).toBe("not_connected");
-    expect(String(output.reason)).toContain("web_fetch 尚未接入");
+    expect(output.status).toBe("skipped");
+    expect(String(output.reason)).toContain("链接");
+    expect(fetchSpy).not.toHaveBeenCalled();
 
     const rows = await db.select().from(evidence);
     expect(rows).toHaveLength(0);

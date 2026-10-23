@@ -1,6 +1,9 @@
 import type { ConnectorError, SearchHit } from "./types";
 import { SEARCH_TIMEOUT_MS } from "./types";
 
+/** A search response is a page of snippets; anything larger is not one. */
+const MAX_RESPONSE_CHARS = 2 * 1024 * 1024;
+
 export class ConnectorHttpError extends Error {
   constructor(readonly error: ConnectorError) {
     super(error.message);
@@ -67,13 +70,31 @@ export async function requestJson(input: {
       ...input.init,
       signal: controller.signal,
     });
-    const latencyMs = Date.now() - startedAt;
 
     if (!response.ok) {
-      return { ok: false, error: errorForStatus(response.status, input.provider), latencyMs };
+      // Drain the body so the socket can be reused, and time the whole
+      // exchange: a body that takes two seconds is part of the latency.
+      await response.text().catch(() => "");
+      return {
+        ok: false,
+        error: errorForStatus(response.status, input.provider),
+        latencyMs: Date.now() - startedAt,
+      };
     }
 
     const text = await response.text();
+    const latencyMs = Date.now() - startedAt;
+    if (text.length > MAX_RESPONSE_CHARS) {
+      return {
+        ok: false,
+        latencyMs,
+        error: {
+          code: "invalid_response",
+          message: `${input.provider} 的响应超过 ${Math.round(MAX_RESPONSE_CHARS / 1024)} KiB 上限，已放弃解析。`,
+          retryable: false,
+        },
+      };
+    }
     try {
       return { ok: true, body: JSON.parse(text) as unknown, latencyMs };
     } catch {

@@ -107,6 +107,8 @@ export function planTools(input: {
 export type ToolStepStatus =
   | "ok"
   | "not_connected"
+  /** Planned and permitted, but the task gave it nothing to act on. */
+  | "skipped"
   | "unauthorized"
   | "rate_limited"
   | "timeout"

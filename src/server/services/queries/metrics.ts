@@ -6,6 +6,8 @@ import {
   auditEvents,
   checkins,
   goals,
+  runs,
+  steps,
   tasks,
   userActions,
   users,
@@ -13,6 +15,22 @@ import {
 import { addLocalDays, localDateKey, weekRange } from "@/lib/domain/time";
 import { LEARNING_TEMPLATES } from "@/lib/domain/learning";
 import { getPolicyConfig } from "@/lib/policy/config";
+
+/** Tools that are billed per request rather than per token. */
+const BILLABLE_TOOLS = ["web_search", "web_fetch"] as const;
+
+/**
+ * What one external retrieval costs, in cents.
+ *
+ * Unset (or 0) means the deployment has not priced them, so the UI says
+ * "未计价" instead of inventing a number. This never feeds `costCents`: the
+ * model budget and the retrieval budget are different curves and mixing them
+ * would make the weekly cap meaningless.
+ */
+const SEARCH_COST_CENTS_PER_REQUEST = (() => {
+  const raw = Number(process.env.SEARCH_COST_CENTS_PER_REQUEST ?? "");
+  return Number.isFinite(raw) && raw > 0 ? raw : 0;
+})();
 export async function getWeeklyMetrics(userId: string) {
   const [userRows, config] = await Promise.all([
     db
@@ -39,6 +57,7 @@ export async function getWeeklyMetrics(userId: string) {
     studyRows,
     learningRows,
     retestRows,
+    searchRows,
   ] = await Promise.all([
     db
       .select({ count: sql<number>`count(*)` })
@@ -166,6 +185,27 @@ export async function getWeeklyMetrics(userId: string) {
           lt(tasks.createdAt, range.end),
         ),
       ),
+    /*
+     * External retrieval is counted separately from model tokens: a search has
+     * a per-request price, not a token price, and folding guesses about it into
+     * `costCents` would make the budget lie. Only calls that reached a provider
+     * count — `not_connected`, `unauthorized` and `skipped` were never billed.
+     */
+    db
+      .select({ requests: sql<number>`count(*)` })
+      .from(steps)
+      .innerJoin(runs, eq(steps.runId, runs.id))
+      .innerJoin(agents, eq(runs.agentId, agents.id))
+      .where(
+        and(
+          eq(agents.userId, userId),
+          eq(steps.type, "tool"),
+          inArray(steps.tool, [...BILLABLE_TOOLS]),
+          sql`${steps.output}->>'status' in ('ok', 'timeout', 'invalid_response', 'rate_limited')`,
+          gte(runs.startedAt, range.start),
+          lt(runs.startedAt, range.end),
+        ),
+      ),
   ]);
 
   const [aaoRow] = aaoRows;
@@ -175,6 +215,7 @@ export async function getWeeklyMetrics(userId: string) {
   const [auditRow] = auditRows;
   const [actionsRow] = actionRows;
   const [decisionRow] = decisionRows;
+  const [searchRow] = searchRows;
   const [goal] = goalRows;
   const [studyRow] = studyRows;
   const [learningRow] = learningRows;
@@ -214,6 +255,13 @@ export async function getWeeklyMetrics(userId: string) {
         ? (Number(retestRow?.accepted ?? 0) / retestTotal) * 100
         : null,
     costCents: Number(costRow?.total ?? 0),
+    search: {
+      requests: Number(searchRow?.requests ?? 0),
+      // 0 means "unpriced", not "free": the connector price is a deployment
+      // setting, and pretending a number would be worse than reporting none.
+      priceCents: SEARCH_COST_CENTS_PER_REQUEST,
+      estimatedCents: Number(searchRow?.requests ?? 0) * SEARCH_COST_CENTS_PER_REQUEST,
+    },
     goalProgress: goal?.progress ?? 0,
     auditRejectRate: auditTotal > 0 ? (rejects / auditTotal) * 100 : null,
     sample: { planned, completed, accepts, rejects },

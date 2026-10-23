@@ -98,6 +98,7 @@ export default async function NotificationsPage() {
               {inFlight > 0 ? <span>发送中 {inFlight}</span> : null}
               {failed > 0 ? <span className="text-danger">失败 {failed}</span> : null}
               <span>已送达 {data.counts.sent}</span>
+              <span>共 {data.total} 条</span>
             </div>
           }
         />
@@ -110,6 +111,11 @@ export default async function NotificationsPage() {
           </div>
         ) : (
           <ul className="divide-y divide-line/70">
+            {data.total > data.items.length ? (
+              <li className="px-5 py-2 text-label text-faint">
+                只显示最近 {data.items.length} 条，共 {data.total} 条。
+              </li>
+            ) : null}
             {data.items.map((item) => (
               <li key={item.id} className="px-5 py-3">
                 <div className="flex flex-wrap items-center gap-2">

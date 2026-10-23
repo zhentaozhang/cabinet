@@ -20,7 +20,7 @@ export async function getDeliveryData(userId: string) {
     .where(eq(users.id, userId))
     .limit(1);
 
-  const [items, statusRows] = await Promise.all([
+  const [items, statusRows, [totalRow]] = await Promise.all([
     db
       .select()
       .from(outbox)
@@ -32,6 +32,7 @@ export async function getDeliveryData(userId: string) {
       .from(outbox)
       .where(eq(outbox.userId, userId))
       .groupBy(outbox.status),
+    db.select({ n: count() }).from(outbox).where(eq(outbox.userId, userId)),
   ]);
 
   const tally: Record<string, number> = {
@@ -61,6 +62,7 @@ export async function getDeliveryData(userId: string) {
       envVars: ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"],
     },
     counts: tally,
+    total: Number(totalRow?.n ?? 0),
     items,
   };
 }

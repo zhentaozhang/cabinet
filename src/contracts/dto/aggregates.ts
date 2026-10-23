@@ -49,6 +49,15 @@ export const weeklyMetricsSchema = z.object({
   retestPassRate: z.number().nullable(),
   /** Cents, like every other money field; format with `usd()`/`money()`. */
   costCents: z.number(),
+  /**
+   * External retrieval, counted separately from model tokens. `priceCents` 0
+   * means the deployment has not priced searches, so nothing is estimated.
+   */
+  search: z.object({
+    requests: z.number(),
+    priceCents: z.number(),
+    estimatedCents: z.number(),
+  }),
   goalProgress: z.number(),
   /** Null when no audit accept/reject events were sampled. */
   auditRejectRate: z.number().nullable(),
@@ -376,6 +385,8 @@ export const deliveryPageSchema = z.object({
     failed: z.number(),
     skipped: z.number(),
   }),
+  /** Lifetime rows; `items` is only the most recent page of them. */
+  total: z.number(),
   items: z.array(deliveryItemSchema),
 });
 export type DeliveryPageDto = z.infer<typeof deliveryPageSchema>;

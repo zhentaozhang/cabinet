@@ -48,7 +48,7 @@ Auditor 只认 `evidence` 表里、属于本次 run 的行。正文里写什么�
 
 ## 研究任务的默认清单
 
-交给具备 `web_search` / `web_fetch`（未接入：运行时会记录为 `not_connected`，不会假装读过网页） 的 Agent 的任务，如果没有显式清单，
+交给具备 `web_search` / `web_fetch` 的 Agent 的任务，如果没有显式清单，
 创建时自动附加：
 
 ```json
@@ -72,7 +72,8 @@ node node_modules/vitest/vitest.mjs run tests/unit/connectors.test.ts \
 
 ## 尚未覆盖（明确不在 M1 内）
 
-- 抓取正文（`web_fetch` 目前与 `web_search` 同一实现）。
+- 站点抓取略过 JavaScript 渲染：`web_fetch` 抓的是服务器返回的 HTML 正文，需要登录或依赖前端渲染的页面会记录为「响应异常」而不是给出空证据。
+- 不做可达性与相关性判断：能抓下来、能引用，不等于来源可靠。
 - 可达性/时效性校验、来源质量评分。
 - 检索成本计入预算：检索有自己的成本口径，混进 token 预算会模糊失败语义。
 - 定时调度与主动推送：需要独立进程 + 幂等 + 重试，不能靠 `setInterval`。
@@ -82,3 +83,26 @@ node node_modules/vitest/vitest.mjs run tests/unit/connectors.test.ts \
 给研究任务自动挂 `min_evidence: 3` 需要两个条件同时成立：执行 Agent 的工具里有 `web_search` / `web_fetch`，并且**至少配置了一个搜索 key**。没有 key 时不会挂这条要求——因为运行时一行证据都落不了库，挂上就等于让每个新装环境的调研任务注定被驳回，而用户在产品里没有地方能修好它。
 
 需要人工判断的清单项（`manual`）永远不由系统判为通过，它们显示为「需人工复核」；由 Agent 运行产出、且清单里有证据要求时，`min_evidence` 才真正参与判定。
+
+## `web_fetch`：抓任务自己给的链接
+
+`web_fetch` 不搜索。它从任务的描述与验收标准里取第一个 http(s) 链接，抓那一页，把标题、正文首段（作为 `quote`）落成一条 `evidence`。
+
+| 情况 | 步骤状态 | 证据 |
+|---|---|---|
+| 抓到了可读正文 | `ok` | 1 条 |
+| 任务里没有链接 | `skipped`（未执行） | 0 条 |
+| 目标不是公网地址 | `invalid_response` | 0 条 |
+| 对方返回 PDF/图片等非文本 | `invalid_response` | 0 条 |
+| 超过 2 MiB 或 10 秒超时 | `invalid_response` / `timeout` | 0 条 |
+| 页面需要登录或纯前端渲染 | `invalid_response`（没有可读正文） | 0 条 |
+
+**安全边界**：`http://localhost`、`127.0.0.1`、`10/8`、`172.16/12`、`192.168/16`、`169.254/16`、`::1`、`*.local`、`*.internal` 一律拒绝，重定向后的最终地址会再检查一次。这是字面地址检查，不做 DNS 解析：一个解析到内网 IP 的公网域名仍然可能被访问到。抓取用的是任务作者本来就有的信任，这个守卫只保证「写字据时的笔误不会打到本机」。
+
+## 检索费用为什么单列
+
+模型费用按 token 结算，检索按次收费，两条曲线不同。`weeklyMetrics.search` 单独给出 `requests`、`priceCents`、`estimatedCents`：
+
+- 只有真正到达过服务商的调用才计数（`ok` / `timeout` / `invalid_response` / `rate_limited`）；`not_connected`、`unauthorized`、`skipped` 没有产生费用，不计。
+- `SEARCH_COST_CENTS_PER_REQUEST` 决定单次价格；**没配置就是 0，界面显示「未计价」，而不是假装免费**。
+- 这个金额**不会**进入 `weeklyMetrics.costCents`，也不影响模型的周预算上限 —— 混在一起会让「本周预算」失去意义。

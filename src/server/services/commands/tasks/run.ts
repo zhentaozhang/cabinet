@@ -16,6 +16,8 @@ import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { generateArtifact } from "@/lib/llm";
 import { searchAndPersist } from "@/server/services/connectors/search";
+import { fetchAndPersist } from "@/server/services/connectors/page";
+import { extractFirstUrl } from "@/lib/connectors/page";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { planTools, type ToolStepStatus } from "@/lib/domain/tool-plan";
@@ -503,11 +505,9 @@ export async function runTask(taskId: string, userId: string) {
     let toolStatus: ToolStepStatus;
     let toolReason: string;
     let search: Awaited<ReturnType<typeof searchAndPersist>> | null = null;
+    let page: Awaited<ReturnType<typeof fetchAndPersist>> | null = null;
     /** The exact string sent to the provider, so the trace can be replayed. */
-    const toolQuery =
-      toolPlan.planned?.tool === "web_search"
-        ? `${task.title} ${task.description}`.trim()
-        : null;
+    let toolQuery: string | null = null;
 
     if (!toolPlan.planned) {
       toolStatus = "unauthorized";
@@ -515,20 +515,38 @@ export async function runTask(taskId: string, userId: string) {
     } else if (toolPlan.planned.tool === "web_search") {
       // A real external call. Its outcome is recorded as-is; a failure stays a
       // failure instead of being papered over by a template draft.
+      toolQuery = `${task.title} ${task.description}`.trim();
       search = await searchAndPersist({
         userId: task.userId,
         taskId,
         runId,
-        query: toolQuery as string,
+        query: toolQuery,
       });
       toolStatus = search.status;
       toolReason =
         search.message ?? `检索到 ${search.hits.length} 条可引用来源，已落库。`;
     } else if (toolPlan.planned.tool === "web_fetch") {
-      // Not implemented. Recording it as a successful `web_search` would claim
-      // a page was fetched when only a keyword query ran.
-      toolStatus = "not_connected";
-      toolReason = "web_fetch 尚未接入：目前只支持关键词检索（web_search）。";
+      // One URL, named by the task itself. No URL means the tool has nothing to
+      // do — recorded as skipped, not as a failed fetch.
+      const target = extractFirstUrl(
+        `${task.description}\n${task.acceptanceCriteria}`,
+      );
+      if (!target) {
+        toolStatus = "skipped";
+        toolReason =
+          "任务描述和验收标准里都没有链接，web_fetch 只抓任务自己给出的 URL。";
+      } else {
+        toolQuery = target;
+        page = await fetchAndPersist({
+          userId: task.userId,
+          taskId,
+          runId,
+          url: target,
+        });
+        toolStatus = page.status;
+        toolReason =
+          page.message ?? `抓取了 ${page.url}，已落库 ${page.evidence.length} 条证据。`;
+      }
     } else {
       toolStatus = "not_connected";
       toolReason = "No external connector is configured for this tool.";
@@ -541,18 +559,18 @@ export async function runTask(taskId: string, userId: string) {
       output: {
         status: toolStatus,
         tool: toolPlan.planned?.tool ?? null,
-        provider: search?.provider ?? null,
+        provider: search?.provider ?? page?.provider ?? null,
         resource: toolPlan.planned?.resource ?? null,
         reason: toolReason,
         considered: toolPlan.considered,
-        hits: search?.hits.length ?? 0,
-        evidence: (search?.evidence ?? []).map((item) => ({
+        hits: (search ?? page)?.hits.length ?? 0,
+        evidence: ((search ?? page)?.evidence ?? []).map((item) => ({
           id: item.id,
           url: item.url,
           title: item.title,
           publisher: item.publisher,
         })),
-        latencyMs: search?.latencyMs ?? null,
+        latencyMs: (search ?? page)?.latencyMs ?? null,
       },
       latency: Math.max(1, Math.round(performance.now() - toolStartedAt)),
     });
