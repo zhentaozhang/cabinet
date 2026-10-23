@@ -370,6 +370,8 @@ export const deliveryPageSchema = z.object({
   }),
   counts: z.object({
     pending: z.number(),
+    /** Claimed by a runner that has not written back yet (may be stale). */
+    sending: z.number(),
     sent: z.number(),
     failed: z.number(),
     skipped: z.number(),
@@ -391,6 +393,8 @@ export const deliveryRunSchema = z.object({
   failed: z.number(),
   skipped: z.number(),
   deferred: z.number(),
+  /** Due but not attempted because SMTP is not configured. Still queued. */
+  waiting: z.number(),
   claimed: z.number(),
 });
 export type DeliveryRunDto = z.infer<typeof deliveryRunSchema>;

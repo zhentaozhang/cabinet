@@ -7,6 +7,14 @@ import { deliverOutbox } from "@/server/services/commands/delivery";
 export const dynamic = "force-dynamic";
 
 /**
+ * One pass sends at most this many mails, so a slow SMTP server cannot outlive
+ * the browser's 20s request timeout (the client aborts and would then retry
+ * with the same idempotency key). The cron job is not bound by this.
+ */
+const MANUAL_PASS_LIMIT = 5;
+export const maxDuration = 30;
+
+/**
  * One manual delivery pass for the current account.
  *
  * The scheduled job runs `notify:deliver` outside the web process; this exists
@@ -17,7 +25,7 @@ export function POST(request: Request) {
     request,
     endpoint: "notifications:run",
     handler: async (userId) => {
-      const report = await deliverOutbox({ userId, limit: 20 });
+      const report = await deliverOutbox({ userId, limit: MANUAL_PASS_LIMIT });
       revalidatePath("/settings/notifications");
       revalidatePath(API_ROUTES.notifications);
       return {
@@ -28,6 +36,7 @@ export function POST(request: Request) {
           failed: report.failed,
           skipped: report.skipped,
           deferred: report.deferred,
+          waiting: report.waiting,
           claimed: report.claimed,
         },
       };

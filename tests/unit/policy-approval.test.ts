@@ -134,3 +134,46 @@ describe("decideRun — approval scope", () => {
     expect(decision.effect).toBe("require_approval");
   });
 });
+
+describe("decideRun — budget and revoked grants stay hard", () => {
+  const standing = (overrides: Record<string, unknown> = {}) => ({
+    id: "grt_standing",
+    resource: "web",
+    action: "spend",
+    createdByApprovalId: "appr_old",
+    expiresAt: new Date("2099-01-01"),
+    maxCents: 10_000,
+    maxRuns: 20,
+    useCount: 0,
+    revokedAt: null,
+    ...overrides,
+  });
+
+  it("a revoked grant is not permission, even with a standing policy", () => {
+    const decision = decideRun({
+      actor: actor({ autonomyLevel: 3 }),
+      task: task({ actionType: "spend", resource: "web", estimatedCostCents: 100 }),
+      grants: [{ resource: "web", scope: "write", revokedAt: new Date("2026-10-01") }],
+      standingGrants: [standing()],
+      budget,
+      approval: null,
+      config,
+    });
+    expect(decision.effect).toBe("deny");
+    expect(decision.reason).toContain("Missing grant");
+  });
+
+  it("does not let a standing policy skip the remaining-budget check", () => {
+    const decision = decideRun({
+      actor: actor({ autonomyLevel: 3 }),
+      task: task({ actionType: "spend", resource: "web", estimatedCostCents: 9_500 }),
+      grants: [{ resource: "web", scope: "write" }],
+      standingGrants: [standing({ maxCents: 20_000 })],
+      budget: { limitCents: 10_000, spentCents: 1_000 },
+      approval: null,
+      config,
+    });
+    expect(decision.effect).toBe("require_approval");
+    expect(decision.reason).toContain("remaining budget");
+  });
+});

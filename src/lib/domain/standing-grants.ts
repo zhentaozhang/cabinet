@@ -64,6 +64,8 @@ export function matchStandingGrant(input: {
   action: NormalizedAction;
   estimatedCostCents: number;
   now: Date;
+  /** The user's zone, so an expiry date is not shown a day off. */
+  timeZone?: string;
 }): StandingMatch {
   const { grants, resource, action, estimatedCostCents, now } = input;
   if (!isDelegable(action)) return null;
@@ -79,14 +81,21 @@ export function matchStandingGrant(input: {
       if (action !== "spend") return true;
       return grant.maxCents !== null && estimatedCostCents <= grant.maxCents;
     })
-    // Exact action beats wildcard; then the roomier remaining budget wins,
-    // which keeps behaviour stable when two policies overlap.
+    /**
+     * Exact action beats wildcard; then the TIGHTEST remaining budget wins.
+     * When two policies overlap, honouring the narrower one keeps the granted
+     * authority as small as the user's most cautious answer.
+     */
     .sort((a, b) => {
       const exact = Number(b.action === action) - Number(a.action === action);
       if (exact !== 0) return exact;
-      const aLeft = a.maxRuns === null ? Infinity : a.maxRuns - a.useCount;
-      const bLeft = b.maxRuns === null ? Infinity : b.maxRuns - b.useCount;
-      return bLeft - aLeft;
+      const aLeft = a.maxRuns === null ? Number.MAX_SAFE_INTEGER : a.maxRuns - a.useCount;
+      const bLeft = b.maxRuns === null ? Number.MAX_SAFE_INTEGER : b.maxRuns - b.useCount;
+      if (aLeft !== bLeft) return aLeft - bLeft;
+      // Then the smaller money ceiling, for the same reason.
+      const aCap = a.maxCents === null ? Number.MAX_SAFE_INTEGER : a.maxCents;
+      const bCap = b.maxCents === null ? Number.MAX_SAFE_INTEGER : b.maxCents;
+      return aCap - bCap;
     });
 
   const grant = candidates[0];
@@ -97,13 +106,30 @@ export function matchStandingGrant(input: {
       ? `已用 ${grant.useCount} 次，不限次`
       : `已用 ${grant.useCount}/${grant.maxRuns} 次`;
   const expiry = grant.expiresAt
-    ? `有效期至 ${grant.expiresAt.toISOString().slice(0, 10)}`
+    ? `有效期至 ${localDate(grant.expiresAt, input.timeZone)}`
     : "长期有效";
   const ceiling =
-    grant.maxCents === null ? "" : `，单次上限 ${(grant.maxCents / 100).toFixed(0)} 元`;
+    grant.maxCents === null
+      ? ""
+      : `，单次上限 ${(grant.maxCents / 100).toFixed(2)} 元`;
 
   return {
     grantId: grant.id,
     reason: `沿用你此前的批准（${usage}，${expiry}${ceiling}）`,
   };
+}
+
+/** YYYY-MM-DD in the user's zone; UTC would show the previous day east of it. */
+function localDate(at: Date, timeZone?: string): string {
+  if (!timeZone) return at.toISOString().slice(0, 10);
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(at);
+  } catch {
+    return at.toISOString().slice(0, 10);
+  }
 }

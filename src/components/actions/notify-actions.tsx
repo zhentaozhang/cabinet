@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 
 import { API_ROUTES, type NotifyPrefsDto } from "@/contracts";
+import type { DeliveryRunDto } from "@/contracts/dto/aggregates";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { browserApi } from "@/lib/api/browser";
@@ -127,12 +128,10 @@ export function DeliverNowButton() {
 
   async function run() {
     setBusy(true);
-    const result = await browserApi.mutate<{
-      sent: number;
-      failed: number;
-      skipped: number;
-      deferred: number;
-    }>(API_ROUTES.notificationsRun, { method: "POST" });
+    const result = await browserApi.mutate<DeliveryRunDto>(
+      API_ROUTES.notificationsRun,
+      { method: "POST" },
+    );
     setBusy(false);
 
     if (!result.ok) {
@@ -140,9 +139,13 @@ export function DeliverNowButton() {
       return;
     }
 
-    const { sent, failed, skipped, deferred } = result.data;
+    const { sent, failed, skipped, deferred, waiting, claimed } = result.data;
     if (failed > 0) toast.error(`投递失败 ${failed} 封，原因见下方记录`);
     else if (sent > 0) toast.success(`已投递 ${sent} 封`);
+    else if (waiting > 0)
+      toast.info(`SMTP 还没配置，${waiting} 封仍在队列里，配置后会自动发出`);
+    else if (claimed === 0)
+      toast.info("没有到期的邮件，队列是空的");
     else toast.info(`没有可投递的邮件（跳过 ${skipped} · 推迟 ${deferred}）`);
     router.refresh();
   }

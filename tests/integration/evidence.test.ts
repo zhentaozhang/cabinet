@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { evidence, runs, steps } from "@/lib/db/schema";
+import { agents, evidence, runs, steps, tasks } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { runTask } from "@/lib/engine";
 import { searchAndPersist } from "@/server/services/connectors/search";
@@ -154,5 +154,79 @@ describe("external evidence", () => {
     expect(["unauthorized", "not_connected"]).toContain(output.status);
     expect(output.provider ?? null).toBeNull();
     expect(output.evidence ?? []).toEqual([]);
+  });
+});
+
+describe("tool trace honesty", () => {
+  /** The seeded research task, so a web tool is actually planned. */
+  const RESEARCH_TASK = "tsk_research";
+
+  /** The tool step of the run this task just produced (the seed has its own). */
+  const lastToolStep = async () => {
+    const [run] = await db
+      .select({ id: runs.id })
+      .from(runs)
+      .where(eq(runs.taskId, RESEARCH_TASK))
+      .orderBy(desc(runs.createdAt))
+      .limit(1);
+    const rows = await db
+      .select()
+      .from(steps)
+      .where(and(eq(steps.type, "tool"), eq(steps.runId, run.id)))
+      .orderBy(desc(steps.idx));
+    return rows[0];
+  };
+
+  it("records web_fetch as not connected instead of running a search", async () => {
+    // Only web_fetch is granted, so the planner must pick it.
+    await db
+      .update(agents)
+      .set({ tools: ["web_fetch"] })
+      .where(eq(agents.id, "ag_research"));
+    await db
+      .update(tasks)
+      .set({ status: "planned" })
+      .where(eq(tasks.id, RESEARCH_TASK));
+
+    await runTask(RESEARCH_TASK, DEMO_USER_ID);
+
+    const step = await lastToolStep();
+    const output = step.output as Record<string, unknown>;
+    expect(output.tool).toBe("web_fetch");
+    expect(output.status).toBe("not_connected");
+    expect(String(output.reason)).toContain("web_fetch 尚未接入");
+
+    const rows = await db.select().from(evidence);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("records the query that was actually sent", async () => {
+    process.env.BRAVE_API_KEY = "test-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ web: { results: [] } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    await db
+      .update(tasks)
+      .set({ status: "planned" })
+      .where(eq(tasks.id, RESEARCH_TASK));
+    await runTask(RESEARCH_TASK, DEMO_USER_ID);
+
+    const step = await lastToolStep();
+    const input = step.input as Record<string, unknown>;
+    const [task] = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, RESEARCH_TASK));
+    expect(String(input.query)).toBe(
+      `${task.title} ${task.description}`.trim(),
+    );
+    vi.unstubAllGlobals();
   });
 });

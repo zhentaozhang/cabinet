@@ -22,6 +22,7 @@ export const dynamic = "force-dynamic";
 export default async function NotificationsPage() {
   const data = await fetchDeliveryPage();
   const owed = data.counts.pending;
+  const inFlight = data.counts.sending;
   const failed = data.counts.failed;
 
   return (
@@ -59,7 +60,7 @@ export default async function NotificationsPage() {
             <p className="text-label leading-relaxed text-faint">
               需要在部署环境里设置{" "}
               <code className="rounded bg-sunken px-1">{data.email.envVars.join(" / ")}</code>
-              。没配置时邮件会留在队列里并标记「未投递」，不会假装发送成功。
+              。没配置时邮件会留在队列里、每小时重试一次，配置好之后自动发出，不会假装发送成功。
             </p>
           )}
           <div className="flex flex-wrap items-center gap-3 border-t border-line/70 pt-3">
@@ -94,6 +95,7 @@ export default async function NotificationsPage() {
           right={
             <div className="flex items-center gap-3 text-label text-faint">
               {owed > 0 ? <span>待投递 {owed}</span> : null}
+              {inFlight > 0 ? <span>发送中 {inFlight}</span> : null}
               {failed > 0 ? <span className="text-danger">失败 {failed}</span> : null}
               <span>已送达 {data.counts.sent}</span>
             </div>

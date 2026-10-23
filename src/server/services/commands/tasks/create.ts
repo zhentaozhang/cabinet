@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { AcceptanceItem } from "@/lib/db/schema";
 import { agents, goals, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
+import { configuredSearchProviders } from "@/lib/connectors/registry";
 import { newId } from "@/lib/ids";
 import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
@@ -42,8 +43,12 @@ export async function promoteSuggestion(taskId: string, userId: string) {
 const WEB_TOOLS = ["web_search", "web_fetch"];
 
 /**
- * Default checklist for research work. Returned only when the assignee can
- * actually reach the web; other tasks keep the caller's (possibly empty) list.
+ * Default checklist for research work.
+ *
+ * Two conditions, both necessary: the assignee must be allowed to reach the
+ * web, and a search provider must actually be configured. Without a key the
+ * run cannot persist a single evidence row, so demanding evidence would make
+ * every default research task fail for a reason the user cannot act on.
  */
 async function defaultEvidenceChecklist(
   assigneeId: string,
@@ -55,6 +60,7 @@ async function defaultEvidenceChecklist(
     .where(and(eq(agents.id, assigneeId), eq(agents.userId, userId)));
   if (!agent) return null;
   if (!agent.tools.some((tool) => WEB_TOOLS.includes(tool))) return null;
+  if (configuredSearchProviders().length === 0) return null;
   return [
     { type: "min_evidence", value: 3, required: true },
     { type: "section", value: "来源", required: true },

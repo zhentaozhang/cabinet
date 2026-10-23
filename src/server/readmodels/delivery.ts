@@ -13,6 +13,7 @@ export async function loadDelivery(userId: string): Promise<DeliveryPageDto> {
       email: data.email,
       counts: {
         pending: data.counts.pending ?? 0,
+        sending: data.counts.sending ?? 0,
         sent: data.counts.sent ?? 0,
         failed: data.counts.failed ?? 0,
         skipped: data.counts.skipped ?? 0,

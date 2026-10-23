@@ -184,7 +184,7 @@ describe("delivery", () => {
     expect(row.nextAttemptAt.getTime()).toBeGreaterThan(before.getTime());
   });
 
-  it("records a missing SMTP configuration as skipped, not failed", async () => {
+  it("keeps a missing SMTP configuration in the queue instead of dropping it", async () => {
     await enqueueNotification({
       userId: DEMO_USER_ID,
       kind: "budget",
@@ -198,11 +198,58 @@ describe("delivery", () => {
       sender: async () => ({ status: "not_configured" as const }),
     });
 
-    expect(report.skipped).toBe(1);
+    expect(report.waiting).toBe(1);
+    expect(report.skipped).toBe(0);
     const [row] = await db.select().from(outbox);
-    expect(row.status).toBe("skipped");
+    // Still owed: configuring SMTP later must deliver it.
+    expect(row.status).toBe("pending");
     expect(row.attempts).toBe(0);
+    expect(row.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
     expect(row.lastError).toContain("SMTP");
+  });
+
+  it("reclaims a row whose runner died while sending", async () => {
+    await enqueueNotification({
+      userId: DEMO_USER_ID,
+      kind: "budget",
+      targetType: "task",
+      targetId: "tsk_stale",
+      subject: "s",
+      body: "b",
+    });
+    // Simulate a crash: claimed, lease already expired, nothing written back.
+    await db.update(outbox).set({
+      status: "sending",
+      nextAttemptAt: new Date(Date.now() - 60_000),
+    });
+
+    const report = await deliverOutbox({ sender: okSender });
+
+    expect(report.claimed).toBe(1);
+    expect(report.sent).toBe(1);
+    const [row] = await db.select().from(outbox);
+    expect(row.status).toBe("sent");
+  });
+
+  it("does not steal a claim that is still inside its lease", async () => {
+    await enqueueNotification({
+      userId: DEMO_USER_ID,
+      kind: "budget",
+      targetType: "task",
+      targetId: "tsk_lease",
+      subject: "s",
+      body: "b",
+    });
+    await db.update(outbox).set({
+      status: "sending",
+      nextAttemptAt: new Date(Date.now() + 120_000),
+    });
+
+    const report = await deliverOutbox({ sender: okSender });
+
+    expect(report.claimed).toBe(0);
+    const [row] = await db.select().from(outbox);
+    expect(row.status).toBe("sending");
   });
 
   it("retries a real failure with backoff, then gives up", async () => {

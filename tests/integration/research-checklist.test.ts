@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DEMO_USER_ID } from "@/lib/demo";
 import { createTask } from "@/server/services/engine";
@@ -6,6 +6,12 @@ import { resetDb } from "../helpers/db";
 
 beforeEach(async () => {
   await resetDb();
+  // Retrieval has to be possible for an evidence requirement to be fair.
+  process.env.BRAVE_API_KEY = "test-brave-key";
+});
+
+afterEach(() => {
+  delete process.env.BRAVE_API_KEY;
 });
 
 describe("research task checklist defaults", () => {
@@ -29,6 +35,30 @@ describe("research task checklist defaults", () => {
       { type: "min_evidence", value: 3, required: true },
       { type: "section", value: "来源", required: true },
     ]);
+  });
+
+  it("does not demand evidence when no search provider is configured", async () => {
+    delete process.env.BRAVE_API_KEY;
+    delete process.env.TAVILY_API_KEY;
+
+    const task = await createTask(
+      {
+        title: "对比两种 rerank 策略",
+        description: "找出代表性来源。",
+        assigneeId: "ag_research",
+        auditorId: "ag_auditor",
+        actionType: "internal_read",
+        resource: "web",
+        estimatedCostCents: 10,
+        acceptanceCriteria: "结论要有可追溯来源。",
+        estimateMin: 25,
+      },
+      DEMO_USER_ID,
+    );
+
+    // Without a key the run cannot persist evidence, so the requirement would
+    // guarantee a rejection the user cannot fix from inside the product.
+    expect(task.acceptanceChecklist).toBeNull();
   });
 
   it("leaves an Agent without web tools alone", async () => {

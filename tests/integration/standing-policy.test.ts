@@ -120,6 +120,26 @@ describe("approvals become bounded standing policies", () => {
     expect(await liveStandingGrant()).toBeUndefined();
   });
 
+  it("treats a revoked base grant as no permission at all", async () => {
+    // The seeded `grt_coach` is a baseline permission, not a standing policy.
+    const [base] = await db
+      .select()
+      .from(agentGrants)
+      .where(
+        and(
+          eq(agentGrants.agentId, "ag_coach"),
+          eq(agentGrants.resource, "calendar"),
+          isNull(agentGrants.createdByApprovalId),
+        ),
+      );
+    await revokeGrant(base.id, DEMO_USER_ID, "收回日历写入权限");
+
+    await decideApproval("appr_booking", "approve", "同意", DEMO_USER_ID);
+    await expect(runTask("tsk_booking", DEMO_USER_ID)).rejects.toBeInstanceOf(
+      PolicyDenied,
+    );
+  });
+
   it("keeps a non-spend policy uncapped, with a default use budget", async () => {
     await decideApproval("appr_booking", "approve", "同意", DEMO_USER_ID, {
       remember: { days: 30 },

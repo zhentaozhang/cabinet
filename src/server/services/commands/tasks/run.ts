@@ -94,7 +94,7 @@ export async function runTask(taskId: string, userId: string) {
   const grants = await db
     .select()
     .from(agentGrants)
-    .where(eq(agentGrants.agentId, agent.id));
+    .where(and(eq(agentGrants.agentId, agent.id), isNull(agentGrants.revokedAt)));
   // One accounting authority: the persisted weekly period ledger.
   const usage = await loadWeeklyUsage(agent.id, timezone);
   let approval: Awaited<ReturnType<typeof loadLatestApproval>> =
@@ -128,6 +128,7 @@ export async function runTask(taskId: string, userId: string) {
     grants: grants.map((grant) => ({
       resource: grant.resource,
       scope: grant.scope,
+      revokedAt: grant.revokedAt,
     })),
     standingGrants: grants.map((grant) => ({
       id: grant.id,
@@ -147,6 +148,7 @@ export async function runTask(taskId: string, userId: string) {
     approval: approval
       ? { status: approval.status, consumedAt: approval.consumedAt }
       : null,
+    timeZone: timezone,
     config,
   });
 
@@ -501,25 +503,32 @@ export async function runTask(taskId: string, userId: string) {
     let toolStatus: ToolStepStatus;
     let toolReason: string;
     let search: Awaited<ReturnType<typeof searchAndPersist>> | null = null;
+    /** The exact string sent to the provider, so the trace can be replayed. */
+    const toolQuery =
+      toolPlan.planned?.tool === "web_search"
+        ? `${task.title} ${task.description}`.trim()
+        : null;
 
     if (!toolPlan.planned) {
       toolStatus = "unauthorized";
       toolReason = toolPlan.reason;
-    } else if (
-      toolPlan.planned.tool === "web_search" ||
-      toolPlan.planned.tool === "web_fetch"
-    ) {
+    } else if (toolPlan.planned.tool === "web_search") {
       // A real external call. Its outcome is recorded as-is; a failure stays a
       // failure instead of being papered over by a template draft.
       search = await searchAndPersist({
         userId: task.userId,
         taskId,
         runId,
-        query: `${task.title} ${task.description}`.trim(),
+        query: toolQuery as string,
       });
       toolStatus = search.status;
       toolReason =
         search.message ?? `检索到 ${search.hits.length} 条可引用来源，已落库。`;
+    } else if (toolPlan.planned.tool === "web_fetch") {
+      // Not implemented. Recording it as a successful `web_search` would claim
+      // a page was fetched when only a keyword query ran.
+      toolStatus = "not_connected";
+      toolReason = "web_fetch 尚未接入：目前只支持关键词检索（web_search）。";
     } else {
       toolStatus = "not_connected";
       toolReason = "No external connector is configured for this tool.";
@@ -528,7 +537,7 @@ export async function runTask(taskId: string, userId: string) {
     await addStep({
       type: "tool",
       tool: toolPlan.planned?.tool,
-      input: { query: task.title, actionType: task.actionType },
+      input: { query: toolQuery ?? task.title, actionType: task.actionType },
       output: {
         status: toolStatus,
         tool: toolPlan.planned?.tool ?? null,

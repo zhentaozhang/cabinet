@@ -225,3 +225,32 @@ describe("matchStandingGrant", () => {
     expect(match?.reason).toContain("1/4");
   });
 });
+
+describe("overlapping policies", () => {
+  it("honours the tightest remaining budget, not the roomiest", () => {
+    const match = matchStandingGrant({
+      grants: [
+        policy({ id: "grt_wide", maxRuns: 50, useCount: 0 }),
+        policy({ id: "grt_narrow", maxRuns: 5, useCount: 0 }),
+      ],
+      resource: "calendar",
+      action: "external_action",
+      estimatedCostCents: 0,
+      now,
+    });
+    expect(match?.grantId).toBe("grt_narrow");
+  });
+
+  it("shows the expiry in the user's zone instead of UTC", () => {
+    const match = matchStandingGrant({
+      grants: [policy({ expiresAt: new Date("2026-11-22T20:00:00Z") })],
+      resource: "calendar",
+      action: "external_action",
+      estimatedCostCents: 0,
+      now,
+      timeZone: "Asia/Shanghai",
+    });
+    // 20:00Z is already the next day in +08:00.
+    expect(match?.reason).toContain("2026-11-23");
+  });
+});

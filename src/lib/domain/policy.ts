@@ -37,6 +37,8 @@ export type TaskPolicy = {
 export type Grant = {
   resource: string;
   scope: string;
+  /** A revoked grant is not permission — it is a record of permission. */
+  revokedAt?: Date | null;
 };
 
 export type ApprovalState = {
@@ -283,6 +285,7 @@ function hasGrant(
 ): boolean {
   const required = SCOPE_RANK[need];
   return grants.some((grant) => {
+    if (grant.revokedAt) return false;
     if (grant.resource !== resource && grant.resource !== "*") return false;
     return (SCOPE_RANK[grant.scope] ?? 0) >= required;
   });
@@ -303,6 +306,8 @@ export function decideRun(input: {
   config: PolicyConfig;
   /** Injected clock, so expiry is testable. Defaults to now. */
   now?: Date;
+  /** The user's timezone, so an expiry date is not shown a day off. */
+  timeZone?: string;
 }): PolicyDecision {
   const { actor, task, grants, budget, approval, config } = input;
   const standingGrants = input.standingGrants ?? [];
@@ -357,6 +362,7 @@ export function decideRun(input: {
     action,
     estimatedCostCents: task.estimatedCostCents,
     now: input.now ?? new Date(),
+    timeZone: input.timeZone,
   });
 
   const gate = (decision: PolicyDecision): PolicyDecision => {
@@ -444,7 +450,10 @@ export function decideRun(input: {
     if (level <= 1) {
       return deny("Estimated spend exceeds budget at L1.");
     }
-    return gate(requireApproval("Estimated spend exceeds remaining budget."));
+    // Deliberately NOT gated: a standing policy is "the same action as last
+    // time", never "more money than the budget allows". This is the one check
+    // that must always surface to the user.
+    return requireApproval("Estimated spend exceeds remaining budget.");
   }
 
   return allow("Policy allows execution.");
