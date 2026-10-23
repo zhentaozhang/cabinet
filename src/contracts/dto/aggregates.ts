@@ -13,6 +13,7 @@ import {
   dissentDtoSchema,
   retrievedEvidenceDtoSchema,
   goalDtoSchema,
+  grantDtoSchema,
   insightDtoSchema,
   memoryDtoSchema,
   policyConfigDtoSchema,
@@ -225,6 +226,7 @@ export type ApprenticeshipEvidenceDto = z.infer<
 export const agentPageSchema = z.object({
   timezone: z.string(),
   agent: agentDtoSchema,
+  grants: z.array(grantDtoSchema),
   budget: budgetViewDtoSchema,
   apprenticeship: apprenticeshipEvidenceSchema.nullable(),
   runs: z.array(runDtoSchema),

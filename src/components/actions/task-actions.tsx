@@ -177,7 +177,13 @@ export function TaskActions({
   );
 }
 
-export function ApprovalActions({ approvalId }: { approvalId: string }) {
+export function ApprovalActions({
+  approvalId,
+  actionType = "",
+}: {
+  approvalId: string;
+  actionType?: string;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   /**
@@ -186,6 +192,11 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
    * visible state of this widget.
    */
   const [settled, setSettled] = useState<string | null>(null);
+  /** 记住这类决定。Off by default: asking every time is the safe default. */
+  const [remember, setRemember] = useState(false);
+  const [days, setDays] = useState(30);
+  const [maxCents, setMaxCents] = useState(5_000);
+  const isSpend = actionType === "spend";
 
   async function decide(decision: "approve" | "reject") {
     setBusy(decision);
@@ -193,6 +204,15 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
     const data = await call(`/api/approvals/${approvalId}`, "PATCH", {
       decision,
       reason: decision === "reject" ? "用户拒绝" : "用户批准",
+      ...(decision === "approve" && remember
+        ? {
+            remember: {
+              days,
+              maxRuns: 20,
+              ...(isSpend ? { maxCents } : {}),
+            },
+          }
+        : {}),
     });
     setBusy(null);
     if (!data.ok) {
@@ -200,7 +220,13 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
       toast.error(data.error ?? "审批失败");
       return;
     }
-    toast.success(decision === "approve" ? "已批准外部动作" : "已拒绝动作");
+    toast.success(
+      decision === "approve"
+        ? remember
+          ? `已批准，并在 ${days} 天内自动执行同类动作`
+          : "已批准外部动作"
+        : "已拒绝动作",
+    );
     router.refresh();
   }
 
@@ -222,6 +248,49 @@ export function ApprovalActions({ approvalId }: { approvalId: string }) {
       <Button size="sm" onClick={() => decide("reject")} disabled={busy !== null}>
         <X className="size-3" /> 拒绝
       </Button>
+      <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-label text-faint">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(event) => setRemember(event.target.checked)}
+          className="size-3 accent-accent"
+          aria-describedby="remember-hint"
+        />
+        记住这类决定
+      </label>
+
+      {remember ? (
+        <div id="remember-hint" className="flex flex-wrap items-center gap-2 text-label text-faint">
+          <label className="flex items-center gap-1">
+            有效
+            <select
+              value={days}
+              onChange={(event) => setDays(Number(event.target.value))}
+              aria-label="记住多少天"
+              className="rounded border border-line bg-panel px-1.5 py-0.5 text-label text-ink"
+            >
+              <option value={7}>7 天</option>
+              <option value={30}>30 天</option>
+              <option value={90}>90 天</option>
+            </select>
+          </label>
+          {isSpend ? (
+            <label className="flex items-center gap-1">
+              单次上限 ¥
+              <input
+                type="number"
+                min={0}
+                step={10}
+                value={Math.round(maxCents / 100)}
+                onChange={(event) => setMaxCents(Number(event.target.value) * 100)}
+                aria-label="单次金额上限（元）"
+                className="w-16 rounded border border-line bg-panel px-1.5 py-0.5 text-label text-ink"
+              />
+            </label>
+          ) : null}
+          <span>最多 20 次</span>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { asDto } from "@/server/dto-guard";
 import {
   toAgentDto,
   toBudgetViewDto,
+  toGrantDto,
   toMemoryDto,
   toRunDto,
   toSkillDto,
@@ -23,6 +24,7 @@ export async function loadAgent(
       timezone: data.timezone,
       agent: toAgentDto(data.agent),
       budget: toBudgetViewDto(data.budget),
+      grants: data.grants.map((grant) => toGrantDto(grant)),
       apprenticeship: data.apprenticeship
         ? {
             ...data.apprenticeship,

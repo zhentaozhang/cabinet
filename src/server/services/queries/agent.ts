@@ -1,6 +1,14 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { agents, memories, runs, skills, tasks, users } from "@/lib/db/schema";
+import {
+  agentGrants,
+  agents,
+  memories,
+  runs,
+  skills,
+  tasks,
+  users,
+} from "@/lib/db/schema";
 import { loadWeeklyUsage } from "./budget";
 import { loadApprenticeshipEvidence } from "./apprenticeship";
 export async function getAgentData(agentId: string, userId: string) {
@@ -11,7 +19,7 @@ export async function getAgentData(agentId: string, userId: string) {
     .where(and(eq(agents.id, agentId), eq(agents.userId, userId)));
   if (!agent) return null;
 
-  const [agentRuns, agentMemories, agentSkills, assigned, userRows] =
+  const [agentRuns, agentMemories, agentSkills, assigned, userRows, grantRows] =
     await Promise.all([
     db
       .select()
@@ -36,6 +44,12 @@ export async function getAgentData(agentId: string, userId: string) {
       .select({ timezone: users.timezone })
       .from(users)
       .where(eq(users.id, userId)),
+    // Standing policies first: they are what the user can revoke here.
+    db
+      .select()
+      .from(agentGrants)
+      .where(eq(agentGrants.agentId, agentId))
+      .orderBy(desc(agentGrants.createdAt)),
   ]);
   const timezone = userRows[0]?.timezone ?? "UTC";
   // Read-only: a page load never provisions a bucket.
@@ -53,6 +67,7 @@ export async function getAgentData(agentId: string, userId: string) {
     timezone,
     agent,
     budget,
+    grants: grantRows,
     runs: agentRuns,
     memories: agentMemories,
     skills: agentSkills,

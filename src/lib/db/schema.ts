@@ -239,8 +239,32 @@ export const agentGrants = pgTable(
     resource: text("resource").notNull(),
     scope: text("scope").notNull(),
     config: jsonb("config").$type<Record<string, unknown>>().notNull(),
+    /**
+     * Standing policies created from one approval ("以后同类自动执行").
+     *
+     * A base grant says *what* an agent may touch; a standing policy says the
+     * user already said yes to this class of action, once, on a date — so it
+     * has an expiry, a money ceiling, a use budget and a revocation path. The
+     * defaults below describe a plain permission grant with no such scope.
+     */
+    action: text("action").notNull().default("*"),
+    label: text("label"),
+    createdByApprovalId: text("created_by_approval_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    maxCents: integer("max_cents"),
+    maxRuns: integer("max_runs"),
+    useCount: integer("use_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedReason: text("revoked_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
-  (t) => [index("agent_grants_agent_idx").on(t.agentId)],
+  (t) => [
+    index("agent_grants_agent_idx").on(t.agentId),
+    index("agent_grants_policy_idx").on(t.agentId, t.resource, t.action),
+  ],
 );
 
 export const goals = pgTable(

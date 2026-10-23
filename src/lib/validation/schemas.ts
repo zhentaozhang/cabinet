@@ -13,9 +13,21 @@ export const autonomySchema = z.object({
   level: z.number().int().min(0).max(3),
 });
 
+export const rememberSchema = z.object({
+  days: z.number().int().min(1).max(180),
+  maxCents: z.number().int().min(0).optional(),
+  maxRuns: z.number().int().min(1).max(200).optional(),
+});
+
 export const approvalDecisionSchema = z.object({
   decision: z.enum(["approve", "reject"]),
   reason: z.string().max(2000).optional(),
+  /**
+   * "以后同类自动执行". Only honoured on approve; a rejection never mints
+   * standing authority, so the field is ignored there rather than rejected —
+   * the decision is still valid without it.
+   */
+  remember: rememberSchema.optional(),
 });
 
 export const councilDecisionSchema = z

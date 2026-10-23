@@ -1,7 +1,9 @@
+import { standingGrantState } from "@/lib/domain/standing-grants";
 import type {
   EvidenceRow,
 } from "@/lib/db/schema";
 import type {
+  agentGrants,
   agents,
   approvals,
   artifacts,
@@ -32,6 +34,7 @@ import type {
   CouncilDto,
   CouncilPositionDto,
   DissentDto,
+  GrantDto,
   RetrievedEvidenceDto,
   GoalDto,
   InsightDto,
@@ -85,6 +88,57 @@ export function toAgentDto(row: typeof agents.$inferSelect): AgentDto {
     budgetPeriodStart: toIsoOrNull(row.budgetPeriodStart),
     createdAt: toIso(row.createdAt),
     retiredAt: toIsoOrNull(row.retiredAt),
+  };
+}
+
+export function toGrantDto(
+  row: typeof agentGrants.$inferSelect,
+  now = new Date(),
+): GrantDto {
+  /**
+   * A grant with no expiry/budget is a base permission (what the agent may
+   * touch). The moment it carries a standing-policy field, its state becomes
+   * the thing the user needs to see: live, revoked, expired or used up.
+   */
+  const isStanding =
+    row.createdByApprovalId !== null ||
+    row.expiresAt !== null ||
+    row.maxRuns !== null;
+
+  const state = isStanding
+    ? standingGrantState(
+        {
+          id: row.id,
+          resource: row.resource,
+          action: row.action,
+          createdByApprovalId: row.createdByApprovalId,
+          expiresAt: row.expiresAt,
+          maxCents: row.maxCents,
+          maxRuns: row.maxRuns,
+          useCount: row.useCount,
+          revokedAt: row.revokedAt,
+        },
+        now,
+      )
+    : "base";
+
+  return {
+    id: row.id,
+    agentId: row.agentId,
+    resource: row.resource,
+    scope: row.scope,
+    action: row.action,
+    label: row.label,
+    state,
+    createdByApprovalId: row.createdByApprovalId,
+    expiresAt: toIsoOrNull(row.expiresAt),
+    maxCents: row.maxCents,
+    maxRuns: row.maxRuns,
+    useCount: row.useCount,
+    lastUsedAt: toIsoOrNull(row.lastUsedAt),
+    revokedAt: toIsoOrNull(row.revokedAt),
+    revokedReason: row.revokedReason,
+    createdAt: toIso(row.createdAt),
   };
 }
 

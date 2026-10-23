@@ -1,8 +1,16 @@
+import { matchStandingGrant, type StandingGrant } from "./standing-grants";
+
 export type PolicyEffect = "allow" | "suggest" | "require_approval" | "deny";
 
 export type PolicyDecision = {
   effect: PolicyEffect;
   reason: string;
+  /**
+   * Set when a standing policy (a previous "yes", bounded by expiry, budget and
+   * revocation) is what lifted the approval gate. The caller records the use so
+   * the ceiling actually decrements.
+   */
+  standingGrantId?: string;
 };
 
 export type Actor = {
@@ -288,11 +296,16 @@ export function decideRun(input: {
   actor: Actor;
   task: TaskPolicy;
   grants: Grant[];
+  /** Standing policies created from earlier approvals. Optional: none at all. */
+  standingGrants?: StandingGrant[];
   budget: { limitCents: number; spentCents: number };
   approval: ApprovalState;
   config: PolicyConfig;
+  /** Injected clock, so expiry is testable. Defaults to now. */
+  now?: Date;
 }): PolicyDecision {
   const { actor, task, grants, budget, approval, config } = input;
+  const standingGrants = input.standingGrants ?? [];
 
   if (actor.status !== "active") {
     return deny(`Agent is ${actor.status}, not active.`);
@@ -330,21 +343,50 @@ export function decideRun(input: {
    * allow, so a revoked grant, a forbidden action type or a second use of a
    * consumed approval stays blocked.
    */
-  const gate = (decision: PolicyDecision): PolicyDecision => {
-    if (decision.effect !== "require_approval" && decision.effect !== "suggest") {
-      return decision;
-    }
-    if (approval?.status !== "approved") return decision;
-    if (approval.consumedAt) {
-      return deny("Approval has already been consumed.");
-    }
-    return allow(`Execution approved by user. ${decision.reason}`);
-  };
-
   const action = normalizeAction(task.actionType);
   if (action === "unknown") {
     return deny(`Unknown action type: ${task.actionType}.`);
   }
+
+  // Standing policies lift exactly one thing: "ask me every time". They never
+  // promote an L1 agent (a `suggest` stays a suggestion), never mint a resource
+  // permission, and never cover admin/audit work.
+  const standing = matchStandingGrant({
+    grants: standingGrants,
+    resource: task.resource,
+    action,
+    estimatedCostCents: task.estimatedCostCents,
+    now: input.now ?? new Date(),
+  });
+
+  const gate = (decision: PolicyDecision): PolicyDecision => {
+    if (decision.effect !== "require_approval" && decision.effect !== "suggest") {
+      return decision;
+    }
+    if (approval?.status === "approved") {
+      if (!approval.consumedAt) {
+        return allow(`Execution approved by user. ${decision.reason}`);
+      }
+      // A spent approval is spent — unless the user also turned it into a
+      // standing policy, in which case that policy is what covers this run.
+      if (decision.effect === "require_approval" && standing) {
+        return {
+          effect: "allow",
+          reason: `${standing.reason}：${decision.reason}`,
+          standingGrantId: standing.grantId,
+        };
+      }
+      return deny("Approval has already been consumed.");
+    }
+    if (decision.effect === "require_approval" && standing) {
+      return {
+        effect: "allow",
+        reason: `${standing.reason}：${decision.reason}`,
+        standingGrantId: standing.grantId,
+      };
+    }
+    return decision;
+  };
 
   const requiredScope = action === "internal_read" ? "read" : "write";
   if (!hasGrant(grants, task.resource, requiredScope)) {

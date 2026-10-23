@@ -12,7 +12,14 @@ import {
   Sparkles,
 } from "lucide-react";
 import { fetchAgentPage } from "@/lib/api/pages";
-import { AUTONOMY_LABELS, passRate, roleMeta, statusTone } from "@/lib/agents";
+import {
+  AUTONOMY_LABELS,
+  grantStateLabel,
+  grantStateTone,
+  passRate,
+  roleMeta,
+  statusTone,
+} from "@/lib/agents";
 import { money, pct, relative, shortDate, timeOnly } from "@/lib/format";
 import {
   Avatar,
@@ -27,6 +34,7 @@ import {
   AutonomyControl,
   ExamButton,
   ObservationRecorder,
+  RevokeGrantButton,
 } from "@/components/actions";
 
 export const metadata: Metadata = {
@@ -44,7 +52,12 @@ export default async function AgentPage({
   const data = await fetchAgentPage(id);
   if (!data) notFound();
   const tz = data.timezone;
-  const { agent, budget, apprenticeship, runs, memories, skills, tasks } = data;
+  const { agent, budget, apprenticeship, runs, memories, skills, tasks, grants } =
+    data;
+  // Base permissions describe what the agent may touch; standing policies are
+  // the rules the user created by approving once, and can revoke here.
+  const standingGrants = grants.filter((grant) => grant.state !== "base");
+  const baseGrants = grants.filter((grant) => grant.state === "base");
   const meta = roleMeta(agent.role);
   const rate = passRate(agent.successCount, agent.failCount);
   // Week usage comes from the ledger, never from the frozen agents.spent_cents
@@ -318,14 +331,75 @@ export default async function AgentPage({
           ) : null}
 
           <Card>
-            <CardHeader eyebrow="Tools & grants" title="工具与权限" />
-            <div className="space-y-2 px-5 py-4">
+            <CardHeader
+              eyebrow="Tools & grants"
+              title="工具与权限"
+              right={
+                <Badge tone="neutral">{agent.tools.length} 个工具</Badge>
+              }
+            />
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2 px-5 py-4 sm:grid-cols-3">
               {agent.tools.map((tool) => (
                 <div key={tool} className="flex items-center gap-2 text-label text-muted">
-                  <KeyRound className="size-3 text-faint" />
-                  <span className="mono">{tool}</span>
+                  <KeyRound className="size-3 shrink-0 text-faint" />
+                  <span className="mono truncate">{tool}</span>
                 </div>
               ))}
+            </div>
+
+            {baseGrants.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-line px-5 py-2.5">
+                <span className="text-label text-faint">基础权限</span>
+                {baseGrants.map((grant) => (
+                  <span
+                    key={grant.id}
+                    className="mono rounded border border-line/70 px-1.5 py-0.5 text-label text-muted"
+                  >
+                    {grant.resource}/{grant.scope}
+                  </span>
+                ))}
+                <span className="text-label text-faint">· 来自岗位设定，不可在此撤销</span>
+              </div>
+            ) : null}
+
+            <div className="border-t border-line px-5 py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-label text-ink">长期策略</h3>
+                <span className="text-label text-faint">
+                  你批准过的同类动作，可随时撤销
+                </span>
+              </div>
+              {standingGrants.length === 0 ? (
+                <p className="mt-2 text-label leading-relaxed text-faint">
+                  还没有。批准任务时勾选「记住这类决定」，这里就会出现一条有期限、有次数的自动执行规则。
+                </p>
+              ) : (
+                <div className="mt-2 divide-y divide-line/70">
+                  {standingGrants.map((grant) => (
+                    <div key={grant.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                      <Badge tone={grantStateTone(grant.state)}>
+                        {grantStateLabel(grant.state)}
+                      </Badge>
+                      <span className="mono text-label text-muted">
+                        {grant.resource}/{grant.action}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-label text-faint" title={grant.label ?? undefined}>
+                        {grant.label ?? "（无说明）"}
+                      </span>
+                      <span className="text-label text-faint">
+                        {grant.maxRuns === null
+                          ? `已用 ${grant.useCount} 次`
+                          : `已用 ${grant.useCount}/${grant.maxRuns}`}
+                        {grant.expiresAt ? ` · 至 ${shortDate(grant.expiresAt, tz)}` : ""}
+                        {grant.maxCents !== null ? ` · 单次上限 ${money(grant.maxCents)}` : ""}
+                      </span>
+                      {grant.state === "active" ? (
+                        <RevokeGrantButton grantId={grant.id} label={grant.label ?? grant.resource} />
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </Card>
 

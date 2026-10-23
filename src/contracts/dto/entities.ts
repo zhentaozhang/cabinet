@@ -57,6 +57,32 @@ export const profileDtoSchema = z.object({
 });
 export type ProfileDto = z.infer<typeof profileDtoSchema>;
 
+/**
+ * A standing policy (a previous approval turned into a bounded rule) or a plain
+ * permission grant. `state` is derived server-side so the UI never has to
+ * re-implement expiry/exhaustion math.
+ */
+export const grantDtoSchema = z.object({
+  id: z.string(),
+  agentId: z.string(),
+  resource: z.string(),
+  scope: z.string(),
+  action: z.string(),
+  label: z.string().nullable(),
+  /** active | revoked | expired | exhausted | base */
+  state: z.enum(["active", "revoked", "expired", "exhausted", "base"]),
+  createdByApprovalId: z.string().nullable(),
+  expiresAt: isoDateTime.nullable(),
+  maxCents: z.number().nullable(),
+  maxRuns: z.number().nullable(),
+  useCount: z.number(),
+  lastUsedAt: isoDateTime.nullable(),
+  revokedAt: isoDateTime.nullable(),
+  revokedReason: z.string().nullable(),
+  createdAt: isoDateTime,
+});
+export type GrantDto = z.infer<typeof grantDtoSchema>;
+
 export const agentDtoSchema = z.object({
   id: z.string(),
   userId: z.string(),

@@ -7,6 +7,10 @@ import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
 import type { Tx } from "../../shared/tx";
 import { enqueueNotification, notices } from "../notify";
+import {
+  createStandingGrantFromApproval,
+  type RememberInput,
+} from "./grants";
 import { loadLatestApproval } from "./execution";
 
 export async function requestApproval(
@@ -73,6 +77,7 @@ export async function decideApproval(
   decision: "approve" | "reject",
   reason: string | undefined,
   userId: string,
+  options: { remember?: RememberInput } = {},
 ) {
   const [approval] = await db
     .select()
@@ -173,6 +178,23 @@ export async function decideApproval(
         )
         .returning();
       if (!taskUpdated) throw new ConflictError("Task state changed; retry.");
+
+      // "记住这类决定" only exists for an approval, and only on approve: a
+      // rejection must never mint standing authority.
+      if (decision === "approve" && options.remember && task.assigneeId) {
+        await createStandingGrantFromApproval(
+          {
+            userId: approval.userId,
+            agentId: task.assigneeId,
+            resource: task.resource,
+            actionType: task.actionType,
+            approvalId: approval.id,
+            taskTitle: task.title,
+            remember: options.remember,
+          },
+          tx,
+        );
+      }
     }
 
     await logAuditTx(tx, {

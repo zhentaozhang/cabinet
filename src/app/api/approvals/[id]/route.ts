@@ -17,7 +17,9 @@ export async function PATCH(
     body,
     handler: async (userId) => {
       const input = parseBody(approvalDecisionSchema, body);
-      await decideApproval(id, input.decision, input.reason, userId);
+      await decideApproval(id, input.decision, input.reason, userId, {
+        remember: input.remember,
+      });
       revalidatePath("/");
       revalidatePath("/review");
       return { status: 200, body: { ok: true } };

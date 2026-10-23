@@ -232,3 +232,28 @@ export function deliveryStatusLabel(status: string): string {
 export function deliveryStatusTone(status: string): BadgeTone {
   return DELIVERY_STATUS_TONE[status] ?? "neutral";
 }
+
+/** Standing policies: what a previous approval now covers, and until when. */
+export const GRANT_STATE_LABEL: Record<string, string> = {
+  active: "自动执行中",
+  revoked: "已撤销",
+  expired: "已过期",
+  exhausted: "次数用尽",
+  base: "基础权限",
+};
+
+export const GRANT_STATE_TONE: Record<string, BadgeTone> = {
+  active: "teal",
+  revoked: "neutral",
+  expired: "neutral",
+  exhausted: "accent",
+  base: "blue",
+};
+
+export function grantStateLabel(state: string): string {
+  return GRANT_STATE_LABEL[state] ?? state;
+}
+
+export function grantStateTone(state: string): BadgeTone {
+  return GRANT_STATE_TONE[state] ?? "neutral";
+}

@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agentBudgetReservations,
@@ -128,6 +128,17 @@ export async function runTask(taskId: string, userId: string) {
     grants: grants.map((grant) => ({
       resource: grant.resource,
       scope: grant.scope,
+    })),
+    standingGrants: grants.map((grant) => ({
+      id: grant.id,
+      resource: grant.resource,
+      action: grant.action,
+      createdByApprovalId: grant.createdByApprovalId,
+      expiresAt: grant.expiresAt,
+      maxCents: grant.maxCents,
+      maxRuns: grant.maxRuns,
+      useCount: grant.useCount,
+      revokedAt: grant.revokedAt,
     })),
     budget: {
       limitCents: usage.limitCents,
@@ -297,6 +308,55 @@ export async function runTask(taskId: string, userId: string) {
   const runId = newId("run");
   const startedAt = new Date();
   await db.transaction(async (tx) => {
+    /**
+     * Spend one use of the standing policy that lifted the gate.
+     *
+     * The condition is part of the UPDATE, so two concurrent runs cannot both
+     * take the last use: the loser sees no row and is denied, rather than
+     * running past the ceiling the user set.
+     */
+    if (decision.standingGrantId) {
+      const [spent] = await tx
+        .update(agentGrants)
+        .set({
+          useCount: sql`${agentGrants.useCount} + 1`,
+          lastUsedAt: startedAt,
+        })
+        .where(
+          and(
+            eq(agentGrants.id, decision.standingGrantId),
+            isNull(agentGrants.revokedAt),
+            or(
+              isNull(agentGrants.maxRuns),
+              lt(agentGrants.useCount, agentGrants.maxRuns),
+            ),
+          ),
+        )
+        .returning({
+          id: agentGrants.id,
+          useCount: agentGrants.useCount,
+          maxRuns: agentGrants.maxRuns,
+        });
+      if (!spent) {
+        throw new PolicyDenied(
+          "Standing policy was revoked or used up before this run started.",
+        );
+      }
+      await logAuditTx(tx, {
+        userId: task.userId,
+        actor: "user",
+        action: "grant.use",
+        target: spent.id,
+        before: { useCount: spent.useCount - 1 },
+        after: {
+          useCount: spent.useCount,
+          maxRuns: spent.maxRuns,
+          taskId,
+          runId,
+        },
+      });
+    }
+
     let status = task.status;
     if (status === "planned") {
       assertTransition("task", status, "assigned");
