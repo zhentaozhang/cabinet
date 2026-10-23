@@ -1,7 +1,18 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { agentGrants, agents, councils, dissents, goals, profiles, users } from "@/lib/db/schema";
+import {
+  agentBudgetPeriods,
+  agentBudgetReservations,
+  agentGrants,
+  agents,
+  councils,
+  dissents,
+  goals,
+  profiles,
+  tasks,
+  users,
+} from "@/lib/db/schema";
 import { setupWorkspace } from "@/lib/setup";
 import { exportAccount, deleteAccount } from "@/lib/account";
 import { ConflictError } from "@/lib/domain/errors";
@@ -101,7 +112,13 @@ describe("account export and deletion", () => {
       .select()
       .from(agents)
       .where(eq(agents.userId, NEW_USER))
-      .limit(1);
+      .limit(2);
+    const auditor = (
+      await db
+        .select()
+        .from(agents)
+        .where(eq(agents.userId, NEW_USER))
+    ).find((row) => row.id !== agent.id)!;
     await db.insert(councils).values({
       id: "ccl_account_test",
       userId: NEW_USER,
@@ -126,7 +143,50 @@ describe("account export and deletion", () => {
       evidence: [],
     });
 
+    /**
+     * A single run leaves a budget reservation behind (settlement only flips
+     * its state), and that row references the agent. Deleting the account used
+     * to fail with a foreign key violation here.
+     */
+    await db.insert(tasks).values({
+      id: "tsk_account_test",
+      userId: NEW_USER,
+      title: "account test task",
+      description: "x",
+      acceptanceCriteria: "x",
+      status: "done",
+      assigneeId: agent.id,
+      auditorId: auditor.id,
+      actionType: "internal",
+      resource: "task",
+      priority: 2,
+    });
+    await db.insert(agentBudgetPeriods).values({
+      id: "abp_account_test",
+      userId: NEW_USER,
+      agentId: agent.id,
+      timezone: "Asia/Shanghai",
+      periodStart: new Date("2026-10-19T00:00:00Z"),
+      periodEnd: new Date("2026-10-26T00:00:00Z"),
+      limitCents: 5000,
+      reservedCents: 120,
+      settledCents: 0,
+      unknownCents: 0,
+    });
+    await db.insert(agentBudgetReservations).values({
+      id: "abr_account_test",
+      userId: NEW_USER,
+      periodId: "abp_account_test",
+      agentId: agent.id,
+      taskId: "tsk_account_test",
+      state: "settled",
+      amountCents: 120,
+      settledCents: 120,
+    });
+
     const exported = await exportAccount(NEW_USER);
+    expect(exported.agentBudgetReservations).toHaveLength(1);
+    expect(exported.agentBudgetPeriods).toHaveLength(1);
     expect(exported.dissents).toHaveLength(1);
     expect(exported.agents).toHaveLength(7);
     expect(exported.user?.id).toBe(NEW_USER);
@@ -144,6 +204,17 @@ describe("account export and deletion", () => {
       .from(agents)
       .where(eq(agents.userId, NEW_USER));
     expect(remainingAgents).toHaveLength(0);
+
+    const remainingReservations = await db
+      .select()
+      .from(agentBudgetReservations)
+      .where(eq(agentBudgetReservations.userId, NEW_USER));
+    expect(remainingReservations).toHaveLength(0);
+    const remainingPeriods = await db
+      .select()
+      .from(agentBudgetPeriods)
+      .where(eq(agentBudgetPeriods.userId, NEW_USER));
+    expect(remainingPeriods).toHaveLength(0);
 
     const remainingDissents = await db
       .select()

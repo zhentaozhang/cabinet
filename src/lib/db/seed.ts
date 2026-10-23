@@ -1156,7 +1156,7 @@ export async function seedDemo(): Promise<void> {
         aao: 5,
         adherence: 63,
         managementMin: 2.8,
-        costUsd: 0.07,
+        costCents: 7,
         goalProgress: 38,
         auditRejectRate: 17,
       },

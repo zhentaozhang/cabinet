@@ -24,7 +24,12 @@ describe("acceptance checklist", () => {
       { type: "manual", note: "人工复核引用", required: false },
     ]);
 
-    expect(results.every((result) => result.passed)).toBe(true);
+    const rules = results.filter((result) => result.item.type !== "manual");
+    expect(rules.every((result) => result.passed)).toBe(true);
+    // A manual item is never auto-passed: it waits for the user.
+    const manual = results.find((result) => result.item.type === "manual")!;
+    expect(manual.passed).toBe(false);
+    expect(manual.undetermined).toBe(true);
     expect(checklistPassed(results)).toBe(true);
   });
 
@@ -83,5 +88,41 @@ describe("acceptance checklist", () => {
       { type: "min_evidence", value: 1, required: true },
     ]);
     expect(results[0].passed).toBe(false);
+  });
+});
+
+describe("undetermined rules", () => {
+  it("never turns a manual item green, but does not fail the checklist", () => {
+    const results = evaluateAcceptance("产物内容足够长，足以通过字数检查。", [
+      { type: "min_words", value: 5, required: true },
+      { type: "manual", note: "引用是否支持结论", required: true },
+    ]);
+
+    expect(checklistPassed(results)).toBe(true);
+    const manual = results[1];
+    expect(manual.undetermined).toBe(true);
+    expect(manual.passed).toBe(false);
+    expect(manual.reason).toContain("不代判");
+  });
+
+  it("treats an evidence rule over a hand-submitted artifact as pending review", () => {
+    const results = evaluateAcceptance("人工写的调研笔记，没有任何 [cite:…] 标记。", [
+      { type: "min_evidence", value: 3, required: true },
+    ], { evidenceApplicable: false, evidenceCount: 0, evidenceIds: new Set() });
+
+    expect(results[0].undetermined).toBe(true);
+    expect(results[0].passed).toBe(false);
+    expect(results[0].reason).toContain("人工复核");
+    expect(checklistPassed(results)).toBe(true);
+  });
+
+  it("still fails an evidence rule when the artifact came from a run", () => {
+    const results = evaluateAcceptance("没有引用。", [
+      { type: "min_evidence", value: 3, required: true },
+    ], { evidenceApplicable: true, evidenceCount: 0, evidenceIds: new Set() });
+
+    expect(results[0].undetermined).toBeUndefined();
+    expect(results[0].passed).toBe(false);
+    expect(checklistPassed(results)).toBe(false);
   });
 });

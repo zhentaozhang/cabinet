@@ -41,6 +41,11 @@ export type AcceptanceContext = {
    * instead of inflating the score.
    */
   evidenceIds?: Set<string>;
+  /**
+   * False for a hand-submitted artifact: there is no run, so no retrieval
+   * happened and an evidence rule cannot judge it — it becomes a manual item.
+   */
+  evidenceApplicable?: boolean;
 };
 
 /**
@@ -85,6 +90,14 @@ export function evaluateAcceptance(
     }
 
     if (item.type === "min_evidence") {
+      if (context.evidenceApplicable === false) {
+        return {
+          item,
+          passed: false,
+          undetermined: true,
+          reason: `人工提交的产物没有检索证据，此项需你人工复核（要求至少 ${item.value} 条）`,
+        };
+      }
       const known = context.evidenceIds;
       if (!known) {
         const count = context.evidenceCount ?? 0;
@@ -127,17 +140,24 @@ export function evaluateAcceptance(
       };
     }
 
-    const passed = content.trim().length > 0;
+    // A manual item is the user's verdict to give, never the Auditor's: the
+    // non-empty check is not a pass, so it must not silently turn green.
     return {
       item,
-      passed,
-      reason: passed
-        ? `人工项「${item.note}」：产物非空，需 Auditor 复核`
-        : `人工项「${item.note}」：产物为空`,
+      passed: false,
+      undetermined: true,
+      reason: `人工项「${item.note}」需要你亲自判定，Auditor 不代判`,
     };
   });
 }
 
+/** Undetermined items are excluded: they are pending, not failed. */
 export function checklistPassed(results: AcceptanceResult[]): boolean {
-  return results.every((result) => !result.item.required || result.passed);
+  return results.every(
+    (result) => !result.item.required || result.passed || result.undetermined,
+  );
+}
+
+export function undeterminedCount(results: AcceptanceResult[]): number {
+  return results.filter((result) => result.undetermined).length;
 }

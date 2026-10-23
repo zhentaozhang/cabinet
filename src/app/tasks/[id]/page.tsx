@@ -207,7 +207,7 @@ export default async function TaskPage({
                             : item.type === "min_sources"
                               ? `至少 ${item.value} 个引用链接`
                               : item.type === "min_evidence"
-                                ? `至少 ${item.value} 条落库证据`
+                                ? `至少 ${item.value} 条被引用的落库证据`
                                 : item.type === "section"
                                   ? `包含章节「${item.value}」`
                                   : `人工项：${item.note}`;
@@ -222,7 +222,9 @@ export default async function TaskPage({
                           <span className="text-label leading-relaxed">
                             {result ? (
                               <span className="flex items-start gap-1.5">
-                                {result.passed ? (
+                                {result.undetermined ? (
+                                  <CircleAlert className="mt-0.5 size-3 shrink-0 text-accent" />
+                                ) : result.passed ? (
                                   <CheckCircle2 className="mt-0.5 size-3 shrink-0 text-teal" />
                                 ) : (
                                   <XCircle className="mt-0.5 size-3 shrink-0 text-danger" />
@@ -230,10 +232,18 @@ export default async function TaskPage({
                                 <span className="min-w-0">
                                   <span
                                     className={
-                                      result.passed ? "text-teal" : "text-danger"
+                                      result.undetermined
+                                        ? "text-accent"
+                                        : result.passed
+                                          ? "text-teal"
+                                          : "text-danger"
                                     }
                                   >
-                                    {result.passed ? "通过" : "未通过"}
+                                    {result.undetermined
+                                      ? "需人工复核"
+                                      : result.passed
+                                        ? "通过"
+                                        : "未通过"}
                                   </span>
                                   {result.reason ? (
                                     <span className="text-faint">

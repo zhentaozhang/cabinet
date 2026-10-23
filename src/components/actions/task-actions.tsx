@@ -197,6 +197,16 @@ export function ApprovalActions({
   const [days, setDays] = useState(30);
   const [maxCents, setMaxCents] = useState(5_000);
   const isSpend = actionType === "spend";
+  /**
+   * `admin` and `audit` may never become standing policy — the server rejects
+   * them, and an unset actionType is unknown, so the checkbox is only offered
+   * where the decision can actually be delegated.
+   */
+  const delegable =
+    actionType !== "" && actionType !== "admin" && actionType !== "audit";
+  const maxCentsValid = !isSpend || maxCents >= 100;
+
+  const effectiveRemember = remember && delegable && maxCentsValid;
 
   async function decide(decision: "approve" | "reject") {
     setBusy(decision);
@@ -204,7 +214,7 @@ export function ApprovalActions({
     const data = await call(`/api/approvals/${approvalId}`, "PATCH", {
       decision,
       reason: decision === "reject" ? "用户拒绝" : "用户批准",
-      ...(decision === "approve" && remember
+      ...(decision === "approve" && effectiveRemember
         ? {
             remember: {
               days,
@@ -222,7 +232,7 @@ export function ApprovalActions({
     }
     toast.success(
       decision === "approve"
-        ? remember
+        ? effectiveRemember
           ? `已批准，并在 ${days} 天内自动执行同类动作`
           : "已批准外部动作"
         : "已拒绝动作",
@@ -248,19 +258,20 @@ export function ApprovalActions({
       <Button size="sm" onClick={() => decide("reject")} disabled={busy !== null}>
         <X className="size-3" /> 拒绝
       </Button>
+      {delegable ? (
       <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-label text-faint">
         <input
           type="checkbox"
           checked={remember}
           onChange={(event) => setRemember(event.target.checked)}
           className="size-3 accent-accent"
-          aria-describedby="remember-hint"
         />
         记住这类决定
       </label>
+      ) : null}
 
-      {remember ? (
-        <div id="remember-hint" className="flex flex-wrap items-center gap-2 text-label text-faint">
+      {remember && delegable ? (
+        <div className="flex flex-wrap items-center gap-2 text-label text-faint">
           <label className="flex items-center gap-1">
             有效
             <select
@@ -282,13 +293,26 @@ export function ApprovalActions({
                 min={0}
                 step={10}
                 value={Math.round(maxCents / 100)}
-                onChange={(event) => setMaxCents(Number(event.target.value) * 100)}
+                onChange={(event) => {
+                  const yuan = Number(event.target.value);
+                  // An empty field must not silently mean "no ceiling at all".
+                  setMaxCents(
+                    Number.isFinite(yuan) && yuan > 0
+                      ? Math.round(yuan * 100)
+                      : 0,
+                  );
+                }}
                 aria-label="单次金额上限（元）"
                 className="w-16 rounded border border-line bg-panel px-1.5 py-0.5 text-label text-ink"
               />
             </label>
           ) : null}
           <span>最多 20 次</span>
+          {maxCentsValid ? null : (
+            <span role="alert" className="text-danger">
+              请填写至少 ¥1 的单次上限
+            </span>
+          )}
         </div>
       ) : null}
     </div>

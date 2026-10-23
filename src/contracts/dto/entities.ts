@@ -164,6 +164,7 @@ export const acceptanceResultSchema = z.object({
   item: acceptanceItemSchema,
   passed: z.boolean(),
   reason: z.string(),
+  undetermined: z.boolean().optional(),
 });
 export type AcceptanceResultDto = z.infer<typeof acceptanceResultSchema>;
 

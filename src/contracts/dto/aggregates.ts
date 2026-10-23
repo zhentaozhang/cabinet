@@ -47,7 +47,8 @@ export const weeklyMetricsSchema = z.object({
   learningTasks: z.number(),
   /** Null when no retest tasks were sampled in the window. */
   retestPassRate: z.number().nullable(),
-  costUsd: z.number(),
+  /** Cents, like every other money field; format with `usd()`/`money()`. */
+  costCents: z.number(),
   goalProgress: z.number(),
   /** Null when no audit accept/reject events were sampled. */
   auditRejectRate: z.number().nullable(),

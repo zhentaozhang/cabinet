@@ -72,8 +72,8 @@ export default async function TodayPage() {
           <p className="mt-1.5 text-xs text-muted">
             {data.weeklyMetrics.weekKey} · {primaryGoal ? `${primaryGoal.title} ${pct(primaryGoal.progress)}` : "尚未设定目标"} ·{" "}
             {data.tasks.length} 件事在推进 ·{" "}
-            {data.weeklyMetrics.costUsd > 0
-              ? `本周花费 ${usd(data.weeklyMetrics.costUsd)}`
+            {data.weeklyMetrics.costCents > 0
+              ? `本周花费 ${usd(data.weeklyMetrics.costCents)}`
               : "本周还没有产生模型费用"}{" "}
             {topSpender ? `（最高 ${topSpender.name}）` : ""}
           </p>
@@ -165,7 +165,10 @@ export default async function TodayPage() {
                             {reason} · 预计 ¥{(costCents / 100).toFixed(2)}
                           </div>
                         </div>
-                        <ApprovalActions approvalId={approval.id} />
+                        <ApprovalActions
+                          approvalId={approval.id}
+                          actionType={approval.action}
+                        />
                       </div>
                     </div>
                   );

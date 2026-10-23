@@ -213,7 +213,7 @@ export async function getWeeklyMetrics(userId: string) {
       retestTotal > 0
         ? (Number(retestRow?.accepted ?? 0) / retestTotal) * 100
         : null,
-    costUsd: Number(costRow?.total ?? 0) / 100,
+    costCents: Number(costRow?.total ?? 0),
     goalProgress: goal?.progress ?? 0,
     auditRejectRate: auditTotal > 0 ? (rejects / auditTotal) * 100 : null,
     sample: { planned, completed, accepts, rejects },

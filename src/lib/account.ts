@@ -2,8 +2,12 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   accounts,
+  agentBudgetPeriods,
+  agentBudgetReservations,
   agentGrants,
   agents,
+  apprenticeExamSnapshots,
+  apprenticeObservations,
   approvals,
   artifacts,
   auditEvents,
@@ -68,8 +72,17 @@ export async function exportAccount(userId: string) {
   const councilIds = councilRows.map((row) => row.id);
   const taskIds = taskRows.map((row) => row.id);
 
-  const [runRows, skillRows, positionRows, artifactRows] =
-    await Promise.all([
+  const [
+    runRows,
+    skillRows,
+    positionRows,
+    artifactRows,
+    grantRows,
+    budgetRows,
+    reservationRows,
+    observationRows,
+    examSnapshotRows,
+  ] = await Promise.all([
       agentIds.length
         ? db.select().from(runs).where(inArray(runs.agentId, agentIds))
         : Promise.resolve([]),
@@ -85,6 +98,22 @@ export async function exportAccount(userId: string) {
       taskIds.length
         ? db.select().from(artifacts).where(inArray(artifacts.taskId, taskIds))
         : Promise.resolve([]),
+      agentIds.length
+        ? db.select().from(agentGrants).where(inArray(agentGrants.agentId, agentIds))
+        : Promise.resolve([]),
+      db.select().from(agentBudgetPeriods).where(eq(agentBudgetPeriods.userId, userId)),
+      db
+        .select()
+        .from(agentBudgetReservations)
+        .where(eq(agentBudgetReservations.userId, userId)),
+      db
+        .select()
+        .from(apprenticeObservations)
+        .where(eq(apprenticeObservations.userId, userId)),
+      db
+        .select()
+        .from(apprenticeExamSnapshots)
+        .where(eq(apprenticeExamSnapshots.userId, userId)),
     ]);
 
   return {
@@ -102,6 +131,11 @@ export async function exportAccount(userId: string) {
     skills: skillRows,
     councils: councilRows,
     councilPositions: positionRows,
+    agentGrants: grantRows,
+    agentBudgetPeriods: budgetRows,
+    agentBudgetReservations: reservationRows,
+    apprenticeObservations: observationRows,
+    apprenticeExamSnapshots: examSnapshotRows,
     checkins: checkinRows,
     artifacts: artifactRows,
     auditEvents: auditRows,
@@ -139,6 +173,25 @@ export async function deleteAccount(userId: string): Promise<void> {
         .from(councils)
         .where(eq(councils.userId, userId))
     ).map((row) => row.id);
+
+    /**
+     * The budget ledger and the apprenticeship history point at agents, tasks
+     * and runs without ON DELETE CASCADE, so they must be deleted first: a
+     * user who has run a single task owns a reservation row, and deleting the
+     * agent underneath it fails the whole transaction.
+     */
+    await tx
+      .delete(agentBudgetReservations)
+      .where(eq(agentBudgetReservations.userId, userId));
+    await tx
+      .delete(agentBudgetPeriods)
+      .where(eq(agentBudgetPeriods.userId, userId));
+    await tx
+      .delete(apprenticeObservations)
+      .where(eq(apprenticeObservations.userId, userId));
+    await tx
+      .delete(apprenticeExamSnapshots)
+      .where(eq(apprenticeExamSnapshots.userId, userId));
 
     if (councilIds.length) {
       await tx

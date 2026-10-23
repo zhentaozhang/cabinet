@@ -31,6 +31,12 @@ export type AcceptanceResult = {
   item: AcceptanceItem;
   passed: boolean;
   reason: string;
+  /**
+   * A rule that cannot decide on its own (a manual item, or an evidence rule
+   * over someone's hand-written submission). `passed` is false because nothing
+   * was verified — but it must not be read as a rejection.
+   */
+  undetermined?: boolean;
 };
 
 export type ProposedChange =

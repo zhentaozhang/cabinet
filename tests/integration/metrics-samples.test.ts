@@ -44,6 +44,8 @@ describe("weekly metrics sample semantics", () => {
     expect(metrics.aao).toBe(0);
     expect(metrics.studyMinutes).toBe(0);
     expect(metrics.learningTasks).toBe(0);
+    // Money crosses the wire in cents, exactly like runs.costCents.
+    expect(metrics.costCents).toBe(0);
     expect(metrics.sample).toEqual({
       planned: 0,
       completed: 0,

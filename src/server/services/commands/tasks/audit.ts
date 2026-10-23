@@ -20,7 +20,7 @@ import {
   NotFoundError,
   PolicyDenied,
 } from "@/lib/domain/errors";
-import { checklistPassed, evaluateAcceptance } from "@/lib/domain/acceptance";
+import { checklistPassed, evaluateAcceptance, undeterminedCount } from "@/lib/domain/acceptance";
 import { isEligibleAuditSample } from "@/lib/domain/provenance";
 import { recalculateGoalProgress } from "../progress";
 
@@ -164,14 +164,19 @@ async function auditTaskInner(taskId: string, userId: string) {
         {
           evidenceCount: evidenceRows.length,
           evidenceIds: new Set(evidenceRows.map((row) => row.id)),
+          // A hand-submitted artifact has no run, so no retrieval happened.
+          evidenceApplicable: Boolean(artifact.runId),
         },
       );
       pass = checklistPassed(acceptanceReport);
       const failed = acceptanceReport.filter(
-        (result) => result.item.required && !result.passed,
+        (result) => result.item.required && !result.passed && !result.undetermined,
       );
+      const pending = undeterminedCount(acceptanceReport);
+      const pendingNote =
+        pending > 0 ? `另有 ${pending} 项需要你人工复核。` : "";
       reason = pass
-        ? "验收清单逐项通过。"
+        ? `验收清单逐项通过。${pendingNote}`
         : `验收清单未通过：${failed
             .map((result) => result.reason)
             .join("；")}`;
