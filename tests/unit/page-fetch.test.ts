@@ -108,9 +108,17 @@ describe("articleText", () => {
   });
 });
 
+/** Offline DNS: a public answer, so tests never resolve a real name. */
+const publicLookup = (async () => [{ address: "93.184.216.34", family: 4 }]) as unknown as
+  typeof import("node:dns/promises").lookup;
+
+function page(input: Parameters<typeof fetchPage>[0]) {
+  return fetchPage({ lookupImpl: publicLookup, ...input });
+}
+
 describe("fetchPage", () => {
   it("returns title, text and a quote for an HTML page", async () => {
-    const outcome = await fetchPage({
+    const outcome = await page({
       url: "https://example.com/post",
       fetchImpl: async () =>
         responseFor("<html><title>Hello</title><body><p>正文内容在这里。</p></body></html>"),
@@ -125,7 +133,7 @@ describe("fetchPage", () => {
 
   it("refuses a non-public address before it fetches anything", async () => {
     let called = false;
-    const outcome = await fetchPage({
+    const outcome = await page({
       url: "http://127.0.0.1:8080/admin",
       fetchImpl: async () => {
         called = true;
@@ -139,21 +147,51 @@ describe("fetchPage", () => {
   });
 
   it("refuses a redirect that lands on a private address", async () => {
-    const outcome = await fetchPage({
+    const outcome = await page({
       url: "https://example.com/redirect",
-      fetchImpl: async () => {
-        const response = responseFor("<html><p>x</p></html>");
-        Object.defineProperty(response, "url", { value: "http://192.168.1.1/" });
-        return response;
-      },
+      fetchImpl: async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "http://192.168.1.1/admin" },
+        }),
     });
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.error.message).toContain("非公网地址");
   });
 
-  it("reports an unsupported content type instead of guessing", async () => {
+  it("refuses a hostname that resolves to a private address", async () => {
+    let called = false;
     const outcome = await fetchPage({
+      url: "https://evil.example/page",
+      lookupImpl: (async () => [{ address: "10.0.0.5", family: 4 }]) as never,
+      fetchImpl: async () => {
+        called = true;
+        return responseFor("<html><p>x</p></html>");
+      },
+    });
+    expect(called).toBe(false);
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.error.message).toContain("不是公网地址");
+  });
+
+  it("gives up on a redirect loop instead of following it forever", async () => {
+    const outcome = await page({
+      url: "https://example.com/loop",
+      fetchImpl: async () =>
+        new Response(null, {
+          status: 301,
+          headers: { location: "https://example.com/loop" },
+        }),
+    });
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.error.message).toContain("重定向超过");
+  });
+
+  it("reports an unsupported content type instead of guessing", async () => {
+    const outcome = await page({
       url: "https://example.com/doc.pdf",
       fetchImpl: async () => responseFor("%PDF-1.7", { contentType: "application/pdf" }),
     });
@@ -164,7 +202,7 @@ describe("fetchPage", () => {
   });
 
   it("treats an empty page as a failure, not as empty evidence", async () => {
-    const outcome = await fetchPage({
+    const outcome = await page({
       url: "https://example.com/empty",
       fetchImpl: async () => responseFor("<html><body><script>x</script></body></html>"),
     });
@@ -172,14 +210,14 @@ describe("fetchPage", () => {
   });
 
   it("marks 5xx retryable and 404 not", async () => {
-    const server = await fetchPage({
+    const server = await page({
       url: "https://example.com/a",
       fetchImpl: async () => responseFor("boom", { status: 503 }),
     });
     expect(server.ok).toBe(false);
     if (!server.ok) expect(server.error.retryable).toBe(true);
 
-    const gone = await fetchPage({
+    const gone = await page({
       url: "https://example.com/a",
       fetchImpl: async () => responseFor("missing", { status: 404 }),
     });
@@ -188,7 +226,7 @@ describe("fetchPage", () => {
   });
 
   it("times out instead of hanging", async () => {
-    const outcome = await fetchPage({
+    const outcome = await page({
       url: "https://example.com/slow",
       timeoutMs: 10,
       fetchImpl: (_url, init) =>

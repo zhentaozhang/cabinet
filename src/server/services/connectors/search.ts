@@ -13,6 +13,8 @@ export type PersistedEvidence = {
   title: string;
   publisher: string | null;
   quote: string;
+  /** `search_summary` or `page_extract`; the model is told which. */
+  kind: string;
   retrievedAt: string;
 };
 
@@ -115,7 +117,8 @@ export async function searchAndPersist(input: {
     userId: input.userId,
     taskId: input.taskId,
     runId: input.runId,
-    kind: "web_page",
+    // A search hit is a provider-written snippet, not the page itself.
+    kind: "search_summary",
     url: hit.url,
     title: hit.title,
     publisher: hit.publisher,
@@ -141,6 +144,7 @@ export async function searchAndPersist(input: {
       title: row.title,
       publisher: row.publisher,
       quote: row.quote,
+      kind: row.kind,
       retrievedAt: retrievedAt.toISOString(),
     })),
     message: null,

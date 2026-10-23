@@ -9,7 +9,9 @@ import {
   councils,
   dissents,
   goals,
+  evidence,
   profiles,
+  retrievalCalls,
   runs,
   steps,
   tasks,
@@ -215,7 +217,37 @@ describe("account export and deletion", () => {
       },
     ]);
 
+    // Both children of the run: they must be exported, and they must not block
+    // the delete (their foreign keys do not cascade).
+    await db.insert(evidence).values({
+      id: "evd_account_test",
+      userId: NEW_USER,
+      taskId: "tsk_account_test",
+      runId: "run_account_test",
+      kind: "page_extract",
+      url: "https://example.com/x",
+      title: "x",
+      quote: "x",
+      provider: "fetch",
+      contentHash: "0".repeat(64),
+      retrievedAt: new Date(),
+    });
+    await db.insert(retrievalCalls).values({
+      id: "rtc_account_test",
+      userId: NEW_USER,
+      taskId: "tsk_account_test",
+      runId: "run_account_test",
+      tool: "web_search",
+      provider: "brave",
+      status: "ok",
+      hits: 1,
+      unitPriceCents: 40,
+      chargedCents: 40,
+    });
+
     const exported = await exportAccount(NEW_USER);
+    expect(exported.evidence).toHaveLength(1);
+    expect(exported.retrievalCalls).toHaveLength(1);
     expect(exported.steps).toHaveLength(2);
     expect(exported.steps.every((step) => step.runId === "run_account_test")).toBe(true);
     expect(exported.agentBudgetReservations).toHaveLength(1);
@@ -225,6 +257,17 @@ describe("account export and deletion", () => {
     expect(exported.user?.id).toBe(NEW_USER);
 
     await deleteAccount(NEW_USER);
+
+    const strayEvidence = await db
+      .select()
+      .from(evidence)
+      .where(eq(evidence.userId, NEW_USER));
+    expect(strayEvidence).toHaveLength(0);
+    const strayCalls = await db
+      .select()
+      .from(retrievalCalls)
+      .where(eq(retrievalCalls.userId, NEW_USER));
+    expect(strayCalls).toHaveLength(0);
 
     const remainingUsers = await db
       .select()

@@ -23,6 +23,7 @@ import {
   outbox,
   profiles,
   rateLimits,
+  retrievalCalls,
   reviews,
   runs,
   sessions,
@@ -50,6 +51,7 @@ export async function exportAccount(userId: string) {
     dissentRows,
     evidenceRows,
     outboxRows,
+    retrievalRows,
   ] = await Promise.all([
     db.select().from(users).where(eq(users.id, userId)),
     db.select().from(profiles).where(eq(profiles.userId, userId)),
@@ -66,6 +68,7 @@ export async function exportAccount(userId: string) {
     db.select().from(dissents).where(eq(dissents.userId, userId)),
     db.select().from(evidence).where(eq(evidence.userId, userId)),
     db.select().from(outbox).where(eq(outbox.userId, userId)),
+    db.select().from(retrievalCalls).where(eq(retrievalCalls.userId, userId)),
   ]);
 
   const agentIds = agentRows.map((row) => row.id);
@@ -150,6 +153,7 @@ export async function exportAccount(userId: string) {
     dissents: dissentRows,
     evidence: evidenceRows,
     outbox: outboxRows,
+    retrievalCalls: retrievalRows,
   };
 }
 
@@ -215,6 +219,11 @@ export async function deleteAccount(userId: string): Promise<void> {
     if (taskIds.length) {
       await tx.delete(artifacts).where(inArray(artifacts.taskId, taskIds));
     }
+    // Children of runs go first: evidence and retrieval_calls both point at
+    // run_id and task_id with no cascade, so deleting runs before them fails
+    // on a foreign key rather than silently leaving orphans.
+    await tx.delete(evidence).where(eq(evidence.userId, userId));
+    await tx.delete(retrievalCalls).where(eq(retrievalCalls.userId, userId));
     if (runIds.length) {
       await tx.delete(steps).where(inArray(steps.runId, runIds));
     }
@@ -225,8 +234,6 @@ export async function deleteAccount(userId: string): Promise<void> {
     await tx.delete(approvals).where(eq(approvals.userId, userId));
     await tx.delete(auditEvents).where(eq(auditEvents.userId, userId));
     await tx.delete(dissents).where(eq(dissents.userId, userId));
-    // Evidence must go before tasks/runs: its foreign keys point at both.
-    await tx.delete(evidence).where(eq(evidence.userId, userId));
     await tx.delete(reviews).where(eq(reviews.userId, userId));
     await tx.delete(insights).where(eq(insights.userId, userId));
     await tx.delete(memories).where(eq(memories.userId, userId));

@@ -988,6 +988,40 @@ export const evidence = pgTable(
 export type EvidenceRow = typeof evidence.$inferSelect;
 
 /**
+ * One row per outbound retrieval call, whatever it returned.
+ *
+ * `evidence` records what was worth citing; a call that found nothing still
+ * cost money, so billing needs its own ledger. `unitPriceCents` is the price in
+ * force at the moment of the call, which keeps last month's report from being
+ * silently re-priced when the operator edits SEARCH_COST_CENTS_PER_REQUEST.
+ */
+export const retrievalCalls = pgTable(
+  "retrieval_calls",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    taskId: text("task_id").references(() => tasks.id),
+    runId: text("run_id").references(() => runs.id),
+    /** The tool the plan ran: web_search or web_fetch. */
+    tool: text("tool").notNull(),
+    provider: text("provider").notNull(),
+    status: text("status").notNull(),
+    hits: integer("hits").notNull().default(0),
+    unitPriceCents: integer("unit_price_cents").notNull().default(0),
+    chargedCents: integer("charged_cents").notNull().default(0),
+    latencyMs: integer("latency_ms").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("retrieval_calls_user_created_idx").on(t.userId, t.createdAt)],
+);
+
+export type RetrievalCallRow = typeof retrievalCalls.$inferSelect;
+
+/**
  * Outbox, not direct sending: a request must never block on an SMTP handshake,
  * and a delivery that fails must survive a process restart. Rows are claimed by
  * status transition, sent by a separate runner, and never deleted.

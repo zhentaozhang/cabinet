@@ -15,6 +15,7 @@ import {
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { generateArtifact } from "@/lib/llm";
+import { recordRetrievalCall } from "@/server/services/connectors/ledger";
 import { searchAndPersist } from "@/server/services/connectors/search";
 import { fetchAndPersist } from "@/server/services/connectors/page";
 import { extractFirstUrl } from "@/lib/connectors/page";
@@ -525,6 +526,17 @@ export async function runTask(taskId: string, userId: string) {
       toolStatus = search.status;
       toolReason =
         search.message ?? `检索到 ${search.hits.length} 条可引用来源，已落库。`;
+      await recordRetrievalCall({
+        userId: task.userId,
+        taskId,
+        runId,
+        tool: "web_search",
+        provider: search.provider,
+        status: search.status,
+        hits: search.hits.length,
+        latencyMs: search.latencyMs,
+        billable: true,
+      });
     } else if (toolPlan.planned.tool === "web_fetch") {
       // One URL, named by the task itself. No URL means the tool has nothing to
       // do — recorded as skipped, not as a failed fetch.
@@ -546,6 +558,18 @@ export async function runTask(taskId: string, userId: string) {
         toolStatus = page.status;
         toolReason =
           page.message ?? `抓取了 ${page.url}，已落库 ${page.evidence.length} 条证据。`;
+        await recordRetrievalCall({
+          userId: task.userId,
+          taskId,
+          runId,
+          tool: "web_fetch",
+          provider: page.provider,
+          status: page.status,
+          hits: page.hits.length,
+          latencyMs: page.latencyMs,
+          // Fetching one named page is not a metered lookup.
+          billable: false,
+        });
       }
     } else {
       toolStatus = "not_connected";
@@ -601,6 +625,7 @@ export async function runTask(taskId: string, userId: string) {
           url: item.url,
           publisher: item.publisher,
           quote: item.quote,
+          kind: item.kind,
         }),
       ),
       maxOutputTokens: config.cost.maxOutputTokens,

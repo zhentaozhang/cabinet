@@ -34,18 +34,37 @@ import {
  * with in-process engine calls.
  */
 
+/**
+ * Units are mixed on purpose and documented per field, because a wrong `* 100`
+ * renders a plausible but false number on a page people trust.
+ *   - ratios (0–1): `recallAvg`
+ *   - percentages (0–100): `adherence`, `retestPassRate`, `goalProgress`,
+ *     `auditRejectRate`
+ *   - money: `costCents`, `search.priceCents`, `search.estimatedCents` (cents)
+ */
 export const weeklyMetricsSchema = z.object({
   weekKey: z.string(),
   aao: z.number(),
-  /** Null when no tasks were planned in the window. */
+  /**
+   * Already a percentage (0–100), not a 0–1 ratio.
+   * Null when no tasks were planned in the window.
+   */
   adherence: z.number().nullable(),
   /** Null when there are neither measured actions nor decision samples. */
   managementMinutes: z.number().nullable(),
   managementMinutesSource: z.enum(["measured", "estimated"]),
   studyMinutes: z.number(),
+  /**
+   * A 0–1 ratio, unlike `adherence` and `retestPassRate` below — the source is
+   * `checkins.recallScore`, constrained to `>= 0 AND <= 1`. Multiply by 100 to
+   * display it. Null when there are no check-in samples.
+   */
   recallAvg: z.number().nullable(),
   learningTasks: z.number(),
-  /** Null when no retest tasks were sampled in the window. */
+  /**
+   * Already a percentage (0–100), not a 0–1 ratio.
+   * Null when no retest tasks were sampled in the window.
+   */
   retestPassRate: z.number().nullable(),
   /** Cents, like every other money field; format with `usd()`/`money()`. */
   costCents: z.number(),
@@ -57,9 +76,15 @@ export const weeklyMetricsSchema = z.object({
     requests: z.number(),
     priceCents: z.number(),
     estimatedCents: z.number(),
+    /** Calls whose price was unknown when they ran — reported, not guessed. */
+    unpricedRequests: z.number(),
   }),
+  /** Already a percentage (0–100), and an estimate — see the Review page. */
   goalProgress: z.number(),
-  /** Null when no audit accept/reject events were sampled. */
+  /**
+   * Already a percentage (0–100), not a 0–1 ratio.
+   * Null when no audit accept/reject events were sampled.
+   */
   auditRejectRate: z.number().nullable(),
   sample: z.object({
     planned: z.number(),

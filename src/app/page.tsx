@@ -13,9 +13,26 @@ import {
   Sun,
 } from "lucide-react";
 import { fetchTodayPage } from "@/lib/api/pages";
-import { roleMeta, statusLabel, statusTone } from "@/lib/agents";
+import { roleMeta } from "@/lib/agents";
 import { dateTime, money, pct, timeOnly } from "@/lib/format";
-import { Badge, Card, CardHeader, Dot, EmptyState, Progress, Stat } from "@/components/ui";
+import {
+  countPendingDecisions,
+  getProvenanceLabel,
+  getTaskTypeLabel,
+  pickLearningTask,
+  pickTopSpender,
+  weeklyMetricRows,
+} from "@/lib/presentation/today-view";
+import {
+  Badge,
+  Card,
+  CardHeader,
+  Dot,
+  EmptyState,
+  Progress,
+  Stat,
+  StatusBadge,
+} from "@/components/ui";
 import {
   ApprovalActions,
   BriefButton,
@@ -31,30 +48,11 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-function getProvenanceLabel(createdBy: string) {
-  if (createdBy === "user") return "用户手动";
-  if (createdBy === "agent") return "Agent 自主";
-  if (createdBy === "system") return "系统调度";
-  return `来源: ${createdBy}`;
-}
-
-function getTaskTypeLabel(task: { template: string | null; actionType: string }) {
-  if (task.template === "learning") return "针对性学习";
-  if (task.template === "learning_retest") return "间隔复测";
-  if (task.template) return task.template;
-  if (task.actionType === "spend") return "费用支出";
-  if (task.actionType === "code") return "代码任务";
-  if (task.actionType === "audit") return "安全审计";
-  return task.actionType || "常规任务";
-}
-
 export default async function TodayPage() {
   const data = await fetchTodayPage();
   const tz = data.user.timezone;
   const primaryGoal = data.goals[0];
-  const topSpender = [...data.agents]
-    .filter((agent) => agent.spentCents > 0)
-    .sort((a, b) => b.spentCents - a.spentCents)[0];
+  const topSpender = pickTopSpender(data.agents);
   const agentById = new Map(data.agents.map((a) => [a.id, a]));
   const today = new Intl.DateTimeFormat("zh-CN", {
     weekday: "long",
@@ -63,19 +61,16 @@ export default async function TodayPage() {
     timeZone: tz,
   }).format(new Date());
 
-  const pendingCount = data.approvals.length + (data.council ? 1 : 0);
+  const pendingCount = countPendingDecisions(data);
 
-  const learningTask = data.tasks.find(
-    (task) =>
-      ["learning", "learning_retest"].includes(task.template ?? "") &&
-      !["done", "accepted", "failed", "cancelled"].includes(task.status),
-  );
+  const learningTask = pickLearningTask(data.tasks);
 
   const brief =
     data.brief?.narrative ??
     `# 今日早报\n\n目标：${data.goals.map((g) => `${g.title}（${pct(g.progress)}）`).join(" · ")}\n\n## 今天的关键判断\n- 今天有 ${data.tasks.length} 个待推进任务。\n- 有 ${data.approvals.length} 个决定等你。`;
 
   const weekly = data.weeklyMetrics;
+  const metricRows = weeklyMetricRows(weekly);
 
   return (
     <div className="pb-16">
@@ -86,10 +81,10 @@ export default async function TodayPage() {
             <Sun className="size-3 text-accent" />
             Today · {today}
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">
+          <h1 className="text-page font-semibold tracking-tight text-ink">
             早上好，{data.user.name}
           </h1>
-          <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted">
+          <p className="mt-1.5 flex flex-wrap items-center gap-2 text-label text-muted">
             <span className="mono">{data.weeklyMetrics.weekKey}</span>
             <span>·</span>
             <span>
@@ -116,7 +111,7 @@ export default async function TodayPage() {
             <div className="text-eyebrow uppercase tracking-[0.16em] text-faint">
               study / week
             </div>
-            <div className="mono text-sm text-teal">
+            <div className="mono text-emphasis text-teal">
               {data.weeklyMetrics.studyMinutes} min
             </div>
           </div>
@@ -125,7 +120,7 @@ export default async function TodayPage() {
             <div className="text-eyebrow uppercase tracking-[0.16em] text-faint">
               recall
             </div>
-            <div className="mono text-sm text-accent">
+            <div className="mono text-emphasis text-accent">
               {data.weeklyMetrics.recallAvg === null
                 ? "—"
                 : `${Math.round(data.weeklyMetrics.recallAvg * 100)}%`}
@@ -134,18 +129,40 @@ export default async function TodayPage() {
         </div>
       </div>
 
-      {/* Priority 1: "现在需要我处理" (Decisions / Approvals / Pending) */}
-      {pendingCount > 0 ? (
-        <Card variant="decision" className="mb-6">
-          <CardHeader
-            eyebrow="Priority 1 · Decisions & Approvals"
-            title="现在需要我处理"
-            right={
-              <Badge tone="accent">
-                {pendingCount} 项待处理
-              </Badge>
-            }
-          />
+      {/*
+        Priority 1 is always rendered, including when nothing is waiting. A card
+        that silently disappears leaves the reader unsure whether the queue is
+        empty or the page failed to load it — the empty state says which.
+      */}
+      <Card variant={pendingCount > 0 ? "decision" : "default"} className="mb-6">
+        <CardHeader
+          eyebrow="需要你决定"
+          title="现在需要我处理"
+          right={
+            pendingCount > 0 ? (
+              <Badge tone="accent">{pendingCount} 项待处理</Badge>
+            ) : (
+              <Badge tone="neutral">当前没有待办</Badge>
+            )
+          }
+        />
+        {pendingCount === 0 ? (
+          <div className="px-5 py-6">
+            <EmptyState
+              title="没有需要你决定的事"
+              hint="审批、内阁决议和驳回后待修改的任务都会出现在这里。Agent 推进到需要人工放行的动作时会主动停下并提醒你。"
+              action={
+                <Link
+                  href="/cabinet"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-label text-ink transition-colors hover:border-line2/80 hover:bg-panel-hover"
+                >
+                  查看内阁分工
+                  <ArrowRight className="size-3" aria-hidden="true" />
+                </Link>
+              }
+            />
+          </div>
+        ) : (
           <div className="divide-y divide-line">
             {data.approvals.map((approval) => {
               const payload = approval.payload;
@@ -166,7 +183,7 @@ export default async function TodayPage() {
                     <div className="flex items-start gap-2.5 min-w-0 flex-1">
                       <CircleAlert className="mt-0.5 size-4 shrink-0 text-accent" />
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold text-ink">
+                        <div className="text-label font-semibold text-ink">
                           {title} {at ? `· ${at}` : ""}
                         </div>
                         <div className="mt-1 text-label text-muted">
@@ -193,7 +210,7 @@ export default async function TodayPage() {
               >
                 <Gavel className="size-4 shrink-0 text-violet" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-semibold text-ink">
+                  <div className="truncate text-label font-semibold text-ink">
                     内阁会议：{data.council.topic}
                   </div>
                   <div className="mt-1 text-label text-faint">
@@ -207,13 +224,13 @@ export default async function TodayPage() {
               </Link>
             ) : null}
           </div>
-        </Card>
-      ) : null}
+        )}
+      </Card>
 
       {/* Priority 2: "推荐的下一步" (Coach / Recommended Next Step) */}
       <Card variant="elevated" className="mb-6 border-accent/30 bg-panel-raised/95">
         <CardHeader
-          eyebrow="Priority 2 · Recommended Next Step"
+          eyebrow="推荐下一步"
           title={primaryGoal ? `围绕「${primaryGoal.title}」的下一步` : "推荐的下一步"}
           right={<NextLearningTaskButton />}
         />
@@ -226,12 +243,10 @@ export default async function TodayPage() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-semibold text-ink">
+                    <span className="truncate text-emphasis font-semibold text-ink">
                       {learningTask.title}
                     </span>
-                    <Badge tone={statusTone(learningTask.status)}>
-                      {statusLabel(learningTask.status)}
-                    </Badge>
+                    <StatusBadge status={learningTask.status} />
                     <Badge tone="neutral">
                       {learningTask.template === "learning_retest" ? "间隔复测" : "针对性学习"}
                     </Badge>
@@ -260,7 +275,7 @@ export default async function TodayPage() {
               <div className="shrink-0 sm:pl-2">
                 <Link
                   href={`/tasks/${learningTask.id}`}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-accent-ink shadow-sm transition-all hover:bg-accent-hi hover:scale-[1.02] active:scale-[0.98]"
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-label font-semibold text-accent-ink shadow-sm transition-all hover:bg-accent-hi hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <span>立即开始</span>
                   <ArrowRight className="size-3.5" />
@@ -270,7 +285,7 @@ export default async function TodayPage() {
           ) : (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line2/60 bg-panel2/30 px-6 py-8 text-center">
               <Brain className="size-8 text-accent/60 mb-2" />
-              <div className="text-xs font-medium text-ink">还没有进行中的学习任务</div>
+              <div className="text-label font-medium text-ink">还没有进行中的学习任务</div>
               <p className="mt-1 max-w-md text-label text-muted">
                 Coach 可以根据你的知识网络与记忆召回率，为你安排针对性巩固与新内容学习。
               </p>
@@ -285,7 +300,7 @@ export default async function TodayPage() {
       {/* Priority 3: "今天的进展" (Today's Tasks & Active Progress) */}
       <Card className="mb-8">
         <CardHeader
-          eyebrow="Priority 3 · Today's Progress"
+          eyebrow="今天的进展"
           title="今天的任务与进展"
           right={
             <div className="flex items-center gap-3">
@@ -325,7 +340,7 @@ export default async function TodayPage() {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-xs font-medium text-ink group-hover:text-accent transition-colors">
+                      <span className="truncate text-label font-medium text-ink group-hover:text-accent transition-colors">
                         {task.title}
                       </span>
                       <span className="rounded border border-line bg-panel2/60 px-1.5 py-0.5 text-[10px] text-faint">
@@ -352,9 +367,7 @@ export default async function TodayPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <Badge tone={statusTone(task.status)}>
-                      {statusLabel(task.status)}
-                    </Badge>
+                    <StatusBadge status={task.status} />
                     <ArrowRight className="size-3.5 text-faint group-hover:text-muted transition-colors" />
                   </div>
                 </Link>
@@ -371,7 +384,7 @@ export default async function TodayPage() {
                   <NextLearningTaskButton />
                   <Link
                     href="/cabinet"
-                    className="inline-flex items-center justify-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-xs text-ink transition-colors hover:bg-panel-hover"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-label text-ink transition-colors hover:bg-panel-hover"
                   >
                     前往内阁指派
                   </Link>
@@ -386,11 +399,11 @@ export default async function TodayPage() {
       <div className="mt-12 border-t border-line/80 pt-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-eyebrow font-medium uppercase tracking-[0.2em] text-faint">
+            <div className="flex items-center gap-2 text-eyebrow font-medium tracking-[0.18em] text-faint">
               <Layers className="size-3 text-muted" />
-              Priority 4 · Context & Metrics
+              背景与回顾
             </div>
-            <h2 className="mt-1 text-base font-semibold tracking-tight text-ink">
+            <h2 className="mt-1 text-section font-semibold tracking-tight text-ink">
               补充与回顾信息
             </h2>
             <p className="mt-1 text-label text-muted">
@@ -420,7 +433,7 @@ export default async function TodayPage() {
                   按 Token 计量
                 </Badge>
               </div>
-              <div className="mt-2 text-2xl font-semibold tracking-tight text-ink tabular-nums font-mono">
+              <div className="mt-2 text-page font-semibold tracking-tight text-ink tabular-nums font-mono">
                 {weekly.costCents > 0 ? money(weekly.costCents) : "¥0.00"}
               </div>
               <p className="mt-1.5 text-label text-muted">
@@ -443,15 +456,17 @@ export default async function TodayPage() {
                   按 Request 计量
                 </Badge>
               </div>
-              <div className="mt-2 text-2xl font-semibold tracking-tight text-ink tabular-nums font-mono">
-                {weekly.search.requests} <span className="text-sm font-normal text-muted">次请求</span>
+              <div className="mt-2 text-page font-semibold tracking-tight text-ink tabular-nums font-mono">
+                {weekly.search.requests} <span className="text-emphasis font-normal text-muted">次请求</span>
               </div>
               <p className="mt-1.5 text-label text-muted">
                 {weekly.search.requests === 0
                   ? "本周暂无外部检索调用"
-                  : weekly.search.priceCents > 0
-                    ? `预估检索费用 ${money(weekly.search.estimatedCents)}`
-                    : "当前部署检索未配置独立单价（独立计数）"}
+                  : weekly.search.unpricedRequests === 0
+                    ? `检索费用 ${money(weekly.search.estimatedCents)}（按调用时单价）`
+                    : weekly.search.unpricedRequests === weekly.search.requests
+                      ? "本周检索未计价（部署未配置单价）"
+                      : `已计价 ${money(weekly.search.estimatedCents)}，另有 ${weekly.search.unpricedRequests} 次未计价`}
               </p>
               <div className="mt-2 text-label text-faint">
                 Token 消耗与外部检索属于两条独立曲线，并列展示不相加
@@ -468,48 +483,14 @@ export default async function TodayPage() {
             right={<span className="text-label text-faint">周跨度总览</span>}
           />
           <div className="grid grid-cols-2 gap-4 p-5 sm:grid-cols-3 lg:grid-cols-6">
-            <Stat
-              label="学习专注"
-              value={`${weekly.studyMinutes}m`}
-              hint="本周学习分钟数"
-            />
-            <Stat
-              label="回忆正确率"
-              value={
-                weekly.recallAvg === null
-                  ? "—"
-                  : `${Math.round(weekly.recallAvg * 100)}%`
-              }
-              hint="Retest 平均分"
-            />
-            <Stat
-              label="计划遵从率"
-              value={
-                weekly.adherence === null
-                  ? "—"
-                  : `${Math.round(weekly.adherence)}%`
-              }
-              hint="按时推进度"
-            />
-            <Stat
-              label="学习任务"
-              value={weekly.learningTasks}
-              hint="累计推进单元"
-            />
-            <Stat
-              label="复测通过率"
-              value={
-                weekly.retestPassRate === null
-                  ? "—"
-                  : `${Math.round(weekly.retestPassRate * 100)}%`
-              }
-              hint="长期记忆留存"
-            />
-            <Stat
-              label="目标总进度"
-              value={pct(weekly.goalProgress)}
-              hint="核心目标权重"
-            />
+            {metricRows.map((row) => (
+              <Stat
+                key={row.key}
+                label={row.label}
+                value={row.value}
+                hint={row.hint}
+              />
+            ))}
           </div>
         </Card>
 
@@ -545,7 +526,7 @@ export default async function TodayPage() {
               <div className="px-5 py-4">
                 {data.checkin ? (
                   <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-xs text-teal">
+                    <div className="flex items-center gap-2 text-label text-teal">
                       <CheckCircle2 className="size-3.5" /> 今天已 check-in
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -590,7 +571,7 @@ export default async function TodayPage() {
               <div className="px-5 py-4">
                 {data.yesterdayCheckin ? (
                   <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex items-center gap-2 text-xs text-muted">
+                    <div className="flex items-center gap-2 text-label text-muted">
                       <span className="mono text-ink">
                         {data.yesterdayCheckin.energy}/5
                       </span>{" "}
@@ -615,7 +596,7 @@ export default async function TodayPage() {
                     </Badge>
                   </div>
                 ) : (
-                  <div className="text-xs text-faint">还没有昨天的 check-in。</div>
+                  <div className="text-label text-faint">还没有昨天的 check-in。</div>
                 )}
               </div>
             </Card>
@@ -636,6 +617,7 @@ export default async function TodayPage() {
                     </span>
                   </div>
                   <Progress
+                    label={`${goal.title} 的目标进度`}
                     value={goal.progress}
                     tone={goal.domain === "health" ? "teal" : "accent"}
                   />
@@ -708,7 +690,7 @@ export default async function TodayPage() {
               <div className="flex items-start gap-3 px-5 py-4">
                 <Brain className="mt-0.5 size-4 shrink-0 text-accent" />
                 <div>
-                  <div className="text-xs font-medium text-ink">每天 3 分钟闭环</div>
+                  <div className="text-label font-medium text-ink">每天 3 分钟闭环</div>
                   <p className="mt-1 text-label leading-relaxed text-muted">
                     早报 1 分钟、check-in 30 秒、审批 1 分钟。其余执行交给内阁。
                   </p>

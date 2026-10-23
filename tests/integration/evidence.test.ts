@@ -100,7 +100,8 @@ describe("external evidence", () => {
       url: "https://example.com/rag",
       publisher: "example.com",
       provider: "brave",
-      kind: "web_page",
+      // A provider snippet, not the page itself.
+      kind: "search_summary",
     });
     expect(rows[0].quote).toContain("检索增强生成");
     expect(rows[0].contentHash).toMatch(/^[0-9a-f]{64}$/);

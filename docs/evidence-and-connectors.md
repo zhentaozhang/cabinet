@@ -104,5 +104,9 @@ node node_modules/vitest/vitest.mjs run tests/unit/connectors.test.ts \
 模型费用按 token 结算，检索按次收费，两条曲线不同。`weeklyMetrics.search` 单独给出 `requests`、`priceCents`、`estimatedCents`：
 
 - 只有真正到达过服务商的调用才计数（`ok` / `timeout` / `invalid_response` / `rate_limited`）；`not_connected`、`unauthorized`、`skipped` 没有产生费用，不计。
-- `SEARCH_COST_CENTS_PER_REQUEST` 决定单次价格；**没配置就是 0，界面显示「未计价」，而不是假装免费**。
+- 每次调用都在 `retrieval_calls` 落一行，带上**当时的单价快照**（`unit_price_cents`）与金额（`charged_cents`）。周报读的是这张表，所以事后改 `SEARCH_COST_CENTS_PER_REQUEST` 不会把上个月的花费重算一遍。
+- 调用没返回可引用结果（`invalid_response`）也照样计费：钱已经花出去了，`evidence` 里没有行不代表这次调用不存在。
+- `SEARCH_COST_CENTS_PER_REQUEST` 没配置时单价记 0，界面显示「未计价」，而不是假装免费；`unpricedRequests` 会把这类调用单独报出来。
 - 这个金额**不会**进入 `weeklyMetrics.costCents`，也不影响模型的周预算上限 —— 混在一起会让「本周预算」失去意义。
+
+`web_fetch` 抓一条任务指定的 URL 不计费（不是按次检索服务），但同样在 `retrieval_calls` 留痕，带上 `unit_price_cents = 0`。

@@ -64,7 +64,8 @@ export async function fetchAndPersist(input: {
     userId: input.userId,
     taskId: input.taskId,
     runId: input.runId,
-    kind: "web_page",
+    // The body of the page the task named, extracted verbatim.
+    kind: "page_extract",
     url: hit.url,
     title: hit.title,
     publisher: hit.publisher,
@@ -91,6 +92,7 @@ export async function fetchAndPersist(input: {
         title: row.title,
         publisher: row.publisher,
         quote: row.quote,
+        kind: row.kind,
         retrievedAt: row.retrievedAt.toISOString(),
       },
     ],
