@@ -271,8 +271,21 @@ export const agentPageSchema = z.object({
 });
 export type AgentPageDto = z.infer<typeof agentPageSchema>;
 
+/** What the viewer may do, and the reason when they may not. */
+export const taskActionStateSchema = z.object({
+  allowed: z.boolean(),
+  reason: z.string(),
+});
+export type TaskActionStateDto = z.infer<typeof taskActionStateSchema>;
+
 export const taskPageSchema = z.object({
   timezone: z.string(),
+  /** Computed by the server so a disabled button and the guard cannot disagree. */
+  actions: z.object({
+    run: taskActionStateSchema,
+    audit: taskActionStateSchema,
+    promote: taskActionStateSchema,
+  }),
   task: taskDtoSchema,
   goal: goalDtoSchema.nullable(),
   assignee: agentDtoSchema.nullable(),

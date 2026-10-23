@@ -72,7 +72,7 @@ export default async function TaskPage({
   const data = await fetchTaskPage(id);
   if (!data) notFound();
   const tz = data.timezone;
-  const { task, goal, assignee, auditor, runs, steps, artifacts, evidence, approvals, audit } = data;
+  const { task, goal, assignee, auditor, runs, steps, artifacts, evidence, approvals, audit, actions } = data;
 
   const stepsByRun = new Map<string, typeof steps>();
   for (const step of steps) {
@@ -242,7 +242,7 @@ export default async function TaskPage({
           </div>
 
           <div className="shrink-0">
-            <TaskActions taskId={task.id} status={task.status} />
+            <TaskActions taskId={task.id} status={task.status} actions={actions} />
           </div>
         </div>
 

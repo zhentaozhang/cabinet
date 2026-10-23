@@ -1,0 +1,85 @@
+/**
+ * What a person may do to a task right now, and why not.
+ *
+ * The buttons used to be rendered from the task's status inline in JSX, so the
+ * page's copy drifted from what the server would actually do — a click that
+ * always fails is indistinguishable from a broken page.
+ *
+ * Scope: this describes what the page should OFFER. The command layer stays
+ * tolerant on purpose (`runTask` on an already-executed task is refused by
+ * policy, not by a status check), so this function is allowed to be stricter
+ * than the API — never looser.
+ */
+
+export type TaskActionState = {
+  allowed: boolean;
+  /** Shown on the button when it cannot be used; empty when allowed. */
+  reason: string;
+};
+
+export type TaskActions = {
+  run: TaskActionState;
+  audit: TaskActionState;
+  promote: TaskActionState;
+};
+
+export type TaskActionInput = {
+  status: string;
+  hasAssignee: boolean;
+  hasAuditor: boolean;
+};
+
+const RUNNABLE = new Set(["planned", "assigned", "approved", "rejected", "failed"]);
+
+const RUN_REASON: Record<string, string> = {
+  awaiting_approval: "等待你批准这次外部动作",
+  submitted: "已提交，等待验收",
+  auditing: "正在验收",
+  suggested: "先采纳建议，才能执行",
+  accepted: "已通过验收",
+  done: "已完成",
+  cancelled: "已取消",
+};
+
+const AUDIT_REASON: Record<string, string> = {
+  planned: "还没有执行，没有可验收的产物",
+  assigned: "还没有执行，没有可验收的产物",
+  awaiting_approval: "先批准这次外部动作",
+  approved: "批准后还要执行，才有产物",
+  running: "正在执行",
+  rejected: "已驳回；重新执行后才会再次进入验收",
+  failed: "执行失败，没有可验收的产物",
+  accepted: "已通过验收",
+  done: "已完成",
+  cancelled: "已取消",
+};
+
+function decide(
+  allowed: boolean,
+  reason: string | undefined,
+  fallback: string,
+): TaskActionState {
+  return allowed ? { allowed: true, reason: "" } : { allowed: false, reason: reason ?? fallback };
+}
+
+export function taskActions(input: TaskActionInput): TaskActions {
+  const { status, hasAssignee, hasAuditor } = input;
+
+  const run = decide(
+    RUNNABLE.has(status) && hasAssignee,
+    hasAssignee ? RUN_REASON[status] : "任务没有执行者",
+    "当前状态不能执行",
+  );
+
+  // `auditTask` locks the row in `submitted`; anywhere else it is a guaranteed
+  // conflict, so the button must not pretend.
+  const audit = decide(
+    status === "submitted" && hasAuditor,
+    hasAuditor ? AUDIT_REASON[status] : "任务没有验收者",
+    "当前状态不能验收",
+  );
+
+  const promote = decide(status === "suggested", "只有「建议」状态需要采纳", "无需采纳");
+
+  return { run, audit, promote };
+}

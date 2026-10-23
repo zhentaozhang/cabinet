@@ -21,9 +21,16 @@ import { call } from "./shared";
 export function TaskActions({
   taskId,
   status,
+  actions,
 }: {
   taskId: string;
   status: string;
+  /** Computed by the server: the guard and the button must agree. */
+  actions: {
+    run: { allowed: boolean; reason: string };
+    audit: { allowed: boolean; reason: string };
+    promote: { allowed: boolean; reason: string };
+  };
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -66,13 +73,6 @@ export function TaskActions({
 
   const finished = status === "done";
   const canMarkDone = status === "accepted";
-  const runnable = [
-    "planned",
-    "assigned",
-    "approved",
-    "rejected",
-    "failed",
-  ].includes(status);
   const runLabel = finished
     ? "已完成"
     : status === "submitted" || status === "auditing"
@@ -134,7 +134,8 @@ export function TaskActions({
       <Button
         size="sm"
         onClick={() => run(`/api/tasks/${taskId}/run`, "run")}
-        disabled={busy !== null || !runnable}
+        disabled={busy !== null || !actions.run.allowed}
+        title={actions.run.allowed ? undefined : actions.run.reason}
       >
         {busy === "run" ? (
           <Loader2 className="size-3 animate-spin" />
@@ -165,7 +166,8 @@ export function TaskActions({
         size="sm"
         variant="primary"
         onClick={() => run(`/api/tasks/${taskId}/audit`, "audit")}
-        disabled={busy !== null || status !== "submitted"}
+        disabled={busy !== null || !actions.audit.allowed}
+        title={actions.audit.allowed ? undefined : actions.audit.reason}
       >
         {busy === "audit" ? <Loader2 className="size-3 animate-spin" /> : <FileCheck2 className="size-3" />}
         提交给 Auditor 验收
@@ -178,10 +180,13 @@ export function TaskActions({
       <span role="status" aria-live="polite" className="text-label text-muted">
         {msg}
       </span>
-      {status === "rejected" ? (
-        <span className="text-label text-danger">
-          已驳回：先重新执行，再提交验收。
-        </span>
+      {/*
+        When the primary action cannot be used, say why in the page instead of
+        leaving a dead button. `actions.run.reason` comes from the same function
+        the server guards with.
+      */}
+      {!actions.run.allowed && status !== "accepted" && status !== "done" ? (
+        <span className="text-label text-faint">{actions.run.reason}</span>
       ) : null}
     </div>
   );

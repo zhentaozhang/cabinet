@@ -1,4 +1,5 @@
 import { taskPageSchema, type TaskPageDto } from "@/contracts";
+import { taskActions } from "@/lib/domain/task-actions";
 import { asDto } from "@/server/dto-guard";
 import {
   toAgentDto,
@@ -24,6 +25,11 @@ export async function loadTask(
     taskPageSchema,
     {
       timezone: data.timezone,
+      actions: taskActions({
+        status: data.task.status,
+        hasAssignee: Boolean(data.task.assigneeId),
+        hasAuditor: Boolean(data.task.auditorId),
+      }),
       task: toTaskDto(data.task),
       goal: data.goal ? toGoalDto(data.goal) : null,
       assignee: data.assignee ? toAgentDto(data.assignee) : null,
