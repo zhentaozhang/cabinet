@@ -18,7 +18,8 @@
     "db:migrate": "drizzle-kit migrate",
     "notify:deliver": "tsx scripts/deliver-outbox.ts",
     "run:worker": "tsx scripts/run-worker.ts",
-    "run:worker:once": "tsx scripts/run-worker.ts --once"
+    "run:worker:once": "tsx scripts/run-worker.ts --once",
+    "preflight": "tsx scripts/preflight.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.99",

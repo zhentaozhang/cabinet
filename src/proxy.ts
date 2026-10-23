@@ -11,6 +11,8 @@ export function proxy(request: NextRequest) {
   if (
     pathname === "/login" ||
     pathname.startsWith("/api/auth") ||
+    // Liveness must answer before anyone can sign in: a monitor has no cookie.
+    pathname === "/api/health" ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico"
   ) {
