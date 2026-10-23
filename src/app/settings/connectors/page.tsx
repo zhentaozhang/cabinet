@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CheckCircle2, CircleSlash, Search, Sparkles } from "lucide-react";
+import { CheckCircle2, CircleSlash, Mail, Search, Sparkles } from "lucide-react";
 
 import { Badge, Card, CardHeader, SectionTitle } from "@/components/ui";
 import { ConnectorTestButton } from "@/components/actions";
@@ -8,14 +8,14 @@ import { fetchConnectorStatus } from "@/lib/api/pages";
 
 export const metadata: Metadata = {
   title: "连接器 · Cabinet",
-  description: "这台部署真的能连到什么：检索、模型与演示模式。",
+  description: "这台部署真的能连到什么：检索、邮件、模型与演示模式。",
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function ConnectorsPage() {
   const status = await fetchConnectorStatus();
-  const { search, model, demoMode } = status;
+  const { search, model, email, demoMode } = status;
 
   return (
     <div className="space-y-5">
@@ -60,11 +60,51 @@ export default async function ConnectorsPage() {
             hint="主提供方遇到限流、5xx 或超时才会切换；密钥被拒绝不会切换，以免掩盖配置错误。"
           />
           <div className="border-t border-line/70 pt-4">
-            <ConnectorTestButton disabled={!search.configured && !model.configured} />
+            <ConnectorTestButton disabled={!search.configured} />
             <p className="mt-2 text-label text-faint">
-              会真的发一次检索请求（一条结果），用于确认网络与密钥都可用。
+              会真的发一次检索请求（固定查询、一条结果）。结果只显示在按钮旁，不落库：刷新页面后回到空闲，不会把五分钟前的成功当成现在。
             </p>
           </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          eyebrow="Email"
+          title="邮件通道"
+          right={
+            email.configured ? (
+              <Badge tone="teal">已配置</Badge>
+            ) : (
+              <Badge tone="neutral">未配置</Badge>
+            )
+          }
+        />
+        <div className="space-y-4 px-5 py-4">
+          <Row
+            icon={<Mail className="size-4 text-muted" aria-hidden />}
+            label="发件服务器"
+            value={
+              email.configured
+                ? `${email.host}${email.port ? `:${email.port}` : ""} · ${email.from ?? "无发件人"}`
+                : "无"
+            }
+            hint={
+              email.configured
+                ? `通知先进队列，再由投递进程发出${email.secure ? "（TLS）" : ""}；请求不在网页进程里等 SMTP。`
+                : `设置 ${email.envVars.join(" / ")} 后，通知才会真的发出；没配置时只会排队，不会假装已发送。`
+            }
+          />
+          <p className="text-label leading-relaxed text-faint">
+            邮件密码不在页面上出现，这里只报配置事实。
+            <Link
+              href="/settings/notifications"
+              className="mx-1 text-accent underline decoration-accent/40 underline-offset-2"
+            >
+              投递记录
+            </Link>
+            在通知页。
+          </p>
         </div>
       </Card>
 

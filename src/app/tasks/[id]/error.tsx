@@ -1,13 +1,7 @@
 "use client";
 
-import { RouteError } from "@/components/route-error";
+import { ErrorPanel, type ErrorBoundaryProps } from "@/components/error-panel";
 
-export default function Error({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
-  return <RouteError error={error} reset={reset} />;
+export default function Error(props: ErrorBoundaryProps) {
+  return <ErrorPanel {...props} title="任务详情没有加载成功" />;
 }
