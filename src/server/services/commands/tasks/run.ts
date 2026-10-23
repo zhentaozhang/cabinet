@@ -41,6 +41,13 @@ import {
 } from "./execution";
 import { requestApproval } from "./approvals";
 
+/**
+ * Internal signal: the budget hold was refused inside the claim transaction, so
+ * the transaction can roll back before anything is claimed. Never escapes this
+ * module — callers see a PolicyDenied.
+ */
+class BudgetHoldDenied extends Error {}
+
 export async function runTask(taskId: string, userId: string) {
   const [found] = await db.select().from(tasks).where(eq(tasks.id, taskId));
   if (!found || found.userId !== userId) {
@@ -282,16 +289,19 @@ export async function runTask(taskId: string, userId: string) {
   // created and then released when the call never happens, so a simulated
   // fallback records "attempted, no provider contact" instead of vanishing. A
   // denial happens before the task leaves planned, so it never fails the task.
-  let reservation: { reservationId: string; amountCents: number } | null = null;
-  if (config.cost.maxRunCents > 0) {
-    const hold = await reserveBudget({
-      userId: task.userId,
-      agentId: agent.id,
-      taskId,
-      timezone,
-      amountCents: config.cost.maxRunCents,
-    });
-    if (!hold.allowed) {
+  const runId = newId("run");
+  const startedAt = new Date();
+  let budgetDenial: string | null = null;
+  /**
+   * The claim and the budget hold commit together or not at all.
+   *
+   * Reserving first and then claiming the task (the previous order) meant a
+   * run that lost the claim, or that hit a state conflict, left a hold behind
+   * that nothing ever released: the week's remaining budget shrank with no run
+   * to show for it. Both now happen in the transaction that decides the winner.
+   */
+  const reservation = await claimRun().catch(async (error: unknown) => {
+    if (error instanceof BudgetHoldDenied) {
       // The denial is the interesting event: the user must learn that an Agent
       // stopped because of money, not because it finished.
       await enqueueNotification({
@@ -302,17 +312,19 @@ export async function runTask(taskId: string, userId: string) {
         ...notices.budget({
           agentName: agent.name,
           taskTitle: task.title,
-          reason: hold.reason,
+          reason: budgetDenial ?? "预算不足",
         }),
       });
-      throw new PolicyDenied(hold.reason);
+      throw new PolicyDenied(budgetDenial ?? "Budget exhausted.");
     }
-    reservation = hold;
-  }
+    throw error;
+  });
 
-  const runId = newId("run");
-  const startedAt = new Date();
-  await db.transaction(async (tx) => {
+  async function claimRun(): Promise<{
+    reservationId: string;
+    amountCents: number;
+  } | null> {
+  return db.transaction(async (tx) => {
     /**
      * Spend one use of the standing policy that lifted the gate.
      *
@@ -397,6 +409,28 @@ export async function runTask(taskId: string, userId: string) {
       if (!consumed) throw new ConflictError("Approval already consumed.");
     }
 
+    let hold: { reservationId: string; amountCents: number } | null = null;
+    if (config.cost.maxRunCents > 0) {
+      const reserved = await reserveBudget(
+        {
+          userId: task.userId,
+          agentId: agent.id,
+          taskId,
+          timezone,
+          amountCents: config.cost.maxRunCents,
+        },
+        tx,
+      );
+      if (!reserved.allowed) {
+        budgetDenial = reserved.reason;
+        throw new BudgetHoldDenied();
+      }
+      hold = {
+        reservationId: reserved.reservationId,
+        amountCents: reserved.amountCents,
+      };
+    }
+
     await tx.insert(runs).values({
       id: runId,
       taskId,
@@ -408,13 +442,16 @@ export async function runTask(taskId: string, userId: string) {
       replayKey: `replay_${taskId}_${prior.length + 1}`,
     });
 
-    if (reservation) {
+    if (hold) {
       await tx
         .update(agentBudgetReservations)
         .set({ runId })
-        .where(eq(agentBudgetReservations.id, reservation.reservationId));
+        .where(eq(agentBudgetReservations.id, hold.reservationId));
     }
+
+    return hold;
   });
+  }
 
   let idx = 0;
   // Whether a provider request may have happened; drives ledger settlement.

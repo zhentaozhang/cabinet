@@ -40,11 +40,13 @@ export type ReserveInput = {
  */
 export async function reserveBudget(
   input: ReserveInput,
+  /** Pass the caller's transaction to make the hold atomic with its work. */
+  client?: Tx,
 ): Promise<
   | { allowed: false; reason: string }
   | { allowed: true; reservationId: string; periodId: string; amountCents: number }
 > {
-  return db.transaction(async (tx) => {
+  const run = async (tx: Tx) => {
     const now = input.now ?? new Date();
     const { periodStart, periodEnd } = budgetWeek(input.timezone, now);
     const [agent] = await tx
@@ -130,7 +132,8 @@ export async function reserveBudget(
     });
 
     return { allowed: true as const, reservationId, periodId: period.id, amountCents };
-  });
+  };
+  return client ? run(client) : db.transaction(run);
 }
 
 function eligibleStamp(now: Date): string {

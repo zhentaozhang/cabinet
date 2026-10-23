@@ -183,6 +183,13 @@
       "when": 1792740734356,
       "tag": "0025_cynical_songbird",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792743330165,
+      "tag": "0026_giant_kat_farrell",
+      "breakpoints": true
     }
   ]
 }

@@ -18,6 +18,9 @@ export async function loadDelivery(userId: string): Promise<DeliveryPageDto> {
         failed: data.counts.failed ?? 0,
         skipped: data.counts.skipped ?? 0,
       },
+      // Lifetime row count. `items` is only the most recent page of the log, so
+      // the page needs the real total to say "只显示最近 N 条，共 M 条" honestly.
+      total: data.total,
       items: data.items.map((row) => ({
         id: row.id,
         kind: row.kind,

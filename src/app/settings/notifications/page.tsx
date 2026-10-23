@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle2, Clock, Mail, Send } from "lucide-react";
+import { AlertTriangle, Clock, Inbox, Mail, Send } from "lucide-react";
 
-import { Badge, Card, CardHeader, EmptyState, SectionTitle } from "@/components/ui";
+import {
+  Badge,
+  CapabilityBadge,
+  Card,
+  CardHeader,
+  EmptyState,
+  SectionTitle,
+} from "@/components/ui";
 import { DeliverNowButton, NotifyPrefsForm } from "@/components/actions";
 import {
   deliveryStatusLabel,
@@ -29,6 +36,7 @@ export default async function NotificationsPage() {
     <div className="space-y-5">
       <div>
         <SectionTitle
+        as="h1"
           title="通知"
           hint="只有需要你动手的事才会发邮件。记录在这里，发没发出去都能查。"
         />
@@ -39,14 +47,9 @@ export default async function NotificationsPage() {
           eyebrow="Delivery"
           title="邮件通道"
           right={
-            data.email.configured ? (
-              <div className="flex items-center gap-1 text-teal">
-                <CheckCircle2 className="size-3.5" aria-hidden />
-                <span className="text-label">已配置</span>
-              </div>
-            ) : (
-              <Badge tone="neutral">未配置</Badge>
-            )
+            <CapabilityBadge
+              state={data.email.configured ? "configured" : "not_configured"}
+            />
           }
         />
         <div className="space-y-3 px-5 py-4">
@@ -105,6 +108,7 @@ export default async function NotificationsPage() {
         {data.items.length === 0 ? (
           <div className="px-5 py-6">
             <EmptyState
+              icon={<Inbox className="size-4" />}
               title="还没有需要通知你的事"
               hint="任务通过验收、预算正常、没有冲突的日子，这里会一直是空的。"
             />

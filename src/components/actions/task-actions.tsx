@@ -48,6 +48,9 @@ export function TaskActions({
       } else {
         toast.error(txt);
       }
+    } else if (data.queued) {
+      setMsg("已排队，后台 worker 会执行");
+      toast.info("已排队，后台 worker 会执行");
     } else if (data.requiresApproval) {
       setMsg("已提交审批，等待你批准");
       toast.info("已提交审批，等待你批准");
@@ -80,7 +83,7 @@ export function TaskActions({
           ? "待审批"
           : status === "rejected"
             ? "重新执行"
-            : "执行";
+            : "开始执行";
 
   async function markDone() {
     setBusy("done");
@@ -125,7 +128,7 @@ export function TaskActions({
           ) : (
             <Check className="size-3" />
           )}
-          采纳建议
+          采纳这条建议
         </Button>
       ) : (
       <Button
@@ -155,7 +158,7 @@ export function TaskActions({
           ) : (
             <Check className="size-3" />
           )}
-          标记完成
+          标记任务完成
         </Button>
       ) : null}
       <Button
@@ -165,9 +168,16 @@ export function TaskActions({
         disabled={busy !== null || status !== "submitted"}
       >
         {busy === "audit" ? <Loader2 className="size-3 animate-spin" /> : <FileCheck2 className="size-3" />}
-        提交验收
+        提交给 Auditor 验收
       </Button>
-      {msg ? <span className="text-label text-muted">{msg}</span> : null}
+      {/*
+        Always mounted: a live region that only appears when it has text is
+        not reliably announced, so the node stays in the DOM and its content
+        changes instead.
+      */}
+      <span role="status" aria-live="polite" className="text-label text-muted">
+        {msg}
+      </span>
       {status === "rejected" ? (
         <span className="text-label text-danger">
           已驳回：先重新执行，再提交验收。
@@ -253,10 +263,10 @@ export function ApprovalActions({
     <div className="flex items-center gap-2">
       <Button size="sm" variant="primary" onClick={() => decide("approve")} disabled={busy !== null}>
         {busy === "approve" ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-        批准
+        批准这次执行
       </Button>
       <Button size="sm" onClick={() => decide("reject")} disabled={busy !== null}>
-        <X className="size-3" /> 拒绝
+        <X className="size-3" /> 驳回这次执行
       </Button>
       {delegable ? (
       <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-label text-faint">
@@ -379,21 +389,21 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
               insight · {status}
             </span>
           </div>
-          <p className="mt-2 text-sm font-medium leading-relaxed text-ink">
+          <p className="mt-2 text-emphasis font-medium leading-relaxed text-ink">
             {insight.claim}
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <div className="mono text-lg text-ink">{Math.round(insight.confidence * 100)}%</div>
+          <div className="mono text-section text-ink">{Math.round(insight.confidence * 100)}%</div>
           <div className="text-label text-faint">confidence</div>
         </div>
       </div>
 
-      <p className="mt-2 text-xs leading-relaxed text-muted">{insight.rationale}</p>
+      <p className="mt-2 text-label leading-relaxed text-muted">{insight.rationale}</p>
 
       <div className="mt-3 rounded-lg border border-line bg-panel/60 px-3 py-2">
         <div className="text-eyebrow uppercase tracking-[0.14em] text-faint">proposed change</div>
-        <div className="mt-1 text-xs text-accent">{changeLabel(insight.proposedChange)}</div>
+        <div className="mt-1 text-label text-accent">{changeLabel(insight.proposedChange)}</div>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -413,24 +423,35 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
           <>
             <Button size="sm" variant="primary" onClick={() => act("accept")} disabled={busy !== null}>
               {busy === "accept" ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-              采纳
+              采纳这项变更
             </Button>
             <Button size="sm" onClick={() => act("reject")} disabled={busy !== null}>
-              <X className="size-3" /> 拒绝
+              <X className="size-3" /> 驳回这项变更
             </Button>
           </>
         ) : null}
         {insight.status === "applied" ? (
           <Button size="sm" onClick={() => act("rollback")} disabled={busy !== null}>
             {busy === "rollback" ? <Loader2 className="size-3 animate-spin" /> : <RotateCcw className="size-3" />}
-            回滚
+            回滚这项变更
           </Button>
         ) : null}
-        {msg ? <span className="text-label text-muted">{msg}</span> : null}
+        {/*
+          Always mounted: a live region that only appears when it has text is
+          not reliably announced, so the node stays in the DOM and its content
+          changes instead.
+        */}
+        <span role="status" aria-live="polite" className="text-label text-muted">
+          {msg}
+        </span>
       </div>
 
       <div className="mt-3">
-        <Progress value={insight.confidence * 100} tone="accent" />
+        <Progress
+          value={insight.confidence * 100}
+          tone="accent"
+          label="洞察置信度"
+        />
       </div>
     </div>
   );
@@ -486,15 +507,17 @@ export function ArtifactSubmitForm({
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
+        aria-label="产物标题（可选）"
         placeholder="标题（可选）"
-        className="mb-2 w-full rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="mb-2 w-full rounded-md border border-line bg-panel2 px-3 py-2 text-label text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
+        aria-label="产物内容"
         rows={5}
         placeholder="写下你的答案、代码、笔记或复盘…"
-        className="w-full resize-y rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="w-full resize-y rounded-md border border-line bg-panel2 px-3 py-2 text-label text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
       />
       <div className="mt-2 flex items-center gap-2">
         <Button
@@ -510,7 +533,14 @@ export function ArtifactSubmitForm({
           )}
           提交产物
         </Button>
-        {msg ? <span className="text-label text-muted">{msg}</span> : null}
+        {/*
+          Always mounted: a live region that only appears when it has text is
+          not reliably announced, so the node stays in the DOM and its content
+          changes instead.
+        */}
+        <span role="status" aria-live="polite" className="text-label text-muted">
+          {msg}
+        </span>
       </div>
     </div>
   );
@@ -629,7 +659,7 @@ export function CheckinForm({
         {tasks.map((t) => (
           <label
             key={t.id}
-            className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-panel2/40 px-3 py-2 text-xs text-muted hover:border-line2"
+            className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-panel2/40 px-3 py-2 text-label text-muted hover:border-line2"
           >
             <input
               type="checkbox"
@@ -653,7 +683,7 @@ export function CheckinForm({
             max={1440}
             value={studyMinutes}
             onChange={(e) => setStudyMinutes(Number(e.target.value) || 0)}
-            className="w-full rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="w-full rounded-md border border-line bg-panel2 px-3 py-2 text-label text-ink outline-none focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
           />
         </label>
         <label className="block">
@@ -669,7 +699,7 @@ export function CheckinForm({
               setRecall(e.target.value === "" ? null : Number(e.target.value))
             }
             placeholder="可留空"
-            className="w-full rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+            className="w-full rounded-md border border-line bg-panel2 px-3 py-2 text-label text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
           />
         </label>
       </div>
@@ -677,16 +707,18 @@ export function CheckinForm({
       <input
         value={errorTags}
         onChange={(e) => setErrorTags(e.target.value)}
+        aria-label="薄弱点标签（逗号分隔）"
         placeholder="薄弱点标签，用逗号分隔，例如：rerank, precision"
-        className="w-full rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="w-full rounded-md border border-line bg-panel2 px-3 py-2 text-label text-ink outline-none placeholder:text-faint focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
       />
 
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
+        aria-label="今日备注"
         placeholder="30 秒备注：今天哪里卡住了？"
         rows={2}
-        className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-xs text-ink placeholder:text-faint focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        className="w-full resize-none rounded-md border border-line bg-panel2 px-3 py-2 text-label text-ink placeholder:text-faint focus:border-accent/50 outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
       />
 
       <div className="flex items-center gap-2">

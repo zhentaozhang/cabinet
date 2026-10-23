@@ -24,6 +24,7 @@ import {
   profiles,
   rateLimits,
   retrievalCalls,
+  runJobs,
   reviews,
   runs,
   sessions,
@@ -52,6 +53,7 @@ export async function exportAccount(userId: string) {
     evidenceRows,
     outboxRows,
     retrievalRows,
+    runJobRows,
   ] = await Promise.all([
     db.select().from(users).where(eq(users.id, userId)),
     db.select().from(profiles).where(eq(profiles.userId, userId)),
@@ -69,6 +71,7 @@ export async function exportAccount(userId: string) {
     db.select().from(evidence).where(eq(evidence.userId, userId)),
     db.select().from(outbox).where(eq(outbox.userId, userId)),
     db.select().from(retrievalCalls).where(eq(retrievalCalls.userId, userId)),
+    db.select().from(runJobs).where(eq(runJobs.userId, userId)),
   ]);
 
   const agentIds = agentRows.map((row) => row.id);
@@ -154,6 +157,7 @@ export async function exportAccount(userId: string) {
     evidence: evidenceRows,
     outbox: outboxRows,
     retrievalCalls: retrievalRows,
+    runJobs: runJobRows,
   };
 }
 
@@ -219,6 +223,8 @@ export async function deleteAccount(userId: string): Promise<void> {
     if (taskIds.length) {
       await tx.delete(artifacts).where(inArray(artifacts.taskId, taskIds));
     }
+    // Jobs reference tasks and runs by id with no cascade.
+    await tx.delete(runJobs).where(eq(runJobs.userId, userId));
     // Children of runs go first: evidence and retrieval_calls both point at
     // run_id and task_id with no cascade, so deleting runs before them fails
     // on a foreign key rather than silently leaving orphans.

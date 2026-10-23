@@ -1069,3 +1069,47 @@ export const outbox = pgTable(
 );
 
 export type OutboxRow = typeof outbox.$inferSelect;
+
+/**
+ * A durable run request.
+ *
+ * The API used to execute a run inside the POST that asked for it, so a restart
+ * mid-run left a `running` run and a held budget reservation that nothing would
+ * ever release. A job survives the process: a worker claims it with a lease,
+ * and whatever is still claimed after the lease expires gets recovered by the
+ * one pass that knows the run may already have reached a paid provider.
+ */
+export const runJobs = pgTable(
+  "run_jobs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    /** queued | running | succeeded | blocked | failed */
+    status: text("status").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    /** Holder of the lease; every write-back must present the same token. */
+    claimToken: text("claim_token"),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    /** The run this job produced, once it got that far. */
+    runId: text("run_id"),
+    lastError: text("last_error"),
+    requestedBy: text("requested_by").notNull().default("user"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("run_jobs_claim_idx").on(t.status, t.createdAt),
+    index("run_jobs_user_created_idx").on(t.userId, t.createdAt),
+    index("run_jobs_task_idx").on(t.taskId),
+  ],
+);
+
+export type RunJobRow = typeof runJobs.$inferSelect;
