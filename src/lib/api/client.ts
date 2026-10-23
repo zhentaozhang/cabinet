@@ -89,11 +89,22 @@ export function createApiClient(config: ApiClientConfig) {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // The timer has to outlive `fetch()` itself. A server can answer with
+    // headers promptly and then stall the body forever; clearing the timer the
+    // moment headers arrive would leave the caller's busy state stuck with
+    // nothing left to cancel it. So the read below stays inside the same
+    // window, and an abort raised mid-stream is reported as a timeout rather
+    // than as a malformed response.
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
     const abortFromCaller = () => controller.abort();
     options.signal?.addEventListener("abort", abortFromCaller);
 
-    let response: Response;
+    let response: Response | null = null;
+    let payload: unknown = null;
     try {
       response = await fetch(`${base}${path}`, {
         method,
@@ -106,25 +117,25 @@ export function createApiClient(config: ApiClientConfig) {
         credentials: config.credentials ?? "same-origin",
         signal: controller.signal,
       });
+      // Aborting while the body streams rejects this read, not the `fetch()`
+      // above, so it belongs in the same try for the timeout to cover it.
+      payload = isJsonResponse(response) ? await response.json() : null;
     } catch {
-      const aborted = controller.signal.aborted;
-      return failure(
-        "internal_error",
-        aborted ? "请求超时，请重试" : "网络异常，请检查连接",
-        0,
-      );
+      if (timedOut) {
+        return failure("internal_error", "请求超时，请重试", 0);
+      }
+      if (!response) {
+        return failure("internal_error", "网络异常，请检查连接", 0);
+      }
+      // Headers arrived but the body could not be decoded as JSON.
+      payload = null;
     } finally {
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", abortFromCaller);
     }
 
-    let payload: unknown = null;
-    try {
-      payload = isJsonResponse(response)
-        ? await response.json()
-        : null;
-    } catch {
-      payload = null;
+    if (!response) {
+      return failure("internal_error", "网络异常，请检查连接", 0);
     }
 
     if (payload === null) {
@@ -204,7 +215,7 @@ export function createApiClient(config: ApiClientConfig) {
         idempotencyKey,
         signal: options.signal,
         schema: options.schema,
-        envelope: options.envelope ?? "flat",
+        envelope: options.envelope ?? "data",
       });
 
       if (!explicitKey) {

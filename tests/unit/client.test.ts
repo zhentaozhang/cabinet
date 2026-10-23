@@ -63,6 +63,62 @@ describe("api client transport", () => {
     expect(result.status).toBe(0);
     expect(result.error).toContain("超时");
   });
+
+  it("still times out when headers arrive but the body never finishes", async () => {
+    // A proxy or a stuck backend can flush `200 OK` and then stall the stream.
+    // If the timeout only covered `fetch()`, this call would hang forever and
+    // the button that started it would stay busy with no way to recover.
+    const stalled = createApiClient({
+      baseUrl: "http://api.test",
+      timeoutMs: 20,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(stream) {
+            stream.enqueue(new TextEncoder().encode('{"ok":true,'));
+            // Headers are already flushed; the rest of the body never arrives.
+            init.signal?.addEventListener("abort", () => {
+              stream.error(new DOMException("aborted", "AbortError"));
+            });
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    const result = await stalled.query("/api/half", z.object({ a: z.number() }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("超时");
+  });
+
+  it("reports a truncated body as a bad response, not as a timeout", async () => {
+    // Headers arrive, the body ends early, and no timer ever fires: this is a
+    // broken response and must not be blamed on the network.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response('{"ok":true,', {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    const result = await client.query("/api/truncated", z.object({ a: z.number() }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).not.toContain("超时");
+    expect(result.error).toContain("非 JSON");
+  });
 });
 
 describe("api client envelope", () => {
@@ -80,15 +136,33 @@ describe("api client envelope", () => {
     expect(result).toEqual({ ok: true, data: { count: 3 } });
   });
 
-  it("keeps the flat body for writes even when a field is called data", async () => {
+  it("unwraps writes the same way reads are unwrapped", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => jsonResponse({ ok: true, data: "not-a-envelope" })),
+      vi.fn(async () => jsonResponse({ ok: true, data: { decision: "accepted" } })),
     );
 
     const result = await client.mutate<Record<string, unknown>>("/api/write", {
       method: "POST",
       body: {},
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // One shape on the wire: `{ok:true,data}` for reads and writes alike.
+    expect(result.data).toEqual({ decision: "accepted" });
+  });
+
+  it("can still read a flat body when a caller asks for it explicitly", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ ok: true, data: "not-a-envelope" })),
+    );
+
+    const result = await client.mutate<Record<string, unknown>>("/api/legacy", {
+      method: "POST",
+      body: {},
+      envelope: "flat",
     });
 
     expect(result.ok).toBe(true);

@@ -6,8 +6,20 @@ import { checkRateLimit } from "./rate-limit";
 
 type MutationResult = {
   status: number;
+  /**
+   * Handlers build the payload flat (`{ok:true, runId}`); the pipeline wraps it
+   * into the wire envelope, so every endpoint answers the same shape as the
+   * read endpoints and a client never has to guess which one it is talking to.
+   */
   body: Record<string, unknown>;
 };
+
+/** `{ok:true, ...fields}` → `{ok:true, data:{...fields}}`. */
+function toEnvelope(body: Record<string, unknown>): Record<string, unknown> {
+  const rest: Record<string, unknown> = { ...body };
+  delete rest.ok;
+  return { ok: true, data: rest };
+}
 
 /** Explicit origin allowlist: `TRUSTED_ORIGINS` (comma separated) + auth URL. */
 export function trustedOrigins(): string[] {
@@ -89,7 +101,10 @@ export async function handleMutation(input: {
       userId,
       endpoint: input.endpoint,
       body: input.body,
-      handler: () => input.handler(userId),
+      handler: async () => {
+        const result = await input.handler(userId);
+        return { status: result.status, body: toEnvelope(result.body) };
+      },
     });
   } catch (error) {
     const { status, body } = toErrorResponse(error);

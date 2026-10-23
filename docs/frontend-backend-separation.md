@@ -181,3 +181,26 @@ node node_modules/next/dist/bin/next start -p 3210   # 冒烟
 | 一直转圈 | `busy` 未在 `finally` 里复位 | 用 `apiFetch` + `try/finally` |
 | 数据重复 | 幂等键在重试时变了 | 键绑定「逻辑事件」，不要每次点击新建 |
 | lint 报 `no-restricted-imports` | 页面直接 import 了 server 代码 | 走 `lib/api/pages.ts` 加一个 fetch 函数 |
+
+## 一种响应信封
+
+每个接口，读和写，成功时都是同一个形状：
+
+```json
+{ "ok": true, "data": { ... } }
+```
+
+失败时：
+
+```json
+{ "ok": false, "error": "人话原因", "code": "policy_denied" }
+```
+
+`code` 是机器判定的枚举（`unauthorized | forbidden | rate_limited |
+validation_error | policy_denied | conflict | not_found | internal_error`），
+`error` 是给人看的句子。客户端只对 `code` 做分支，永远不要把 `error` 当条件用——
+它是文案，会被改。
+
+写入路由的 handler 仍然返回扁平对象（`{ok:true, runId}`），由 `handleMutation`
+统一包装。这样「线上只有一种形状」和「handler 不必样板化」同时成立；需要读旧形状的
+调用方可以显式传 `envelope: "flat"`，这是唯一的例外出口。
