@@ -95,6 +95,33 @@ export function htmlToText(html: string): string {
     .trim();
 }
 
+/** The main content region when the page marks one, else the whole document. */
+function mainRegion(html: string): string {
+  const article = /<article\b[^>]*>[\s\S]*?<\/article>/i.exec(html);
+  if (article) return article[0];
+  const main = /<main\b[^>]*>[\s\S]*?<\/main>/i.exec(html);
+  if (main) return main[0];
+  return html;
+}
+
+/**
+ * Readable prose, preferring paragraphs over whatever the chrome says.
+ *
+ * A quote taken from the top of `<body>` is usually navigation ("Jump to
+ * content, Main menu"); a quote taken from the first real paragraph is
+ * something a reader can match against the page.
+ */
+export function articleText(html: string): string {
+  const region = mainRegion(html);
+  const paragraphs = [...region.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map((match) => htmlToText(match[1]).replace(/\s+/g, " ").trim())
+    .filter((text) => text.length >= 40);
+  if (paragraphs.length > 0) {
+    return paragraphs.join("\n\n").slice(0, MAX_TEXT_CHARS);
+  }
+  return htmlToText(region).slice(0, MAX_TEXT_CHARS);
+}
+
 /** `<title>` of a page, or the host when there is none. */
 export function pageTitle(html: string, url: string): string {
   const match = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
@@ -288,7 +315,7 @@ export async function fetchPage(input: {
     }
 
     const isHtml = contentType.includes("html") || /<html[\s>]/i.test(raw);
-    const text = (isHtml ? htmlToText(raw) : raw.trim()).slice(0, MAX_TEXT_CHARS);
+    const text = isHtml ? articleText(raw) : raw.trim().slice(0, MAX_TEXT_CHARS);
     if (text.length === 0) {
       return {
         ok: false,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  articleText,
   extractFirstUrl,
   fetchPage,
   firstQuote,
@@ -86,6 +87,24 @@ describe("htmlToText", () => {
     const quote = firstQuote("词 ".repeat(600));
     expect(quote.length).toBeLessThanOrEqual(301);
     expect(quote.endsWith("…")).toBe(true);
+  });
+});
+
+describe("articleText", () => {
+  it("quotes a paragraph, not the navigation chrome", () => {
+    const text = articleText(
+      "<body><nav>Jump to content Main menu Navigation</nav>" +
+        "<main><p>" +
+        "Retrieval-augmented generation is a technique that lets a model pull in外部资料，再据此作答。" +
+        "</p></main></body>",
+    );
+    expect(text).toContain("Retrieval-augmented generation is a technique");
+    expect(text).not.toContain("Jump to content");
+  });
+
+  it("falls back to the whole text when the page has no real paragraphs", () => {
+    const text = articleText("<div>只有一行短句</div>");
+    expect(text).toBe("只有一行短句");
   });
 });
 
