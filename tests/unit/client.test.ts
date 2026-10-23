@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { ERROR_CODE_LABEL } from "@/contracts/errors";
 import { createApiClient } from "@/lib/api/client";
 
 const client = createApiClient({ baseUrl: "http://api.test" });
@@ -254,5 +255,43 @@ describe("idempotency keys", () => {
     await client.mutate("/api/ok", { method: "POST", body: { a: 1 } });
 
     expect(keys[0]).not.toBe(keys[1]);
+  });
+});
+
+describe("error copy", () => {
+  it("replaces an English placeholder with the code's own sentence", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ ok: false, error: "Internal error", code: "internal_error" }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    const client = createApiClient({ baseUrl: "http://x" });
+
+    const result = await client.request("/api/x");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe(ERROR_CODE_LABEL.internal_error);
+    expect(result.error).not.toContain("Internal");
+  });
+
+  it("keeps a message the server wrote on purpose", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ ok: false, error: "本周预算已用尽", code: "policy_denied" }),
+          { status: 403, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    const client = createApiClient({ baseUrl: "http://x" });
+
+    const result = await client.request("/api/x");
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error).toBe("本周预算已用尽");
   });
 });

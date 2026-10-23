@@ -16,6 +16,7 @@ import {
   deliveryStatusTone,
   notifyKindLabel,
 } from "@/contracts";
+import type { DeliveryPageDto } from "@/contracts";
 import { fetchDeliveryPage } from "@/lib/api/pages";
 import { dateTime } from "@/lib/format";
 
@@ -26,8 +27,14 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function NotificationsPage() {
-  const data = await fetchDeliveryPage();
+export default async function NotificationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ offset?: string }>;
+}) {
+  const params = await searchParams;
+  const offset = Math.max(0, Number(params.offset ?? 0) || 0);
+  const data = await fetchDeliveryPage(offset);
   const owed = data.counts.pending;
   const inFlight = data.counts.sending;
   const failed = data.counts.failed;
@@ -115,11 +122,6 @@ export default async function NotificationsPage() {
           </div>
         ) : (
           <ul className="divide-y divide-line/70">
-            {data.total > data.items.length ? (
-              <li className="px-5 py-2 text-label text-faint">
-                只显示最近 {data.items.length} 条，共 {data.total} 条。
-              </li>
-            ) : null}
             {data.items.map((item) => (
               <li key={item.id} className="px-5 py-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -157,6 +159,7 @@ export default async function NotificationsPage() {
             ))}
           </ul>
         )}
+        <DeliveryPager data={data} />
       </Card>
 
       <Card>
@@ -176,6 +179,48 @@ export default async function NotificationsPage() {
           </li>
         </ul>
       </Card>
+    </div>
+  );
+}
+
+function DeliveryPager({ data }: { data: DeliveryPageDto }) {
+  const pageSize = data.limit;
+  const first = data.offset + 1;
+  const last = data.offset + data.items.length;
+  const hasPrev = data.offset > 0;
+  const hasNext = data.hasMore;
+
+  if (data.total <= pageSize && !hasPrev && !hasNext) {
+    return (
+      <p className="px-1 pt-2 text-caption text-faint">
+        共 {data.total} 条，都在这一页。
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 px-1 pt-2 text-caption text-faint">
+      <span>
+        第 {first}–{last} 条，共 {data.total} 条
+      </span>
+      <span className="flex items-center gap-3">
+        {hasPrev ? (
+          <Link
+            href={`/settings/notifications?offset=${Math.max(0, data.offset - pageSize)}`}
+            className="text-accent hover:underline"
+          >
+            ← 更新的
+          </Link>
+        ) : null}
+        {hasNext ? (
+          <Link
+            href={`/settings/notifications?offset=${data.offset + pageSize}`}
+            className="text-accent hover:underline"
+          >
+            更早的 →
+          </Link>
+        ) : null}
+      </span>
     </div>
   );
 }

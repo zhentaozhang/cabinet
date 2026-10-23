@@ -52,12 +52,28 @@ function isJsonResponse(response: Response): boolean {
   return contentType.includes("application/json");
 }
 
+/**
+ * Server messages that are really just the enum spelled out in English. A user
+ * reading "Internal error" learns nothing, so those fall back to the code's
+ * own sentence; anything the server wrote deliberately is kept as-is.
+ */
+const PLACEHOLDER_MESSAGES = new Set([
+  "Internal error",
+  "Unauthorized",
+  "Forbidden",
+  "Not found",
+  "Validation failed",
+  "Conflict",
+]);
+
 function failure(
   code: ErrorCode,
   error: string,
   status: number,
 ): ClientResult<never> {
-  return { ok: false, error: error || ERROR_CODE_LABEL[code], code, status };
+  const message =
+    !error || PLACEHOLDER_MESSAGES.has(error) ? ERROR_CODE_LABEL[code] : error;
+  return { ok: false, error: message, code, status };
 }
 
 export function createApiClient(config: ApiClientConfig) {
@@ -155,7 +171,9 @@ export function createApiClient(config: ApiClientConfig) {
       if (parsed.success) {
         return {
           ok: false,
-          error: parsed.data.error,
+          error: PLACEHOLDER_MESSAGES.has(parsed.data.error)
+            ? ERROR_CODE_LABEL[parsed.data.code]
+            : parsed.data.error,
           code: parsed.data.code,
           status: response.status,
         };

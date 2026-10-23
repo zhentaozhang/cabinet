@@ -426,6 +426,10 @@ export const deliveryPageSchema = z.object({
   }),
   /** Lifetime rows; `items` is only the most recent page of them. */
   total: z.number(),
+  /** Same paging metadata as the audit log, so both pages page the same way. */
+  offset: z.number(),
+  limit: z.number(),
+  hasMore: z.boolean(),
   items: z.array(deliveryItemSchema),
 });
 export type DeliveryPageDto = z.infer<typeof deliveryPageSchema>;

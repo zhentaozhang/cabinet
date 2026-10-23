@@ -161,8 +161,13 @@ export const fetchShellContext = cache(async (): Promise<ShellContextDto> => {
 });
 
 /** Delivery log and notification preferences for `/settings/notifications`. */
-export async function fetchDeliveryPage(): Promise<DeliveryPageDto> {
-  const result = await loadPage(API_ROUTES.notifications, deliveryPageSchema);
+export async function fetchDeliveryPage(
+  offset = 0,
+): Promise<DeliveryPageDto> {
+  const path = offset > 0
+    ? `${API_ROUTES.notifications}?offset=${offset}`
+    : API_ROUTES.notifications;
+  const result = await loadPage(path, deliveryPageSchema);
   if ("missing" in result) throw new Error("Notifications endpoint returned not found");
   return result.data;
 }

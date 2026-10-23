@@ -2,8 +2,11 @@ import { deliveryPageSchema, type DeliveryPageDto } from "@/contracts";
 import { asDto } from "@/server/dto-guard";
 import { getDeliveryData } from "@/server/services/queries/delivery";
 
-export async function loadDelivery(userId: string): Promise<DeliveryPageDto> {
-  const data = await getDeliveryData(userId);
+export async function loadDelivery(
+  userId: string,
+  options: { offset?: number; limit?: number } = {},
+): Promise<DeliveryPageDto> {
+  const data = await getDeliveryData(userId, options);
 
   return asDto(
     deliveryPageSchema,
@@ -21,6 +24,9 @@ export async function loadDelivery(userId: string): Promise<DeliveryPageDto> {
       // Lifetime row count. `items` is only the most recent page of the log, so
       // the page needs the real total to say "只显示最近 N 条，共 M 条" honestly.
       total: data.total,
+      offset: data.offset,
+      limit: data.limit,
+      hasMore: data.hasMore,
       items: data.items.map((row) => ({
         id: row.id,
         kind: row.kind,

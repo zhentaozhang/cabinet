@@ -9,8 +9,16 @@ import { updateNotifyPrefs } from "@/server/services/commands/notify";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return handleQuery((userId) => loadDelivery(userId));
+export function GET(request: Request) {
+  const url = new URL(request.url);
+  const offset = Number(url.searchParams.get("offset") ?? 0);
+  const limit = Number(url.searchParams.get("limit") ?? 30);
+  return handleQuery((userId) =>
+    loadDelivery(userId, {
+      offset: Number.isFinite(offset) ? offset : 0,
+      limit: Number.isFinite(limit) ? limit : 30,
+    }),
+  );
 }
 
 export async function PATCH(req: Request) {

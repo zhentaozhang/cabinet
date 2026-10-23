@@ -8,7 +8,12 @@ import { smtpConfigFromEnv } from "@/lib/connectors/email";
  * The delivery log is a read model of the outbox: it shows what the system
  * promised to send, whether it did, and why not. Nothing here is inferred.
  */
-export async function getDeliveryData(userId: string) {
+export async function getDeliveryData(
+  userId: string,
+  options: { offset?: number; limit?: number } = {},
+) {
+  const limit = Math.min(Math.max(Math.trunc(options.limit ?? 30), 1), 100);
+  const offset = Math.max(Math.trunc(options.offset ?? 0), 0);
   const [user] = await db
     .select({
       timezone: users.timezone,
@@ -26,7 +31,8 @@ export async function getDeliveryData(userId: string) {
       .from(outbox)
       .where(eq(outbox.userId, userId))
       .orderBy(desc(outbox.createdAt))
-      .limit(30),
+      .limit(limit)
+      .offset(offset),
     db
       .select({ status: outbox.status, n: count() })
       .from(outbox)
@@ -63,6 +69,9 @@ export async function getDeliveryData(userId: string) {
     },
     counts: tally,
     total: Number(totalRow?.n ?? 0),
+    offset,
+    limit,
+    hasMore: offset + items.length < Number(totalRow?.n ?? 0),
     items,
   };
 }
