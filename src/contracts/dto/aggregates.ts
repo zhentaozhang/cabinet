@@ -432,5 +432,7 @@ export const deliveryRunSchema = z.object({
   /** Due but not attempted because SMTP is not configured. Still queued. */
   waiting: z.number(),
   claimed: z.number(),
+  /** The lease was taken over mid-flight, so this result could not be written. */
+  lost: z.number(),
 });
 export type DeliveryRunDto = z.infer<typeof deliveryRunSchema>;

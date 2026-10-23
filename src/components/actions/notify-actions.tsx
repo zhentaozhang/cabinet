@@ -139,7 +139,10 @@ export function DeliverNowButton() {
       return;
     }
 
-    const { sent, failed, skipped, deferred, waiting, claimed } = result.data;
+    const { sent, failed, skipped, deferred, waiting, lost, claimed } =
+      result.data;
+    if (lost > 0)
+      toast.info(`有 ${lost} 封在处理中被另一个进程接手，本次结果未写回`);
     if (failed > 0) toast.error(`投递失败 ${failed} 封，原因见下方记录`);
     else if (sent > 0) toast.success(`已投递 ${sent} 封`);
     else if (waiting > 0)

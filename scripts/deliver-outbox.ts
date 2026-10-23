@@ -41,6 +41,7 @@ async function main() {
       sent: report.sent,
       failed: report.failed,
       skipped: report.skipped,
+      lost: report.lost,
       deferred: report.deferred,
     }),
   );

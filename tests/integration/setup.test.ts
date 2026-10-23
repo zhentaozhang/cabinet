@@ -19,6 +19,7 @@ import {
 } from "@/lib/db/schema";
 import { setupWorkspace } from "@/lib/setup";
 import { exportAccount, deleteAccount } from "@/lib/account";
+import { exportAccountNdjson } from "@/lib/account-export";
 import { ConflictError } from "@/lib/domain/errors";
 import { resetDb } from "../helpers/db";
 
@@ -244,6 +245,20 @@ describe("account export and deletion", () => {
       unitPriceCents: 40,
       chargedCents: 40,
     });
+
+    const lines: Array<Record<string, unknown>> = [];
+    for await (const line of exportAccountNdjson(NEW_USER)) {
+      lines.push(JSON.parse(line) as Record<string, unknown>);
+    }
+    expect(lines[0].kind).toBe("meta");
+    expect(lines.at(-1)?.kind).toBe("end");
+    const dumped = new Map(
+      lines
+        .filter((line) => line.kind === "rows")
+        .map((line) => [String(line.table), line.rows as unknown[]]),
+    );
+    expect(dumped.get("tasks")).toHaveLength(1);
+    expect(dumped.get("steps")).toHaveLength(2);
 
     const exported = await exportAccount(NEW_USER);
     expect(exported.evidence).toHaveLength(1);

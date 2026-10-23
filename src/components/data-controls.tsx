@@ -28,18 +28,22 @@ export function DataControls() {
     setBusy("export");
     try {
       const response = await fetch("/api/export");
-      const data = await readJson(response);
-      if (!response.ok || data.ok !== true) {
+      if (!response.ok) {
+        // Errors are still JSON; a successful export is NDJSON.
+        const data = await readJson(response);
         toast.error(String(data.error ?? "导出失败"));
         return;
       }
-      const blob = new Blob([JSON.stringify(data.data, null, 2)], {
-        type: "application/json",
-      });
+      const text = await response.text();
+      if (!text.includes('"kind":"end"')) {
+        toast.error("导出没有正常结束，文件可能不完整，请重试。");
+        return;
+      }
+      const blob = new Blob([text], { type: "application/x-ndjson" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "cabinet-export.json";
+      anchor.download = "cabinet-export.ndjson";
       anchor.click();
       URL.revokeObjectURL(url);
       toast.success("数据导出成功");

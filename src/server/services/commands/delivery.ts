@@ -1,6 +1,7 @@
 import { and, asc, eq, lte, or } from "drizzle-orm";
 
 import { db } from "@/lib/db";
+import { newId } from "@/lib/ids";
 import { outbox, users, type OutboxRow } from "@/lib/db/schema";
 import {
   MAX_ATTEMPTS,
@@ -23,7 +24,8 @@ export type DeliveryStep =
   | { id: string; kind: string; result: "deferred"; reason: string; nextAttemptAt: Date }
   /** Nothing was attempted because SMTP is not configured; the mail is still owed. */
   | { id: string; kind: string; result: "waiting"; reason: string; nextAttemptAt: Date }
-  | { id: string; kind: string; result: "would_send" };
+  | { id: string; kind: string; result: "would_send" }
+  | { id: string; kind: string; result: "lost"; reason: string };
 
 export type DeliveryReport = {
   claimed: number;
@@ -33,6 +35,8 @@ export type DeliveryReport = {
   deferred: number;
   /** Due but not attempted: no SMTP host yet. Stays in the queue. */
   waiting: number;
+  /** The lease was taken over mid-flight, so this runner's result was dropped. */
+  lost: number;
   steps: DeliveryStep[];
 };
 
@@ -158,6 +162,7 @@ export async function deliverOutbox(
     skipped: 0,
     deferred: 0,
     waiting: 0,
+    lost: 0,
     steps: [],
   };
 
@@ -207,11 +212,14 @@ export async function deliverOutbox(
       continue;
     }
 
-    // Claim: only the runner that wins this transition may touch the row.
+    // Claim: only the runner that wins this transition may touch the row, and
+    // only while it still holds the token it wrote.
+    const claimToken = newId("clm");
     const [claimed] = await db
       .update(outbox)
       .set({
         status: "sending",
+        claimToken,
         nextAttemptAt: new Date(now.getTime() + CLAIM_LEASE_MS),
       })
       .where(
@@ -225,11 +233,41 @@ export async function deliverOutbox(
     if (!claimed) continue;
     report.claimed += 1;
 
-    if (decision.action === "skip") {
-      await db
+    /**
+     * Write back only if this runner still owns the row. A process that stalls
+     * past its lease loses the row to a newer claim, and its late result must
+     * not resurrect a stale status.
+     */
+    const finish = async (
+      values: Partial<typeof outbox.$inferInsert>,
+    ): Promise<boolean> => {
+      const [updated] = await db
         .update(outbox)
-        .set({ status: "skipped", lastError: decision.reason })
-        .where(eq(outbox.id, row.id));
+        .set(values)
+        .where(and(eq(outbox.id, row.id), eq(outbox.claimToken, claimToken)))
+        .returning({ id: outbox.id });
+      return Boolean(updated);
+    };
+    const lostStep = (): DeliveryStep => {
+      report.lost += 1;
+      return {
+        id: row.id,
+        kind: row.kind,
+        result: "lost",
+        reason: "租约已被另一个进程接手，本次结果未写回",
+      };
+    };
+
+    if (decision.action === "skip") {
+      const written = await finish({
+        status: "skipped",
+        lastError: decision.reason,
+        claimToken: null,
+      });
+      if (!written) {
+        report.steps.push(lostStep());
+        continue;
+      }
       report.skipped += 1;
       report.steps.push({
         id: row.id,
@@ -241,10 +279,15 @@ export async function deliverOutbox(
     }
 
     if (decision.action === "defer") {
-      await db
-        .update(outbox)
-        .set({ status: "pending", nextAttemptAt: decision.nextAttemptAt })
-        .where(eq(outbox.id, row.id));
+      const written = await finish({
+        status: "pending",
+        nextAttemptAt: decision.nextAttemptAt,
+        claimToken: null,
+      });
+      if (!written) {
+        report.steps.push(lostStep());
+        continue;
+      }
       report.deferred += 1;
       report.steps.push({
         id: row.id,
@@ -258,10 +301,18 @@ export async function deliverOutbox(
 
     const result = await send(toMessage(row, recipient as Recipient));
     if (result.status === "sent") {
-      await db
-        .update(outbox)
-        .set({ status: "sent", sentAt: new Date(), lastError: null })
-        .where(eq(outbox.id, row.id));
+      const written = await finish({
+        status: "sent",
+        sentAt: new Date(),
+        lastError: null,
+        claimToken: null,
+      });
+      if (!written) {
+        // The mail did leave, but another runner owns the row now and may send
+        // it again. Say so instead of counting a send that was not recorded.
+        report.steps.push(lostStep());
+        continue;
+      }
       report.sent += 1;
       report.steps.push({ id: row.id, kind: row.kind, result: "sent" });
       continue;
@@ -275,14 +326,16 @@ export async function deliverOutbox(
      */
     if (result.status === "not_configured") {
       const next = new Date(now.getTime() + NOT_CONFIGURED_DELAY_MS);
-      await db
-        .update(outbox)
-        .set({
-          status: "pending",
-          nextAttemptAt: next,
-          lastError: "SMTP 未配置（SMTP_HOST / SMTP_FROM），邮件未发送",
-        })
-        .where(eq(outbox.id, row.id));
+      const written = await finish({
+        status: "pending",
+        nextAttemptAt: next,
+        claimToken: null,
+        lastError: "SMTP 未配置（SMTP_HOST / SMTP_FROM），邮件未发送",
+      });
+      if (!written) {
+        report.steps.push(lostStep());
+        continue;
+      }
       report.waiting += 1;
       report.steps.push({
         id: row.id,
@@ -298,15 +351,19 @@ export async function deliverOutbox(
     const attempts = row.attempts + 1;
     const exhausted = attempts >= MAX_ATTEMPTS;
 
-    await db
-      .update(outbox)
-      .set({
-        status: exhausted ? "failed" : "pending",
-        attempts,
-        lastError: reason,
-        nextAttemptAt: exhausted ? row.nextAttemptAt : new Date(now.getTime() + retryDelayMs(attempts)),
-      })
-      .where(eq(outbox.id, row.id));
+    const written = await finish({
+      status: exhausted ? "failed" : "pending",
+      attempts,
+      lastError: reason,
+      claimToken: null,
+      nextAttemptAt: exhausted
+        ? row.nextAttemptAt
+        : new Date(now.getTime() + retryDelayMs(attempts)),
+    });
+    if (!written) {
+      report.steps.push(lostStep());
+      continue;
+    }
 
     report.failed += 1;
     report.steps.push({ id: row.id, kind: row.kind, result: "failed", reason });

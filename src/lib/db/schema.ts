@@ -1051,6 +1051,12 @@ export const outbox = pgTable(
       .notNull()
       .defaultNow(),
     sentAt: timestamp("sent_at", { withTimezone: true }),
+    /**
+     * Set when a runner claims the row. Every write-back must present the same
+     * token, so a runner whose lease was taken over cannot overwrite the newer
+     * result (or claim a send it did not finish).
+     */
+    claimToken: text("claim_token"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

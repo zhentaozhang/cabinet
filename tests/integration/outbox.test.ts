@@ -231,6 +231,53 @@ describe("delivery", () => {
     expect(row.status).toBe("sent");
   });
 
+  it("refuses to write back a result it no longer owns", async () => {
+    await enqueueNotification({
+      userId: DEMO_USER_ID,
+      kind: "budget",
+      targetType: "task",
+      targetId: "tsk_lost",
+      subject: "s",
+      body: "b",
+    });
+
+    // A second runner takes the lease while this one is mid-send, which is what
+    // happens when the first process stalls past its lease and is reclaimed.
+    const hijack = async () => {
+      await db
+        .update(outbox)
+        .set({ claimToken: "clm_other", nextAttemptAt: new Date(Date.now() + 60_000) })
+        .where(eq(outbox.id, (await db.select().from(outbox))[0].id));
+      return { status: "sent" as const };
+    };
+
+    const report = await deliverOutbox({ sender: hijack });
+
+    expect(report.lost).toBe(1);
+    expect(report.sent).toBe(0);
+    const [row] = await db.select().from(outbox);
+    // The stale runner must not overwrite the new owner's row.
+    expect(row.status).toBe("sending");
+    expect(row.claimToken).toBe("clm_other");
+  });
+
+  it("clears the claim token once it writes the outcome", async () => {
+    await enqueueNotification({
+      userId: DEMO_USER_ID,
+      kind: "budget",
+      targetType: "task",
+      targetId: "tsk_claim_clear",
+      subject: "s",
+      body: "b",
+    });
+
+    await deliverOutbox({ sender: okSender });
+
+    const [row] = await db.select().from(outbox);
+    expect(row.status).toBe("sent");
+    expect(row.claimToken).toBeNull();
+  });
+
   it("does not steal a claim that is still inside its lease", async () => {
     await enqueueNotification({
       userId: DEMO_USER_ID,

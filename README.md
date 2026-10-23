@@ -135,7 +135,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词）
 | Memory | `/memory` | 记住了什么、证据在哪、是否冲突、能否删除 |
 | Council | `/council` | 这次高风险决策各方怎么说、怎么定 |
 | Review / 审计 | `/review/audit` | 完整审计链，可按动作类型筛选、分页 |
-| Setup | `/setup` | 账号、工作区、数据导出/删除 |
+| Settings | `/settings` | 连接器、通知、账号与数据导出/删除（导出为 NDJSON 流） |
 | Settings | `/settings` | 部署层开关：连接器、通知 |
 | 通知 | `/settings/notifications` | 哪个事件发了邮件、发没发出去、为什么没发 |
 | 连接器 | `/settings/connectors` | 检索/模型/邮件配好了没，能否连通 |
