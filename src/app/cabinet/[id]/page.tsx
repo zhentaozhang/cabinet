@@ -416,7 +416,13 @@ export default async function AgentPage({
           </Card>
 
           <Card>
-            <CardHeader eyebrow="Memories" title="它记住的事" />
+            <CardHeader
+              eyebrow="Memories"
+              title="它记住的事"
+              right={
+                memories.length > 5 ? <Link href="/memory">全部 {memories.length} 条 →</Link> : undefined
+              }
+            />
             <div className="divide-y divide-line">
               {memories.slice(0, 5).map((memory) => (
                 <div key={memory.id} className="px-5 py-3">

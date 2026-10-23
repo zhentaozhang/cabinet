@@ -455,7 +455,17 @@ export default async function TaskPage({
           </Card>
 
           <Card>
-            <CardHeader eyebrow="Artifacts" title="产物" />
+            <CardHeader
+              eyebrow="Artifacts"
+              title="产物"
+              right={
+                artifacts.length > 3 ? (
+                  <span className="text-label text-faint">
+                    显示最近 3 份，共 {artifacts.length} 份
+                  </span>
+                ) : undefined
+              }
+            />
             {artifacts.length === 0 ? (
               <div className="px-5 py-6 text-center text-xs text-faint">暂无产物。</div>
             ) : (

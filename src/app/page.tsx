@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { fetchTodayPage } from "@/lib/api/pages";
 import { roleMeta, statusLabel, statusTone } from "@/lib/agents";
-import { dateTime, pct, timeOnly, usd } from "@/lib/format";
+import { dateTime, money, pct, timeOnly } from "@/lib/format";
 import { Badge, Card, CardHeader, Dot, Progress, Stat } from "@/components/ui";
 import {
   ApprovalActions,
@@ -73,7 +73,7 @@ export default async function TodayPage() {
             {data.weeklyMetrics.weekKey} · {primaryGoal ? `${primaryGoal.title} ${pct(primaryGoal.progress)}` : "尚未设定目标"} ·{" "}
             {data.tasks.length} 件事在推进 ·{" "}
             {data.weeklyMetrics.costCents > 0
-              ? `本周花费 ${usd(data.weeklyMetrics.costCents)}`
+              ? `本周花费 ${money(data.weeklyMetrics.costCents)}`
               : "本周还没有产生模型费用"}{" "}
             {topSpender ? `（最高 ${topSpender.name}）` : ""}
           </p>

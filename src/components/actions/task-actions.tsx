@@ -624,7 +624,9 @@ export function CheckinForm({
       </div>
 
       <div className="space-y-1.5">
-        {tasks.slice(0, 3).map((t) => (
+        {/* Every open task, not the first three: a checkbox you cannot reach
+            is a task you cannot report as done. */}
+        {tasks.map((t) => (
           <label
             key={t.id}
             className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-panel2/40 px-3 py-2 text-xs text-muted hover:border-line2"
