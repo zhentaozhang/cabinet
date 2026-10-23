@@ -33,6 +33,7 @@ describe("research task checklist defaults", () => {
 
     expect(task.acceptanceChecklist).toEqual([
       { type: "min_evidence", value: 3, required: true },
+      { type: "claims_table", value: 3, required: true },
       { type: "section", value: "来源", required: true },
     ]);
   });

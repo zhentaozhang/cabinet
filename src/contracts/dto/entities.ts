@@ -148,6 +148,11 @@ export const acceptanceItemSchema = z.discriminatedUnion("type", [
     required: z.boolean(),
   }),
   z.object({
+    type: z.literal("claims_table"),
+    value: z.number(),
+    required: z.boolean(),
+  }),
+  z.object({
     type: z.literal("section"),
     value: z.string(),
     required: z.boolean(),

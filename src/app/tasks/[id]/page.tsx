@@ -2,44 +2,57 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  Activity,
   ArrowLeft,
-  BookOpen,
   CheckCircle2,
   ChevronDown,
   CircleAlert,
+  TriangleAlert,
   Clock3,
-  Compass,
-  Database,
   ExternalLink,
-  FileEdit,
   FileText,
+  FolderOpen,
   Link2,
   Play,
   Search,
-  Send,
   ShieldCheck,
-  Sparkles,
   Terminal,
   Wrench,
   XCircle,
 } from "lucide-react";
 import { fetchTaskPage } from "@/lib/api/pages";
-import { roleMeta, statusLabel, statusTone } from "@/lib/agents";
+import {
+  actionTypeLabel,
+  resourceLabel,
+  riskLabel,
+  roleMeta,
+  statusLabel,
+  statusTone,
+} from "@/lib/agents";
 import { dateTime, money, timeOnly } from "@/lib/format";
 import { isSimulatedSource, sourceLabel } from "@/lib/domain/provenance";
-import type {
-  AcceptanceItemDto,
-  RetrievedEvidenceDto,
-  StepDto,
-  TaskDto,
-} from "@/contracts";
+import {
+  STEP_META,
+  TOOL_STATUS_MAP,
+  classifyEvidence,
+  getChecklistRuleLabel,
+  getChecklistTypeTag,
+  getCitationRelationship,
+  getCurrentAttempt,
+  getStatusBannerInfo,
+  getNextActionCopy,
+  getStatusSummary,
+  summarizeTaskCitations,
+} from "@/lib/presentation/task-view";
 import {
   Avatar,
   Badge,
   Card,
   CardHeader,
   EmptyState,
+  StatusBadge,
 } from "@/components/ui";
+import { parseClaimsTable } from "@/lib/domain/claims";
 import { ArtifactSubmitForm, TaskActions } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
 
@@ -49,341 +62,6 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-const STEP_META: Record<
-  string,
-  {
-    label: string;
-    description: string;
-    icon: typeof BookOpen;
-    toneClass: string;
-    bgClass: string;
-    borderClass: string;
-  }
-> = {
-  context: {
-    label: "收集上下文",
-    description: "加载目标背景、前置记忆与指令约束",
-    icon: BookOpen,
-    toneClass: "text-blue",
-    bgClass: "bg-blue/10",
-    borderClass: "border-blue/30",
-  },
-  plan: {
-    label: "制定计划",
-    description: "规划执行路径与质量闸门",
-    icon: Compass,
-    toneClass: "text-accent",
-    bgClass: "bg-accent/10",
-    borderClass: "border-accent/30",
-  },
-  tool: {
-    label: "检索与工具",
-    description: "调用外部连接器获取可信来源与实时数据",
-    icon: Wrench,
-    toneClass: "text-violet",
-    bgClass: "bg-violet/10",
-    borderClass: "border-violet/30",
-  },
-  draft: {
-    label: "撰写产物",
-    description: "按要求生成交付草稿与结构化内容",
-    icon: FileEdit,
-    toneClass: "text-teal",
-    bgClass: "bg-teal/10",
-    borderClass: "border-teal/30",
-  },
-  submit: {
-    label: "提交送审",
-    description: "封存产物并触发独立验收审查",
-    icon: Send,
-    toneClass: "text-muted",
-    bgClass: "bg-panel2",
-    borderClass: "border-line",
-  },
-  audit: {
-    label: "Auditor 验收",
-    description: "对照验收标准进行规则校验与判定",
-    icon: ShieldCheck,
-    toneClass: "text-danger",
-    bgClass: "bg-danger/10",
-    borderClass: "border-danger/30",
-  },
-};
-
-const TOOL_STATUS_MAP: Record<
-  string,
-  {
-    label: string;
-    tone: "teal" | "neutral" | "accent" | "danger";
-    description: string;
-  }
-> = {
-  ok: {
-    label: "已执行",
-    tone: "teal",
-    description: "工具执行成功并返回有效数据",
-  },
-  not_connected: {
-    label: "未连接",
-    tone: "neutral",
-    description: "当前环境未建立有效外部连接",
-  },
-  skipped: {
-    label: "未执行",
-    tone: "neutral",
-    description: "该步骤跳过外部检索，直接基于前置上下文推进",
-  },
-  not_configured: {
-    label: "未配置",
-    tone: "neutral",
-    description: "检索连接器未配置 API Key 或凭据",
-  },
-  unauthorized: {
-    label: "密钥被拒",
-    tone: "danger",
-    description: "API Key 无效或权限不足",
-  },
-  rate_limited: {
-    label: "被限流",
-    tone: "accent",
-    description: "上游服务请求频次超限",
-  },
-  timeout: {
-    label: "超时",
-    tone: "danger",
-    description: "工具请求超时未响应",
-  },
-  invalid_response: {
-    label: "响应异常",
-    tone: "danger",
-    description: "返回数据无法解析或格式不符",
-  },
-  network_error: {
-    label: "网络错误",
-    tone: "danger",
-    description: "网络连接中断",
-  },
-  failed: {
-    label: "执行失败",
-    tone: "danger",
-    description: "工具调用异常失败",
-  },
-};
-
-function getChecklistRuleLabel(item: AcceptanceItemDto): string {
-  switch (item.type) {
-    case "contains":
-      return `包含关键词「${item.value}」`;
-    case "min_words":
-      return `正文长度不少于 ${item.value} 字`;
-    case "min_sources":
-      return `引用外部来源不少于 ${item.value} 个`;
-    case "min_evidence":
-      return `落库引用证据不少于 ${item.value} 条`;
-    case "section":
-      return `包含核心章节「${item.value}」`;
-    case "manual":
-      return `人工核验项：${item.note}`;
-    default:
-      return "自定义契约规则";
-  }
-}
-
-function getChecklistTypeTag(type: AcceptanceItemDto["type"]) {
-  switch (type) {
-    case "contains":
-      return <span className="mono rounded bg-panel px-1.5 py-0.5 text-label text-muted">关键词</span>;
-    case "min_words":
-      return <span className="mono rounded bg-panel px-1.5 py-0.5 text-label text-muted">字数要求</span>;
-    case "min_sources":
-      return <span className="mono rounded bg-panel px-1.5 py-0.5 text-label text-muted">外部链接</span>;
-    case "min_evidence":
-      return <span className="mono rounded bg-panel px-1.5 py-0.5 text-label text-muted">证据落库</span>;
-    case "section":
-      return <span className="mono rounded bg-panel px-1.5 py-0.5 text-label text-muted">章节规范</span>;
-    case "manual":
-      return <span className="mono rounded bg-accent/15 border border-accent/30 px-1.5 py-0.5 text-label text-accent">人工复核</span>;
-    default:
-      return <span className="mono rounded bg-panel px-1.5 py-0.5 text-label text-muted">规则</span>;
-  }
-}
-
-function classifyEvidence(item: RetrievedEvidenceDto) {
-  const isSimulated =
-    isSimulatedSource(item.provider) ||
-    item.provider === "demo" ||
-    item.provider === "mock" ||
-    item.provider === "seed" ||
-    item.provider === "demo_search";
-  const isDb =
-    item.kind === "db" ||
-    item.kind === "memory" ||
-    item.kind === "database" ||
-    item.provider === "database" ||
-    item.provider === "cabinet";
-  const hasUrl = Boolean(item.url && item.url.startsWith("http"));
-
-  if (isSimulated) {
-    return {
-      type: "simulated" as const,
-      label: "模拟演示源",
-      tone: "neutral" as const,
-      icon: Sparkles,
-      desc: "该条目来自演示预置数据，非实时互联网检索",
-    };
-  }
-  if (isDb) {
-    return {
-      type: "database" as const,
-      label: "内部知识库引用",
-      tone: "blue" as const,
-      icon: Database,
-      desc: "来自 Cabinet 本地记忆库或知识资产",
-    };
-  }
-  if (hasUrl) {
-    return {
-      type: "external" as const,
-      label: "真实外部来源",
-      tone: "teal" as const,
-      icon: Link2,
-      desc: "经检索连接器实时获取的网络源证据",
-    };
-  }
-  return {
-    type: "citation" as const,
-    label: "数据源引用",
-    tone: "neutral" as const,
-    icon: Link2,
-    desc: "静态外部引用条目",
-  };
-}
-
-function getStatusBannerInfo(
-  status: TaskDto["status"],
-  hasPendingApproval: boolean,
-  hasFailedRun: boolean,
-  isAuditorRejected: boolean,
-  toolStep?: StepDto
-): {
-  badgeLabel: string;
-  badgeTone: "teal" | "accent" | "danger" | "blue" | "neutral";
-  title: string;
-  description: string;
-  bannerBorderClass: string;
-  bannerBgClass: string;
-} {
-  if (isAuditorRejected || status === "rejected") {
-    return {
-      badgeLabel: "未通过需修改",
-      badgeTone: "danger",
-      title: "Auditor 驳回了当前产物",
-      description: "交付内容未能通过验收标准的契约检验，请根据下方驳回原因调整内容后重新提交或重新执行。",
-      bannerBorderClass: "border-danger/35",
-      bannerBgClass: "bg-danger/[0.05]",
-    };
-  }
-
-  if (status === "failed" || hasFailedRun) {
-    return {
-      badgeLabel: "执行失败",
-      badgeTone: "danger",
-      title: "任务执行过程中断或发生异常",
-      description: "执行过程遇到错误，未能成功交付产物。请检查下方失败原因与工具调用细节。",
-      bannerBorderClass: "border-danger/35",
-      bannerBgClass: "bg-danger/[0.05]",
-    };
-  }
-
-  if (hasPendingApproval || status === "awaiting_approval") {
-    return {
-      badgeLabel: "等待你审核",
-      badgeTone: "accent",
-      title: "动作超出自治阈值，等待人工审批",
-      description: "该操作涉及高风险动作或超出预算限额，系统已暂停推进，等待主理人审批放行。",
-      bannerBorderClass: "border-accent/35",
-      bannerBgClass: "bg-accent/[0.05]",
-    };
-  }
-
-  if (status === "suggested") {
-    return {
-      badgeLabel: "等待你审核",
-      badgeTone: "accent",
-      title: "已生成建议方案（L1 级自治）",
-      description: "Agent 已起草建议方案，当前自治等级要求由主理人确认采纳后方可继续。",
-      bannerBorderClass: "border-accent/35",
-      bannerBgClass: "bg-accent/[0.05]",
-    };
-  }
-
-  if (status === "running") {
-    const isToolRunning =
-      toolStep &&
-      (toolStep.output as Record<string, unknown> | null)?.status === "running";
-    return {
-      badgeLabel: isToolRunning ? "等待检索" : "执行中",
-      badgeTone: "blue",
-      title: isToolRunning ? "正在调用外部连接器执行检索" : "Agent 正在推进执行工作流",
-      description: "正在收集前置上下文、检索可信来源或撰写交付物，完成后将自动送审。",
-      bannerBorderClass: "border-blue/35",
-      bannerBgClass: "bg-blue/[0.05]",
-    };
-  }
-
-  if (status === "submitted" || status === "auditing") {
-    return {
-      badgeLabel: "等待 Auditor 验收",
-      badgeTone: "accent",
-      title: "产物已提交，等待独立审查",
-      description: "Auditor 正在对照验收标准与 Checklist 规则逐项进行合格性裁定。",
-      bannerBorderClass: "border-accent/35",
-      bannerBgClass: "bg-accent/[0.05]",
-    };
-  }
-
-  if (status === "accepted") {
-    return {
-      badgeLabel: "验收通过",
-      badgeTone: "teal",
-      title: "所有验收标准均已满足",
-      description: "Auditor 已确认产物符合质量规范，点击右侧「完成」归档任务并同步记忆。",
-      bannerBorderClass: "border-teal/35",
-      bannerBgClass: "bg-teal/[0.05]",
-    };
-  }
-
-  if (status === "done") {
-    return {
-      badgeLabel: "任务已完成",
-      badgeTone: "teal",
-      title: "交付物与审计记录已归档",
-      description: "任务已全流程闭环，产物与经验数据已沉淀入库。",
-      bannerBorderClass: "border-teal/35",
-      bannerBgClass: "bg-teal/[0.05]",
-    };
-  }
-
-  if (status === "cancelled") {
-    return {
-      badgeLabel: "已取消",
-      badgeTone: "neutral",
-      title: "任务已终止",
-      description: "该任务已取消，未产生后续动作。",
-      bannerBorderClass: "border-line",
-      bannerBgClass: "bg-panel2/40",
-    };
-  }
-
-  return {
-    badgeLabel: status === "assigned" ? "准备就绪" : "待执行",
-    badgeTone: "neutral",
-    title: "前置准备就绪，等待启动",
-    description: "目标与验收标准已明确，点击右上角「执行」启动自动化工作流。",
-    bannerBorderClass: "border-line",
-    bannerBgClass: "bg-panel2/40",
-  };
-}
 
 export default async function TaskPage({
   params,
@@ -396,13 +74,6 @@ export default async function TaskPage({
   const tz = data.timezone;
   const { task, goal, assignee, auditor, runs, steps, artifacts, evidence, approvals, audit } = data;
 
-  const toolStep = steps.find((step) => step.type === "tool");
-  const toolOutput = (toolStep?.output ?? {}) as Record<string, unknown>;
-  const toolReason =
-    typeof toolOutput.reason === "string"
-      ? toolOutput.reason
-      : "这次运行没有调用检索工具。";
-
   const stepsByRun = new Map<string, typeof steps>();
   for (const step of steps) {
     const list = stepsByRun.get(step.runId) ?? [];
@@ -410,25 +81,19 @@ export default async function TaskPage({
     stepsByRun.set(step.runId, list);
   }
 
+  // The banner, the failure panel and the evidence note describe the task *now*,
+  // so they read only the newest attempt. History stays in the run timeline.
+  const { failedRun, toolStep, toolReason, failureReason } = getCurrentAttempt(
+    runs,
+    steps,
+  );
+
   // Audits & rejections
   const latestAudit = audit.find((a) => a.action.startsWith("audit."));
   const latestAuditReject = audit.find((a) => a.action === "audit.reject");
   const isRejected = task.status === "rejected" || latestAudit?.action === "audit.reject";
   const rejectionReason =
     ((latestAuditReject?.after ?? latestAudit?.after) as Record<string, unknown> | null)?.reason as string | undefined;
-
-  // Runs & failures
-  const failedRun = [...runs].reverse().find((r) => r.status === "failed" || r.error);
-  const failedStep = steps.find(
-    (s) =>
-      (s.output as Record<string, unknown> | null)?.status === "failed" ||
-      (s.output as Record<string, unknown> | null)?.error
-  );
-  const failureReason =
-    failedRun?.error ||
-    ((failedStep?.output as Record<string, unknown> | null)?.error as string | undefined) ||
-    ((failedStep?.output as Record<string, unknown> | null)?.reason as string | undefined) ||
-    (task.status === "failed" ? toolReason : undefined);
 
   function runProvenance(run: (typeof runs)[number]): {
     label: string;
@@ -475,6 +140,33 @@ export default async function TaskPage({
     isRejected,
     toolStep
   );
+  // The banner states the state and the move it implies. The category is the
+  // contract between the two: a status that asks the reader to act must not
+  // describe itself as "waiting", and vice versa.
+  const statusSummary = getStatusSummary(task.status);
+  // Derived from the banner, not the raw status: the banner already folds in
+  // a failed run and a pending approval, so the next-action line cannot tell
+  // the reader to "wait" under a banner that says the run failed.
+  const nextAction = getNextActionCopy(bannerInfo.nextActionCategory);
+
+  // Citation ↔ evidence relationship, computed once and shared by the
+  // deliverable and evidence cards so the two cannot disagree.
+  const citationSummary = summarizeTaskCitations(
+    artifacts,
+    evidence.map((item) => item.id)
+  );
+
+  // The model's own claim→source map. We show it exactly as written and only
+  // flag citations that do not resolve; whether a quote supports a sentence is
+  // a judgement we deliberately do not fake.
+  const claimsRows = artifacts.flatMap((artifact) =>
+    parseClaimsTable(artifact.content).rows.map((row) => ({
+      claim: row.claim,
+      refs: row.refs,
+      supported: row.supported,
+      dangling: row.refs.filter((ref) => !evidence.some((item) => item.id === ref)),
+    }))
+  );
 
   return (
     <div className="space-y-6">
@@ -500,16 +192,16 @@ export default async function TaskPage({
           </span>
           {task.riskLevel ? (
             <span className="text-label text-faint">
-              · 风险等级 {task.riskLevel}
+              · 风险等级 {riskLabel(task.riskLevel)}
             </span>
           ) : null}
         </div>
 
-        <h1 className="mt-1.5 text-xl font-semibold tracking-tight text-ink">
+        <h1 className="mt-1.5 text-page font-semibold tracking-tight text-ink">
           {task.title}
         </h1>
         {task.description ? (
-          <p className="mt-1.5 max-w-3xl text-xs leading-relaxed text-muted">
+          <p className="mt-1.5 max-w-3xl text-label leading-relaxed text-muted">
             {task.description}
           </p>
         ) : null}
@@ -525,13 +217,28 @@ export default async function TaskPage({
               <Badge tone={bannerInfo.badgeTone} className="font-semibold px-2.5 py-0.5">
                 {bannerInfo.badgeLabel}
               </Badge>
-              <span className="text-xs font-semibold text-ink">
+              <span className="text-label font-semibold text-ink">
                 {bannerInfo.title}
               </span>
             </div>
             <p className="mt-1.5 text-label leading-relaxed text-muted">
               {bannerInfo.description}
             </p>
+            {/* The state must say what it wants from the reader. The category
+                comes from the same mapping the banner uses, so the two can
+                never drift into "waiting" copy for a state that needs action. */}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-label">
+              <span className="inline-flex items-center gap-1 rounded border border-line2 bg-panel2/60 px-2 py-0.5 font-medium text-ink-soft">
+                <Activity className="size-3 shrink-0" />
+                下一步：{nextAction.label}
+              </span>
+              <span className="text-faint">{nextAction.hint}</span>
+            </div>
+            {!statusSummary.known ? (
+              <p className="mt-2 text-label leading-relaxed text-danger">
+                状态值「{statusSummary.status}」不在已知范围内，本页不会把它当作已完成或已通过处理。
+              </p>
+            ) : null}
           </div>
 
           <div className="shrink-0">
@@ -546,7 +253,7 @@ export default async function TaskPage({
               <XCircle className="mt-0.5 size-4 shrink-0 text-danger" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-semibold text-danger">
+                  <span className="text-label font-semibold text-danger">
                     Auditor 驳回原因
                   </span>
                   {latestAudit ? (
@@ -566,7 +273,7 @@ export default async function TaskPage({
                     {failedRows.map(({ item, index, result }) => (
                       <span
                         key={index}
-                        className="inline-flex items-center gap-1 rounded border border-danger/30 bg-danger/20 px-2 py-0.5 text-label text-danger"
+                        className="inline-flex items-center gap-1 rounded border border-danger/30 bg-danger/10 px-2 py-0.5 text-label text-danger"
                       >
                         <XCircle className="size-3 shrink-0" />
                         <span>{getChecklistRuleLabel(item)}</span>
@@ -588,10 +295,10 @@ export default async function TaskPage({
             <div className="flex items-start gap-2.5">
               <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" />
               <div className="min-w-0 flex-1">
-                <div className="text-xs font-semibold text-danger">
+                <div className="text-label font-semibold text-danger">
                   执行中断 / 失败原因
                 </div>
-                <div className="mt-1 text-label leading-relaxed text-ink-soft font-mono">
+                <div className="mt-1 text-label leading-relaxed text-ink-soft font-mono break-words">
                   {failureReason}
                 </div>
               </div>
@@ -605,7 +312,7 @@ export default async function TaskPage({
             <div className="flex items-start gap-2.5">
               <CircleAlert className="mt-0.5 size-4 shrink-0 text-accent" />
               <div className="min-w-0 flex-1">
-                <div className="text-xs font-semibold text-accent">
+                <div className="text-label font-semibold text-accent">
                   待审批动作：{approvals[0].action}
                 </div>
                 <div className="mt-1 text-label leading-relaxed text-ink-soft">
@@ -627,305 +334,7 @@ export default async function TaskPage({
       {/* Main Execution Workspace Grid */}
       <div className="grid gap-6 lg:grid-cols-[1.85fr_1fr]">
         <div className="space-y-6">
-          {/* Requirement 2: Contract First (验收标准前置) */}
-          <Card>
-            <CardHeader
-              eyebrow="Acceptance Contract"
-              title="验收标准与规则契约"
-              right={
-                totalChecklistCount === 0 ? null : (
-                  <div className="flex items-center gap-1.5">
-                    {allPassed ? (
-                      <Badge tone="teal">
-                        <CheckCircle2 className="size-3" /> 全部通过 ({passedCount}/{totalChecklistCount})
-                      </Badge>
-                    ) : failedCount > 0 ? (
-                      <Badge tone="danger">
-                        <XCircle className="size-3" /> 未通过 ({failedCount}/{totalChecklistCount})
-                      </Badge>
-                    ) : undeterminedCount > 0 ? (
-                      <Badge tone="accent">
-                        <CircleAlert className="size-3" /> 需人工复核 ({undeterminedCount} 项)
-                      </Badge>
-                    ) : (
-                      <Badge tone="neutral">待验收 ({totalChecklistCount} 项)</Badge>
-                    )}
-                  </div>
-                )
-              }
-            />
-            <div className="px-5 py-4">
-              {goal ? (
-                <div className="mb-3.5 flex items-center justify-between gap-2 rounded-lg border border-line bg-panel2/50 px-3 py-2 text-label">
-                  <div className="flex items-center gap-2 truncate">
-                    <span className="text-faint">归属目标：</span>
-                    <span className="font-medium text-ink truncate">{goal.title}</span>
-                  </div>
-                  {goal.status ? (
-                    <Badge tone={statusTone(goal.status)}>
-                      {statusLabel(goal.status)}
-                    </Badge>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div className="mb-4">
-                <div className="mb-1 text-eyebrow font-medium uppercase tracking-wider text-faint">
-                  标准描述
-                </div>
-                <p className="text-xs leading-relaxed text-ink-soft">
-                  {task.acceptanceCriteria || "暂无文字验收标准要求。"}
-                </p>
-              </div>
-
-              {orderedChecklist.length > 0 ? (
-                <div className="overflow-hidden rounded-lg border border-line bg-panel2/30">
-                  <div className="grid grid-cols-[1.25fr_85px_1fr] items-center gap-3 border-b border-line bg-panel2/80 px-3.5 py-2 text-eyebrow font-semibold uppercase tracking-[0.14em] text-faint">
-                    <span>契约规则</span>
-                    <span>分类</span>
-                    <span>判定结果（Auditor / 人工）</span>
-                  </div>
-                  <div className="divide-y divide-line/70">
-                    {orderedChecklist.map(({ item, index, result }) => (
-                      <div
-                        key={`${item.type}-${index}`}
-                        className={`grid grid-cols-[1.25fr_85px_1fr] items-start gap-3 px-3.5 py-2.5 transition-colors ${
-                          result && !result.passed
-                            ? "bg-danger/[0.04]"
-                            : result?.undetermined
-                              ? "bg-accent/[0.03]"
-                              : ""
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <span className="text-label leading-relaxed text-ink-soft font-medium">
-                            {getChecklistRuleLabel(item)}
-                          </span>
-                          {item.required ? (
-                            <span className="ml-1.5 text-eyebrow font-semibold text-danger">
-                              *必选
-                            </span>
-                          ) : null}
-                        </div>
-
-                        <div>{getChecklistTypeTag(item.type)}</div>
-
-                        <div className="min-w-0 text-label">
-                          {result ? (
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-1.5">
-                                {result.undetermined ? (
-                                  <>
-                                    <CircleAlert className="size-3.5 shrink-0 text-accent" />
-                                    <span className="font-medium text-accent">需人工复核</span>
-                                  </>
-                                ) : result.passed ? (
-                                  <>
-                                    <CheckCircle2 className="size-3.5 shrink-0 text-teal" />
-                                    <span className="font-medium text-teal">通过</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <XCircle className="size-3.5 shrink-0 text-danger" />
-                                    <span className="font-medium text-danger">未通过</span>
-                                  </>
-                                )}
-                              </div>
-                              {result.reason ? (
-                                <div className="text-label leading-relaxed text-faint">
-                                  {result.reason}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <span
-                              className={
-                                item.type === "manual" ? "text-accent" : "text-faint"
-                              }
-                            >
-                              {item.type === "manual" ? "需人工复核" : "待规则核查"}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 text-label text-faint border-t border-line/60 pt-3">
-                <span>规则项由 Auditor 自动化核对；「需人工复核」项由人类主理人确认。</span>
-                <div className="flex items-center gap-3">
-                  <span>预估 {task.estimateMin} 分钟</span>
-                  <span>·</span>
-                  <span>截止 {dateTime(task.dueAt, tz)}</span>
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          {/* Requirement 4: Deliverables & Artifacts (交付产物) */}
-          <Card>
-            <CardHeader
-              eyebrow="Deliverables"
-              title="交付产物"
-              right={
-                artifacts.length > 0 ? (
-                  <Badge tone="teal">{artifacts.length} 份产物</Badge>
-                ) : (
-                  <Badge tone="neutral">暂无产物</Badge>
-                )
-              }
-            />
-            {artifacts.length === 0 ? (
-              <div className="px-5 py-8">
-                <EmptyState
-                  title="暂无交付产物"
-                  hint="点击上方「执行」让 Agent 生成第一版产物，或在上方「提交我的答案」中直接撰写。"
-                />
-              </div>
-            ) : (
-              <div className="divide-y divide-line">
-                {artifacts.map((artifact, idx) => (
-                  <div key={artifact.id} className="px-5 py-4">
-                    <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <FileText className="size-4 text-teal shrink-0" />
-                        <span className="text-xs font-semibold text-ink">
-                          {artifact.title || `交付产物 #${artifacts.length - idx}`}
-                        </span>
-                        <Badge tone={artifact.submittedBy === "user" ? "accent" : "neutral"}>
-                          {artifact.submittedBy === "user" ? "用户提交" : sourceLabel(artifact.sourceType)}
-                        </Badge>
-                        {isSimulatedSource(artifact.sourceType) ? (
-                          <Badge tone="neutral" title="该产物来自显式演示或规则路径，不是真实模型调用">
-                            非真实执行
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <span className="text-label text-faint">{dateTime(artifact.createdAt, tz)}</span>
-                    </div>
-
-                    <details open={idx === 0} className="group">
-                      <summary className="flex items-center gap-1.5 cursor-pointer text-label text-faint hover:text-muted select-none">
-                        <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
-                        <span>{idx === 0 ? "收起产物正文" : "展开产物正文"}</span>
-                      </summary>
-                      <div className="mt-2.5 rounded-lg border border-line bg-sunken px-4 py-3.5 text-ink leading-relaxed">
-                        <Markdown content={artifact.content} />
-                      </div>
-                    </details>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          {/* Requirement 4: Grounding & Evidence (检索证据与外部来源) */}
-          <Card>
-            <CardHeader
-              eyebrow="Grounding & Evidence"
-              title="检索证据与外部来源"
-              right={
-                evidence.length > 0 ? (
-                  <Badge tone="teal">{evidence.length} 条有效证据</Badge>
-                ) : (
-                  <Badge tone="neutral">无检索证据</Badge>
-                )
-              }
-            />
-            {evidence.length === 0 ? (
-              <div className="px-5 py-6 text-center">
-                <div className="mx-auto mb-2 flex size-9 items-center justify-center rounded-full border border-line bg-panel2 text-faint">
-                  <Search className="size-4" />
-                </div>
-                <div className="text-xs font-medium text-ink">这次运行没有落库外部证据</div>
-                <p className="mt-1 text-label text-muted max-w-md mx-auto">
-                  {toolReason}
-                </p>
-                <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-line bg-panel2/60 px-3 py-1 text-label text-faint">
-                  <ShieldCheck className="size-3 text-teal" />
-                  Cabinet 遵循证据落库原则：未调用真实网络检索时不产生虚假引用条目。
-                </div>
-              </div>
-            ) : (
-              <ul className="divide-y divide-line">
-                {evidence.map((item) => {
-                  const provenance = classifyEvidence(item);
-                  const IconComponent = provenance.icon;
-                  const hasExternalLink = Boolean(item.url && item.url.startsWith("http"));
-
-                  return (
-                    <li key={item.id} className="px-5 py-4">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border border-line bg-panel2">
-                          <IconComponent className="size-3.5 text-teal" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {hasExternalLink ? (
-                                <a
-                                  href={item.url}
-                                  target="_blank"
-                                  rel="noreferrer noopener"
-                                  className="group inline-flex items-center gap-1 text-xs font-medium text-ink hover:text-accent truncate underline decoration-line2 underline-offset-2"
-                                >
-                                  <span className="truncate">{item.title}</span>
-                                  <ExternalLink className="size-3 shrink-0 text-faint group-hover:text-accent" />
-                                </a>
-                              ) : (
-                                <span className="text-xs font-medium text-ink truncate">
-                                  {item.title}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <Badge tone={provenance.tone}>{provenance.label}</Badge>
-                              <span className="mono rounded border border-line bg-panel2 px-1.5 py-0.5 text-label text-violet font-medium">
-                                [cite:{item.id}]
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-label text-faint">
-                            {item.publisher ? (
-                              <span className="truncate text-muted">{item.publisher}</span>
-                            ) : null}
-                            {item.publisher ? <span>·</span> : null}
-                            <span className="mono">{item.provider}</span>
-                            <span>·</span>
-                            <span>检索于 {dateTime(item.retrievedAt, tz)}</span>
-                          </div>
-
-                          <div className="mt-2.5 rounded-md border-l-2 border-teal/40 bg-sunken/80 px-3.5 py-2 text-label leading-relaxed text-ink-soft italic">
-                            <span aria-hidden="true">“</span>
-                            {item.quote}
-                            <span aria-hidden="true">”</span>
-                          </div>
-
-                          {hasExternalLink ? (
-                            <div className="mt-2 text-label text-faint truncate mono">
-                              <a
-                                href={item.url}
-                                target="_blank"
-                                rel="noreferrer noopener"
-                                className="hover:text-muted hover:underline"
-                              >
-                                {item.url}
-                              </a>
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Card>
-
-          {/* Requirement 3: Execution Timeline & Tool Steps (运行过程) */}
+          {/* ① 执行过程：运行时间线与工具调用 */}
           <Card>
             <CardHeader
               eyebrow="Run Trace & Execution"
@@ -939,6 +348,7 @@ export default async function TaskPage({
             {runs.length === 0 ? (
               <div className="px-5 py-8">
                 <EmptyState
+                  icon={<Activity className="size-4" />}
                   title="还没有运行记录"
                   hint="点击上方「执行」按钮，让 Agent 产出第一版执行轨迹。"
                 />
@@ -958,7 +368,7 @@ export default async function TaskPage({
                             run.status === "succeeded"
                               ? "bg-teal shadow-[0_0_8px_rgba(59,185,158,0.5)]"
                               : run.status === "failed"
-                                ? "bg-danger shadow-[0_0_8px_rgba(234,85,85,0.5)]"
+                                ? "bg-danger shadow-[0_0_8px_rgba(239,98,98,0.5)]"
                                 : "bg-blue shadow-[0_0_8px_rgba(91,159,248,0.5)]"
                           }`}
                         />
@@ -966,6 +376,11 @@ export default async function TaskPage({
                           Run #{runs.length - runIndex}
                         </span>
                         <span className="mono text-label text-faint">({run.id})</span>
+                        {/* The dot above is decorative; the outcome must be
+                            readable as text, never by colour alone. */}
+                        <Badge tone={statusTone(run.status)}>
+                          {statusLabel(run.status)}
+                        </Badge>
                         <Badge tone={run.agentId === auditor?.id ? "danger" : "neutral"}>
                           {run.agentId}
                         </Badge>
@@ -990,7 +405,7 @@ export default async function TaskPage({
                       {run.error ? (
                         <div className="mt-2.5 rounded-lg border border-danger/30 bg-danger/10 px-3.5 py-2 text-label text-danger">
                           <span className="font-medium">运行失败报错：</span>
-                          <span className="font-mono">{run.error}</span>
+                          <span className="font-mono break-words">{run.error}</span>
                         </div>
                       ) : null}
 
@@ -1084,12 +499,15 @@ export default async function TaskPage({
                         })}
                       </div>
 
-                      {/* Replay key */}
+                      {/* Attempt identifier. It locates this run's step rows
+                          later; it is not a replay handle. */}
                       {run.replayKey ? (
                         <div className="mt-3 flex items-center gap-1.5 border-t border-line/60 pt-2.5 text-label text-faint">
                           <Play className="size-3 text-muted" />
-                          <span>回放标识 replayKey:</span>
-                          <span className="mono text-ink select-all">{run.replayKey}</span>
+                          <span>运行标识 replayKey:</span>
+                          <span className="mono text-ink select-all break-all" title={run.replayKey}>
+                            {run.replayKey}
+                          </span>
                         </div>
                       ) : null}
                     </div>
@@ -1098,6 +516,477 @@ export default async function TaskPage({
               </div>
             )}
           </Card>
+
+          {/* ② 交付产物：内容与来源模式 */}
+          <Card>
+            <CardHeader
+              eyebrow="Deliverables"
+              title="交付产物"
+              right={
+                artifacts.length > 0 ? (
+                  <Badge tone="teal">{artifacts.length} 份产物</Badge>
+                ) : (
+                  <Badge tone="neutral">暂无产物</Badge>
+                )
+              }
+            />
+            {artifacts.length === 0 ? (
+              <div className="px-5 py-8">
+                <EmptyState
+                  icon={<FolderOpen className="size-4" />}
+                  title="暂无交付产物"
+                  hint="点击上方「执行」让 Agent 生成第一版产物，或在上方「提交我的答案」中直接撰写。"
+                />
+              </div>
+            ) : (
+              <div className="divide-y divide-line">
+                {artifacts.map((artifact, idx) => {
+                  const artifactRelation = getCitationRelationship(
+                    artifact.content,
+                    evidence.map((item) => item.id)
+                  );
+                  const artifactCited = artifactRelation.cited;
+                  const artifactDangling = artifactRelation.unresolved;
+                  const artifactUncited = artifactRelation.uncited;
+
+                  return (
+                  <div key={artifact.id} className="px-5 py-4">
+                    <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <FileText className="size-4 text-teal shrink-0" />
+                        <span className="text-label font-semibold text-ink">
+                          {artifact.title || `交付产物 #${artifacts.length - idx}`}
+                        </span>
+                        <Badge tone={artifact.submittedBy === "user" ? "accent" : "neutral"}>
+                          {artifact.submittedBy === "user" ? "用户提交" : sourceLabel(artifact.sourceType)}
+                        </Badge>
+                        {isSimulatedSource(artifact.sourceType) ? (
+                          <Badge tone="neutral" title="该产物来自显式演示或规则路径，不是真实模型调用">
+                            非真实执行
+                          </Badge>
+                        ) : null}
+                        {artifactCited.length > 0 ? (
+                          <Badge
+                            tone="teal"
+                            title={`正文引用标记可在下方证据卡中找到：${artifactCited.join("、")}`}
+                          >
+                            <Link2 className="size-2.5" /> 引用 {artifactCited.length} 条证据
+                          </Badge>
+                        ) : null}
+                        {artifactDangling.length > 0 ? (
+                          <Badge
+                            tone="danger"
+                            title={`以下引用标记找不到对应证据行：${artifactDangling.join("、")}`}
+                          >
+                            <TriangleAlert className="size-2.5" /> {artifactDangling.length} 条引用失效
+                          </Badge>
+                        ) : null}
+                        {artifactCited.length === 0 && artifactDangling.length === 0 ? (
+                          <Badge
+                            tone="neutral"
+                            title="这份产物的正文没有 [cite:…] 标记，无法看出哪句结论对应哪条证据"
+                          >
+                            未标注引用
+                          </Badge>
+                        ) : null}
+                        {artifactUncited.length > 0 && artifactCited.length > 0 ? (
+                          <Badge
+                            tone="neutral"
+                            title={`还有这些证据未被这份产物引用：${artifactUncited.join("、")}`}
+                          >
+                            {artifactUncited.length} 条证据未被引用
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <span className="text-label text-faint">{dateTime(artifact.createdAt, tz)}</span>
+                    </div>
+
+                    {artifactDangling.length > 0 ? (
+                      <div className="mb-2.5 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-label text-danger">
+                        产物正文引用了 {artifactDangling.length} 个不存在的证据 ID（
+                        <span className="mono">{artifactDangling.join("、")}</span>
+                        ），可能是模型编造或证据已被清理，请人工核实后再验收。
+                      </div>
+                    ) : null}
+
+                    <details open={idx === 0} className="group">
+                      <summary className="flex items-center gap-1.5 cursor-pointer text-label text-faint hover:text-muted select-none">
+                        <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+                        <span>{idx === 0 ? "收起产物正文" : "展开产物正文"}</span>
+                      </summary>
+                      <div className="mt-2.5 rounded-lg border border-line bg-sunken px-4 py-3.5 text-ink leading-relaxed">
+                        <Markdown content={artifact.content} />
+                      </div>
+                    </details>
+                  </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          {/* ③ 证据与引用关系：检索来源与引用状态 */}
+          <Card>
+            <CardHeader
+              eyebrow="Grounding & Evidence"
+              title="检索证据与外部来源"
+              right={
+                evidence.length > 0 ? (
+                  <div className="flex items-center gap-1.5">
+                    {artifacts.length === 0 ? (
+                      <Badge tone="neutral">暂无产物可引用</Badge>
+                    ) : citationSummary.cited.length > 0 ? (
+                      <Badge
+                        tone="teal"
+                        title="产物正文中的 [cite:…] 标记能在下方证据卡里找到；这只说明指向存在，不说明结论已被证据支撑"
+                      >
+                        被产物引用 {citationSummary.cited.length}/{evidence.length}
+                      </Badge>
+                    ) : (
+                      <Badge
+                        tone="accent"
+                        title="证据已落库，但没有任何产物正文引用它——结论未与来源绑定"
+                      >
+                        产物未引用任何来源
+                      </Badge>
+                    )}
+                    <Badge tone="neutral">共 {evidence.length} 条</Badge>
+                  </div>
+                ) : (
+                  <Badge tone="neutral">无检索证据</Badge>
+                )
+              }
+            />
+            {/* States what the citation relation does and does not prove —
+                a citation means "points at", never "supports". */}
+            <div className="border-b border-line bg-panel2/40 px-5 py-2.5 text-label leading-relaxed text-muted">
+              {citationSummary.groundingNote}
+            </div>
+            {citationSummary.unresolved.length > 0 ? (
+              <div className="border-b border-danger/25 bg-danger/10 px-5 py-3 text-label text-danger">
+                <span className="inline-flex items-center gap-1.5 font-medium">
+                  <TriangleAlert className="size-3.5" />
+                  产物引用了 {citationSummary.unresolved.length} 个本条任务不存在的证据 ID
+                </span>
+                <span className="ml-1.5 mono text-danger/80 break-all">
+                  {citationSummary.unresolved.join("、")}
+                </span>
+                <p className="mt-1 text-danger/80">
+                  这些引用不会被下方的证据卡接住，可能是模型编造，验收前请人工核实。
+                </p>
+              </div>
+            ) : null}
+            {evidence.length === 0 ? (
+              <div className="px-5 py-6 text-center">
+                <div className="mx-auto mb-2 flex size-9 items-center justify-center rounded-full border border-line bg-panel2 text-faint">
+                  <Search className="size-4" />
+                </div>
+                <div className="text-label font-medium text-ink">这次运行没有落库外部证据</div>
+                <p className="mt-1 text-label text-muted max-w-md mx-auto">
+                  {toolReason}
+                </p>
+                <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-line bg-panel2/60 px-3 py-1 text-label text-faint">
+                  <ShieldCheck className="size-3 text-teal" />
+                  Cabinet 遵循证据落库原则：未调用真实网络检索时不产生虚假引用条目。
+                </div>
+              </div>
+            ) : (
+              <ul className="divide-y divide-line">
+                {evidence.map((item) => {
+                  const provenance = classifyEvidence(item);
+                  const IconComponent = provenance.icon;
+                  const hasExternalLink = Boolean(item.url && item.url.startsWith("http"));
+                  const isCited = citationSummary.cited.includes(item.id);
+
+                  return (
+                    <li key={item.id} className="px-5 py-4">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border border-line bg-panel2">
+                          <IconComponent className="size-3.5 text-teal" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {hasExternalLink ? (
+                                <a
+                                  href={item.url}
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  title={item.title}
+                                  className="group inline-flex items-center gap-1 text-label font-medium text-ink hover:text-accent truncate underline decoration-line2 underline-offset-2"
+                                >
+                                  <span className="truncate">{item.title}</span>
+                                  <ExternalLink className="size-3 shrink-0 text-faint group-hover:text-accent" />
+                                </a>
+                              ) : (
+                                <span className="text-label font-medium text-ink truncate" title={item.title}>
+                                  {item.title}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {artifacts.length > 0 ? (
+                                isCited ? (
+                                  <Badge tone="teal" title="产物正文中出现了指向该条目的引用标记">
+                                    <Link2 className="size-2.5" /> 已被引用
+                                  </Badge>
+                                ) : (
+                                  <Badge tone="neutral" title="该来源已落库，但产物正文没有引用它">
+                                    未被引用
+                                  </Badge>
+                                )
+                              ) : null}
+                              <Badge tone={provenance.tone}>{provenance.label}</Badge>
+                              <span className="mono rounded border border-line bg-panel2 px-1.5 py-0.5 text-label text-violet font-medium">
+                                [cite:{item.id}]
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-label text-faint">
+                            {item.publisher ? (
+                              <span className="truncate text-muted">{item.publisher}</span>
+                            ) : null}
+                            {item.publisher ? <span>·</span> : null}
+                            <span className="mono">{item.provider}</span>
+                            <span>·</span>
+                            <span>检索于 {dateTime(item.retrievedAt, tz)}</span>
+                          </div>
+
+                          <div className="mt-2.5 rounded-md border-l-2 border-teal/40 bg-sunken/80 px-3.5 py-2 text-label leading-relaxed text-ink-soft italic">
+                            <span aria-hidden="true">“</span>
+                            {item.quote}
+                            <span aria-hidden="true">”</span>
+                          </div>
+
+                          {hasExternalLink ? (
+                            <div className="mt-2 text-label text-faint break-all mono">
+                              <a
+                                href={item.url}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                title={item.url}
+                                className="hover:text-muted hover:underline"
+                              >
+                                {item.url}
+                              </a>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          {/* ④ 验收标准：契约规则与判定结果 */}
+          <Card>
+            <CardHeader
+              eyebrow="Acceptance Contract"
+              title="验收标准与规则契约"
+              right={
+                totalChecklistCount === 0 ? null : (
+                  <div className="flex items-center gap-1.5">
+                    {allPassed ? (
+                      <Badge tone="teal">
+                        <CheckCircle2 className="size-3" /> 全部通过 ({passedCount}/{totalChecklistCount})
+                      </Badge>
+                    ) : failedCount > 0 ? (
+                      <Badge tone="danger">
+                        <XCircle className="size-3" /> 未通过 ({failedCount}/{totalChecklistCount})
+                      </Badge>
+                    ) : undeterminedCount > 0 ? (
+                      <Badge tone="accent">
+                        <CircleAlert className="size-3" /> 需人工复核 ({undeterminedCount} 项)
+                      </Badge>
+                    ) : (
+                      <Badge tone="neutral">待验收 ({totalChecklistCount} 项)</Badge>
+                    )}
+                  </div>
+                )
+              }
+            />
+            <div className="px-5 py-4">
+              {goal ? (
+                <div className="mb-3.5 flex items-center justify-between gap-2 rounded-lg border border-line bg-panel2/50 px-3 py-2 text-label">
+                  <div className="flex items-center gap-2 truncate">
+                    <span className="text-faint">归属目标：</span>
+                    <span className="font-medium text-ink truncate">{goal.title}</span>
+                  </div>
+                  {goal.status ? (
+                    <StatusBadge status={goal.status} />
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="mb-4">
+                <div className="mb-1 text-eyebrow font-medium uppercase tracking-wider text-faint">
+                  标准描述
+                </div>
+                <p className="text-label leading-relaxed text-ink-soft">
+                  {task.acceptanceCriteria || "暂无文字验收标准要求。"}
+                </p>
+              </div>
+
+              {orderedChecklist.length > 0 ? (
+                <div className="overflow-hidden rounded-lg border border-line bg-panel2/30">
+                  <div className="hidden sm:grid sm:grid-cols-[1.25fr_85px_1fr] items-center gap-3 border-b border-line bg-panel2/80 px-3.5 py-2 text-eyebrow font-semibold uppercase tracking-[0.14em] text-faint">
+                    <span>契约规则</span>
+                    <span>分类</span>
+                    <span>判定结果（Auditor / 人工）</span>
+                  </div>
+                  <div className="divide-y divide-line/70">
+                    {orderedChecklist.map(({ item, index, result }) => (
+                      <div
+                        key={`${item.type}-${index}`}
+                        className={`grid grid-cols-1 gap-1 px-3.5 py-2.5 transition-colors sm:grid-cols-[1.25fr_85px_1fr] sm:items-start sm:gap-3 ${
+                          result && !result.passed
+                            ? "bg-danger/[0.04]"
+                            : result?.undetermined
+                              ? "bg-accent/[0.03]"
+                              : ""
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <span className="text-label leading-relaxed text-ink-soft font-medium">
+                            {getChecklistRuleLabel(item)}
+                          </span>
+                          {item.required ? (
+                            <span className="ml-1.5 text-eyebrow font-semibold text-danger">
+                              *必选
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 sm:block">
+                          <span className="text-eyebrow uppercase tracking-wider text-faint sm:hidden">
+                            分类
+                          </span>
+                          {getChecklistTypeTag(item.type)}
+                        </div>
+
+                        <div className="min-w-0 text-label">
+                          <span className="mb-0.5 block text-eyebrow uppercase tracking-wider text-faint sm:hidden">
+                            判定结果
+                          </span>
+                          {result ? (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5">
+                                {result.undetermined ? (
+                                  <>
+                                    <CircleAlert className="size-3.5 shrink-0 text-accent" />
+                                    <span className="font-medium text-accent">需人工复核</span>
+                                  </>
+                                ) : result.passed ? (
+                                  <>
+                                    <CheckCircle2 className="size-3.5 shrink-0 text-teal" />
+                                    <span className="font-medium text-teal">通过</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <XCircle className="size-3.5 shrink-0 text-danger" />
+                                    <span className="font-medium text-danger">未通过</span>
+                                  </>
+                                )}
+                              </div>
+                              {result.reason ? (
+                                <div className="text-label leading-relaxed text-faint">
+                                  {result.reason}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span
+                              className={
+                                item.type === "manual" ? "text-accent" : "text-faint"
+                              }
+                            >
+                              {item.type === "manual" ? "需人工复核" : "待规则核查"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 text-label text-faint border-t border-line/60 pt-3">
+                <span>规则项由 Auditor 自动化核对；「需人工复核」项由人类主理人确认。</span>
+                <div className="flex items-center gap-3">
+                  <span>预估 {task.estimateMin} 分钟</span>
+                  <span>·</span>
+                  <span>截止 {dateTime(task.dueAt, tz)}</span>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {claimsRows.length > 0 ? (
+            <Card>
+              <CardHeader
+                eyebrow="Claims"
+                title="主张 — 来源核对"
+                right={<Badge tone="neutral">{claimsRows.length} 行</Badge>}
+              />
+              <div className="px-5 py-4">
+                <p className="mb-3 text-label leading-relaxed text-faint">
+                  这张表由模型写出。机器只验证「引用指向是否存在」，最后一列留空：
+                  <span className="text-muted"> 一句原文是否真的支撑这条主张，需要你自己判断。</span>
+                </p>
+                <div className="overflow-hidden rounded-lg border border-line/70">
+                  <div className="grid grid-cols-[1.6fr_1fr_0.9fr] gap-3 border-b border-line/70 bg-sunken/60 px-3 py-2 text-eyebrow uppercase tracking-wide text-faint">
+                    <span>主张</span>
+                    <span>引用</span>
+                    <span>是否被原文支持</span>
+                  </div>
+                  <div className="divide-y divide-line/60">
+                    {claimsRows.map((row, index) => (
+                      <div
+                        key={`${index}-${row.claim.slice(0, 12)}`}
+                        className="grid grid-cols-[1.6fr_1fr_0.9fr] items-start gap-3 px-3 py-2.5"
+                      >
+                        <span className="text-label leading-relaxed text-ink">
+                          {row.claim || "（空）"}
+                        </span>
+                        <span className="space-y-1">
+                          {row.refs.length === 0 ? (
+                            <Badge tone="danger">未引用</Badge>
+                          ) : (
+                            row.refs.map((ref) => {
+                              const hit = evidence.find((item) => item.id === ref);
+                              return hit ? (
+                                <a
+                                  key={ref}
+                                  href={hit.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="block truncate text-label text-teal hover:underline"
+                                  title={hit.title}
+                                >
+                                  {hit.title}
+                                </a>
+                              ) : (
+                                <Badge key={ref} tone="danger">
+                                  找不到 {ref}
+                                </Badge>
+                              );
+                            })
+                          )}
+                        </span>
+                        <span className="text-label text-faint">
+                          {row.supported.trim() ? row.supported : "待你核对"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+
         </div>
 
         {/* Right Sidebar: Ownership, Metadata, Approvals, Audit log */}
@@ -1157,11 +1046,11 @@ export default async function TaskPage({
             <div className="space-y-3 px-5 py-4 text-label">
               <div className="flex items-center justify-between">
                 <span className="text-faint">动作类型</span>
-                <span className="mono text-muted">{task.actionType}</span>
+                <span className="text-muted">{actionTypeLabel(task.actionType)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-faint">涉及资源</span>
-                <span className="text-muted">{task.resource}</span>
+                <span className="text-muted">{resourceLabel(task.resource)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-faint">预估耗时</span>
@@ -1194,11 +1083,8 @@ export default async function TaskPage({
                     <div className="mt-1 leading-relaxed">
                       {String(approval.payload.reason ?? approval.payload.note ?? "")}
                     </div>
-                    <Badge
-                      tone={approval.status === "pending" ? "accent" : "neutral"}
-                      className="mt-2"
-                    >
-                      {approval.status}
+                    <Badge tone={statusTone(approval.status)} className="mt-2">
+                      {statusLabel(approval.status)}
                     </Badge>
                   </div>
                 ))}
@@ -1231,8 +1117,8 @@ export default async function TaskPage({
             <div className="flex items-start gap-3 px-5 py-4">
               <Clock3 className="mt-0.5 size-4 text-blue shrink-0" />
               <div className="text-label leading-relaxed text-muted">
-                每次运行均严格保证可重放性：使用 <span className="mono text-ink">replayKey</span>{" "}
-                可在沙箱中完整复现推理步骤、检索输入与判定结果，确保执行过程透明可追溯。
+                每次运行都会写入一个 <span className="mono text-ink">replayKey</span>
+                ，它只是一次尝试的编号，用来在运行记录里定位这次执行的步骤、耗时与花费。上方展示的步骤输入与输出就是当时落库的记录，不是重新执行的结果。
               </div>
             </div>
           </Card>

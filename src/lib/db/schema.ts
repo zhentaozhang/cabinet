@@ -24,6 +24,7 @@ export type AcceptanceItem =
   | { type: "min_words"; value: number; required: boolean }
   | { type: "min_sources"; value: number; required: boolean }
   | { type: "min_evidence"; value: number; required: boolean }
+  | { type: "claims_table"; value: number; required: boolean }
   | { type: "section"; value: string; required: boolean }
   | { type: "manual"; note: string; required: boolean };
 

@@ -1,3 +1,4 @@
+import { checkClaimsTable } from "./claims";
 import type {
   AcceptanceItem,
   AcceptanceResult,
@@ -18,9 +19,14 @@ function countSources(content: string): number {
 }
 
 /** Citation marker a draft must use: `[cite:evd_xxx]`. */
-const CITE_PATTERN = /\[cite:(evd_[A-Za-z0-9_-]+)\]/g;
+export const CITE_PATTERN = /\[cite:(evd_[A-Za-z0-9_-]+)\]/g;
 
-function citedEvidenceIds(content: string): string[] {
+/**
+ * Every evidence id the draft points at, in first-mention order. Shared with
+ * the task page so "which source does this sentence rest on" is answered by
+ * one rule, not two drifting copies.
+ */
+export function citedEvidenceIds(content: string): string[] {
   return Array.from(content.matchAll(CITE_PATTERN), (match) => match[1] as string);
 }
 
@@ -122,6 +128,22 @@ export function evaluateAcceptance(
         reason: passed
           ? `引用了 ${valid.length} 条已落库证据，要求至少 ${item.value}`
           : `引用了 ${valid.length} 条已落库证据，要求至少 ${item.value}${detail}`,
+      };
+    }
+
+    if (item.type === "claims_table") {
+      // Format only: the table exists, every row cites a persisted id. Whether
+      // a quote actually supports its claim is a human judgement, so a
+      // well-formed table is 需人工复核, never 通过.
+      const check = checkClaimsTable(content, context.evidenceIds, item.value);
+      if (!check.ok) {
+        return { item, passed: false, reason: `主张—来源表不合格：${check.problems.join("；")}` };
+      }
+      return {
+        item,
+        passed: false,
+        undetermined: true,
+        reason: `主张—来源表格式合格（${check.rows.length} 行，引用均可解析），每行是否被原文支持需你逐行核对`,
       };
     }
 

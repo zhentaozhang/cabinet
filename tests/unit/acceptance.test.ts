@@ -126,3 +126,35 @@ describe("undetermined rules", () => {
     expect(checklistPassed(results)).toBe(false);
   });
 });
+
+describe("claims table rule", () => {
+  const table = [
+    "| 主张 | 引用 | 是否被原文支持 |",
+    "| --- | --- | --- |",
+    "| A | [cite:evd_1] |  |",
+    "| B | [cite:evd_2] |  |",
+    "| C | [cite:evd_3] |  |",
+  ].join("\n");
+
+  it("passes the format and still asks a human to judge support", () => {
+    const [result] = evaluateAcceptance(
+      table,
+      [{ type: "claims_table", value: 3, required: true }],
+      { evidenceIds: new Set(["evd_1", "evd_2", "evd_3"]) },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.undetermined).toBe(true);
+    expect(result.reason).toContain("格式合格");
+  });
+
+  it("fails outright when a cited row was never stored", () => {
+    const [result] = evaluateAcceptance(
+      table.replace("evd_2", "evd_missing"),
+      [{ type: "claims_table", value: 3, required: true }],
+      { evidenceIds: new Set(["evd_1", "evd_3"]) },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.undetermined).toBeFalsy();
+    expect(result.reason).toContain("引用了不存在的证据");
+  });
+});
