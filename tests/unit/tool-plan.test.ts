@@ -76,6 +76,24 @@ describe("planTools", () => {
     expect(plan.considered[0]?.reason).toBe("missing_grant");
   });
 
+  it("treats a revoked grant as no grant", () => {
+    // Scoped correctly for `web_search`, but revoked: the grant check is the
+    // policy one, so revocation is not something this planner can forget.
+    const plan = planTools({
+      tools: ["web_search"],
+      grants: [
+        { resource: "web", scope: "read", revokedAt: new Date("2026-01-01T00:00:00Z") },
+      ],
+      actionType: "internal",
+    });
+    expect(plan.planned).toBeNull();
+    expect(plan.considered[0]).toEqual({
+      tool: "web_search",
+      accepted: false,
+      reason: "missing_grant",
+    });
+  });
+
   it("accepts a wildcard grant", () => {
     const plan = planTools({
       tools: ["write_plan"],

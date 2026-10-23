@@ -22,6 +22,9 @@ export function demoModeEnabled(): boolean {
  *
  * This is deliberately a read model: the page must be able to say "not
  * configured" without attempting a call, and without ever exposing a key.
+ * Costs zero database queries and zero provider calls — rendering
+ * `/settings/connectors` must not spend a search, or the page would be
+ * indistinguishable from a working connector.
  */
 export function loadConnectors(demoMode = demoModeEnabled()): ConnectorStatusDto {
   const providers = configuredSearchProviders().map((provider) => provider.name);
@@ -62,7 +65,12 @@ export function loadConnectors(demoMode = demoModeEnabled()): ConnectorStatusDto
   );
 }
 
-const TEST_QUERY = "retrieval augmented generation survey";
+/**
+ * A fixed, meaningless query. The probe answers "can this deployment reach the
+ * provider at all", so a user task's query would make the answer depend on that
+ * task (and could cost the user's quota for content they did not ask for).
+ */
+const TEST_QUERY = "cabinet connector test";
 
 const ERROR_STATUS: Record<ConnectorErrorCode, ConnectorTestDto["status"]> = {
   not_configured: "not_configured",
@@ -75,7 +83,12 @@ const ERROR_STATUS: Record<ConnectorErrorCode, ConnectorTestDto["status"]> = {
 
 /**
  * One real attempt, so "connected" means something. Costs one search call and
- * is rate-limited by the shared mutation pipeline.
+ * is reached only through `POST /api/connectors/test` — never from a render.
+ *
+ * The result is returned, not stored: the page keeps no probe state, so it can
+ * never present a stale "connected" as current. Persisting it would need a
+ * table for one boolean, which is not worth it while the button reports its own
+ * outcome inline.
  */
 export async function testConnector(): Promise<ConnectorTestDto> {
   const outcome = await searchWithFallback({ query: TEST_QUERY, limit: 1 });

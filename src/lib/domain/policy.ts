@@ -278,7 +278,15 @@ const SCOPE_RANK: Record<string, number> = {
   admin: 3,
 };
 
-function hasGrant(
+/**
+ * The one grant check.
+ *
+ * Both `decideRun` and `planTools` must agree on what a grant means, so this is
+ * exported rather than copied: a second implementation drifts on exactly the
+ * interesting cases (a revoked grant is a record of permission, not
+ * permission; `*` covers every resource; `execute`/`admin` outrank `write`).
+ */
+export function hasGrant(
   grants: Grant[],
   resource: string,
   need: "read" | "write",

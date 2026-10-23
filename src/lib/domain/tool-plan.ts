@@ -1,4 +1,4 @@
-import type { Grant } from "./policy";
+import { hasGrant, type Grant } from "./policy";
 
 /**
  * Every tool names the resource and scope it needs. The tool a run may use is
@@ -34,8 +34,6 @@ const TOOL_SPECS: Record<string, ToolSpec> = {
   sandbox_execute: { resource: "sandbox", scope: "write", kind: "execute" },
 };
 
-const SCOPE_RANK = { read: 1, write: 2 } as const;
-
 export type ToolRejection = "unknown_tool" | "missing_grant" | "needs_action";
 
 export type ConsideredTool = {
@@ -50,20 +48,16 @@ export type ToolPlan = {
   reason: string;
 };
 
-function hasGrant(grants: Grant[], resource: string, need: "read" | "write") {
-  const required = SCOPE_RANK[need];
-  return grants.some((grant) => {
-    if (grant.resource !== resource && grant.resource !== "*") return false;
-    return (SCOPE_RANK[grant.scope as "read" | "write"] ?? 0) >= required;
-  });
-}
-
 /**
  * Pick the first tool the agent is actually allowed to use.
  *
  * Order is the agent's own declaration order, so a well-ordered list reads as
  * a preference list. When nothing is permitted the plan is empty and the run
  * records `unauthorized` instead of pretending a tool exists.
+ *
+ * `grants` are the policy `Grant` rows as persisted, including `revokedAt`: the
+ * permission question is answered by `policy.hasGrant` and nowhere else, so a
+ * tool plan can never be more permissive than the run it belongs to.
  */
 export function planTools(input: {
   tools: string[];
