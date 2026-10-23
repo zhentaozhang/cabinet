@@ -285,6 +285,7 @@ export const taskPageSchema = z.object({
     run: taskActionStateSchema,
     audit: taskActionStateSchema,
     promote: taskActionStateSchema,
+    cancel: taskActionStateSchema,
   }),
   task: taskDtoSchema,
   goal: goalDtoSchema.nullable(),

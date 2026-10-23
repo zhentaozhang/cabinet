@@ -24,6 +24,7 @@ export const API_ROUTES = {
   taskRun: (id: string) => `/api/tasks/${id}/run`,
   taskAudit: (id: string) => `/api/tasks/${id}/audit`,
   taskPromote: (id: string) => `/api/tasks/${id}/promote`,
+  taskCancel: (id: string) => `/api/tasks/${id}/cancel`,
   approval: (id: string) => `/api/approvals/${id}`,
   grant: (id: string) => `/api/grants/${id}`,
   agent: (id: string) => `/api/agents/${id}`,

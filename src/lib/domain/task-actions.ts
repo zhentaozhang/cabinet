@@ -21,6 +21,7 @@ export type TaskActions = {
   run: TaskActionState;
   audit: TaskActionState;
   promote: TaskActionState;
+  cancel: TaskActionState;
 };
 
 export type TaskActionInput = {
@@ -30,6 +31,31 @@ export type TaskActionInput = {
 };
 
 const RUNNABLE = new Set(["planned", "assigned", "approved", "rejected", "failed"]);
+
+/**
+ * Cancelling stops future work; it never removes the record. An in-flight run
+ * is not interruptible, so it must finish (or fail) before the task can be
+ * cancelled — pretending otherwise would leave a live run writing to a closed
+ * task.
+ */
+const CANCELLABLE = new Set([
+  "planned",
+  "assigned",
+  "suggested",
+  "awaiting_approval",
+  "approved",
+  "rejected",
+  "failed",
+]);
+
+const CANCEL_REASON: Record<string, string> = {
+  running: "正在执行，不能中途取消；等它跑完或失败",
+  submitted: "已提交，验收期间不能取消",
+  auditing: "正在验收，不能取消",
+  accepted: "已通过验收，记录不可撤回",
+  done: "已完成",
+  cancelled: "已取消",
+};
 
 const RUN_REASON: Record<string, string> = {
   awaiting_approval: "等待你批准这次外部动作",
@@ -81,5 +107,11 @@ export function taskActions(input: TaskActionInput): TaskActions {
 
   const promote = decide(status === "suggested", "只有「建议」状态需要采纳", "无需采纳");
 
-  return { run, audit, promote };
+  const cancel = decide(
+    CANCELLABLE.has(status),
+    CANCEL_REASON[status],
+    "当前状态不能取消",
+  );
+
+  return { run, audit, promote, cancel };
 }

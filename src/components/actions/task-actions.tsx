@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { Button, Progress } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import type { InsightDto } from "@/contracts";
 import { cn } from "@/lib/format";
@@ -30,11 +31,29 @@ export function TaskActions({
     run: { allowed: boolean; reason: string };
     audit: { allowed: boolean; reason: string };
     promote: { allowed: boolean; reason: string };
+    cancel: { allowed: boolean; reason: string };
   };
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
+  async function cancel() {
+    setBusy("cancel");
+    setMsg(null);
+    const data = await call(`/api/tasks/${taskId}/cancel`, "POST", {});
+    setBusy(null);
+    setConfirmCancel(false);
+    if (!data.ok) {
+      setMsg(data.error ?? "取消失败");
+      toast.error(data.error ?? "取消失败");
+      return;
+    }
+    setMsg("已取消：记录和已花掉的钱都保留");
+    toast.success("已取消，记录保留");
+    router.refresh();
+  }
 
   async function run(path: string, label: string) {
     setBusy(label);
@@ -185,6 +204,27 @@ export function TaskActions({
         leaving a dead button. `actions.run.reason` comes from the same function
         the server guards with.
       */}
+      {actions.cancel.allowed ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setConfirmCancel(true)}
+          disabled={busy !== null}
+          className="text-faint hover:text-danger"
+        >
+          <X className="size-3" />
+          取消任务
+        </Button>
+      ) : null}
+      <ConfirmDialog
+        open={confirmCancel}
+        title="取消这个任务？"
+        description="取消只是停止后续动作：已经产出的产物、证据、审计记录和已花掉的钱都会保留，不会被删除。正在执行中的任务不能取消。"
+        confirmLabel="确认取消任务"
+        busy={busy === "cancel"}
+        onConfirm={cancel}
+        onCancel={() => setConfirmCancel(false)}
+      />
       {!actions.run.allowed && status !== "accepted" && status !== "done" ? (
         <span className="text-label text-faint">{actions.run.reason}</span>
       ) : null}

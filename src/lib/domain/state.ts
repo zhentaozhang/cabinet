@@ -33,7 +33,8 @@ export const TRANSITIONS: Record<
     running: ["submitted", "failed"],
     submitted: ["auditing", "rejected"],
     auditing: ["accepted", "rejected"],
-    rejected: ["running", "failed", "planned", "submitted"],
+    // Cancelling a rejected task is giving up on it, which must be possible.
+    rejected: ["running", "failed", "planned", "submitted", "cancelled"],
     failed: ["planned", "cancelled"],
     accepted: ["done"],
     done: [],
