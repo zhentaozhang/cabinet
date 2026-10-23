@@ -16,6 +16,7 @@ import {
   idempotencyKeys,
   insights,
   memories,
+  outbox,
   profiles,
   rateLimits,
   reviews,
@@ -44,6 +45,7 @@ export async function exportAccount(userId: string) {
     auditRows,
     dissentRows,
     evidenceRows,
+    outboxRows,
   ] = await Promise.all([
     db.select().from(users).where(eq(users.id, userId)),
     db.select().from(profiles).where(eq(profiles.userId, userId)),
@@ -59,6 +61,7 @@ export async function exportAccount(userId: string) {
     db.select().from(auditEvents).where(eq(auditEvents.userId, userId)),
     db.select().from(dissents).where(eq(dissents.userId, userId)),
     db.select().from(evidence).where(eq(evidence.userId, userId)),
+    db.select().from(outbox).where(eq(outbox.userId, userId)),
   ]);
 
   const agentIds = agentRows.map((row) => row.id);
@@ -104,6 +107,7 @@ export async function exportAccount(userId: string) {
     auditEvents: auditRows,
     dissents: dissentRows,
     evidence: evidenceRows,
+    outbox: outboxRows,
   };
 }
 
@@ -172,6 +176,7 @@ export async function deleteAccount(userId: string): Promise<void> {
     await tx.delete(agents).where(eq(agents.userId, userId));
     await tx.delete(profiles).where(eq(profiles.userId, userId));
     await tx.delete(userActions).where(eq(userActions.userId, userId));
+    await tx.delete(outbox).where(eq(outbox.userId, userId));
     await tx
       .delete(idempotencyKeys)
       .where(eq(idempotencyKeys.userId, userId));

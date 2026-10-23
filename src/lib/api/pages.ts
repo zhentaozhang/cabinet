@@ -12,11 +12,13 @@ import {
   reviewPageSchema,
   shellContextSchema,
   connectorStatusSchema,
+  deliveryPageSchema,
   taskPageSchema,
   todayPageSchema,
   workspaceStateSchema,
   type AgentPageDto,
   type ConnectorStatusDto,
+  type DeliveryPageDto,
   type CabinetPageDto,
   type CouncilPageDto,
   type MemoryPageDto,
@@ -157,6 +159,13 @@ export const fetchShellContext = cache(async (): Promise<ShellContextDto> => {
   if (!result.ok) throw new Error(result.error);
   return result.data;
 });
+
+/** Delivery log and notification preferences for `/settings/notifications`. */
+export async function fetchDeliveryPage(): Promise<DeliveryPageDto> {
+  const result = await loadPage(API_ROUTES.notifications, deliveryPageSchema);
+  if ("missing" in result) throw new Error("Notifications endpoint returned not found");
+  return result.data;
+}
 
 /** Connector state for `/settings/connectors`; never includes a key. */
 export async function fetchConnectorStatus(): Promise<ConnectorStatusDto> {

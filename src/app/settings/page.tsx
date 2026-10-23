@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plug } from "lucide-react";
+import { Bell, Plug } from "lucide-react";
 
 import { Card, CardHeader, SectionTitle } from "@/components/ui";
 
@@ -15,6 +15,12 @@ const SECTIONS = [
     icon: Plug,
     title: "连接器",
     body: "检索与模型的配置状态，以及一次真实的连通测试。",
+  },
+  {
+    href: "/settings/notifications",
+    icon: Bell,
+    title: "通知",
+    body: "异常邮件发到哪、静默时段，以及每一次投递的结果。",
   },
 ];
 

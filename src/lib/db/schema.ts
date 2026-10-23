@@ -96,6 +96,11 @@ export const users = pgTable(
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
     timezone: text("timezone").notNull().default("Asia/Shanghai"),
+    /** Delivery is opt-out: a user turning it off must stop every channel. */
+    notifyEnabled: boolean("notify_enabled").notNull().default(true),
+    /** Quiet window in local hours; wraps midnight when from > to. */
+    quietFrom: integer("quiet_from").notNull().default(22),
+    quietTo: integer("quiet_to").notNull().default(8),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -951,3 +956,46 @@ export const evidence = pgTable(
 );
 
 export type EvidenceRow = typeof evidence.$inferSelect;
+
+/**
+ * Outbox, not direct sending: a request must never block on an SMTP handshake,
+ * and a delivery that fails must survive a process restart. Rows are claimed by
+ * status transition, sent by a separate runner, and never deleted.
+ */
+export const outbox = pgTable(
+  "outbox",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** rejection | approval | budget | conflict | council */
+    kind: text("kind").notNull(),
+    /** One row per event per day: the same rejection must not mail twice. */
+    dedupeKey: text("dedupe_key").notNull(),
+    subject: text("subject").notNull(),
+    body: text("body").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    /** In-app path the mail links to, so the message is actionable. */
+    href: text("href"),
+    /** pending | sent | failed | skipped */
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("outbox_user_dedupe_idx").on(t.userId, t.dedupeKey),
+    index("outbox_due_idx").on(t.status, t.nextAttemptAt),
+    index("outbox_user_created_idx").on(t.userId, t.createdAt),
+  ],
+);
+
+export type OutboxRow = typeof outbox.$inferSelect;

@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import type { Evidence, ProposedChange } from "@/lib/db/schema";
 import { memories } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
+import { enqueueNotification, notices } from "../notify";
 import type { Tx } from "../../shared/tx";
 
 /**
@@ -126,6 +127,22 @@ export async function writeMemoryFact(
           lastConfirmedAt: now,
           status: "conflicted",
         });
+
+        await enqueueNotification(
+          {
+            userId: input.userId,
+            kind: "conflict",
+            targetType: "memory",
+            targetId: nextId,
+            ...notices.conflict({
+              factKey: input.factKey,
+              value: input.value,
+              previous: existing.value ?? null,
+            }),
+          },
+          tx,
+        );
+
         return nextId;
       }
 

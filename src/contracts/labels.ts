@@ -196,3 +196,39 @@ export function passRate(success: number, fail: number): number {
   const total = success + fail;
   return total === 0 ? 0 : Math.round((success / total) * 100);
 }
+
+export const NOTIFY_KIND_LABEL: Record<string, string> = {
+  rejection: "验收未通过",
+  approval: "等待你批准",
+  budget: "预算拦截",
+  conflict: "记忆冲突",
+  council: "内阁会议",
+};
+
+export function notifyKindLabel(kind: string): string {
+  return NOTIFY_KIND_LABEL[kind] ?? kind;
+}
+
+export const DELIVERY_STATUS_LABEL: Record<string, string> = {
+  pending: "待投递",
+  sending: "投递中",
+  sent: "已送达",
+  failed: "投递失败",
+  skipped: "未投递",
+};
+
+export const DELIVERY_STATUS_TONE: Record<string, BadgeTone> = {
+  pending: "neutral",
+  sending: "blue",
+  sent: "teal",
+  failed: "danger",
+  skipped: "accent",
+};
+
+export function deliveryStatusLabel(status: string): string {
+  return DELIVERY_STATUS_LABEL[status] ?? status;
+}
+
+export function deliveryStatusTone(status: string): BadgeTone {
+  return DELIVERY_STATUS_TONE[status] ?? "neutral";
+}

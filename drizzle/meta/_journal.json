@@ -155,6 +155,13 @@
       "when": 1792677967833,
       "tag": "0021_awesome_zaran",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792713560182,
+      "tag": "0022_faithful_forge",
+      "breakpoints": true
     }
   ]
 }

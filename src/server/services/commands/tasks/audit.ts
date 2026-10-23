@@ -13,6 +13,7 @@ import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { decideAudit } from "@/lib/domain/policy";
+import { enqueueNotification, notices } from "../notify";
 import { assertTransition } from "@/lib/domain/state";
 import {
   ConflictError,
@@ -249,6 +250,26 @@ async function auditTaskInner(taskId: string, userId: string) {
       )
       .returning();
     if (!decided) throw new ConflictError("Task left the auditing state.");
+
+    // Only failures are mailed. A rejected task is the one thing the user must
+    // look at today, and the mail must be enqueued in the same transaction so a
+    // rollback cannot leave a promise in the outbox.
+    if (!pass) {
+      await enqueueNotification(
+        {
+          userId,
+          kind: "rejection",
+          targetType: "task",
+          targetId: taskId,
+          ...notices.rejection({
+            taskId,
+            taskTitle: task.title,
+            reason,
+          }),
+        },
+        tx,
+      );
+    }
 
     let pausedInfo:
       | {

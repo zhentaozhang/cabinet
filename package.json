@@ -15,7 +15,8 @@
     "test": "vitest run --maxWorkers=1 --no-file-parallelism",
     "test:watch": "vitest --maxWorkers=1 --no-file-parallelism",
     "test:db:setup": "DATABASE_URL=${DATABASE_URL_TEST:-postgres://zhentao@localhost:5432/cabinet_test} drizzle-kit push",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "notify:deliver": "tsx scripts/deliver-outbox.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.99",

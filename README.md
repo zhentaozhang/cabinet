@@ -134,7 +134,11 @@ Auditor 按清单验收（章节 / 字数 / 关键词）
 | Review | `/review` | 本周指标、复盘、洞察、异议、审计日志 |
 | Memory | `/memory` | 记住了什么、证据在哪、是否冲突、能否删除 |
 | Council | `/council` | 这次高风险决策各方怎么说、怎么定 |
+| Review / 审计 | `/review/audit` | 完整审计链，可按动作类型筛选、分页 |
 | Setup | `/setup` | 账号、工作区、数据导出/删除 |
+| Settings | `/settings` | 部署层开关：连接器、通知 |
+| 通知 | `/settings/notifications` | 哪个事件发了邮件、发没发出去、为什么没发 |
+| 连接器 | `/settings/connectors` | 检索/模型/邮件配好了没，能否连通 |
 | Login | `/login` | 登录 |
 
 ## 快速开始
@@ -221,19 +225,21 @@ app/api/**（34 个 route handler）
 
 - 页面和组件不能 import `server/`、`lib/db`、`engine`；ESLint + `tests/unit/boundary.test.ts` 强制。
 - `server/services/engine.ts` 只是 re-export barrel，业务在 `queries/` 和 `commands/`。
-- 运行在请求内同步完成；没有队列/worker。
+- 运行在请求内同步完成；唯一的后台动作是邮件投递（`outbox` 表 + `pnpm notify:deliver`，由部署层 cron 触发，不是进程内定时器）。
 - 没有使用 LangGraph / CrewAI；状态机和审计是应用代码。
+- 连接器与证据的规则见 `docs/evidence-and-connectors.md`，通知见 `docs/notifications.md`。
 
 技术栈：Next.js 16、React 19、TypeScript、Tailwind 4、Postgres + Drizzle、better-auth、Vercel AI SDK（可选）。
 
-## 数据模型（27 张表）
+## 数据模型（33 张表）
 
 - 账号：`users` `sessions` `accounts` `verifications`
 - 工作区：`profiles` `agents` `agent_templates` `agent_grants` `goals` `policy_config`
-- 执行：`tasks` `runs` `steps` `artifacts` `approvals`
-- 记忆：`memories` `insights` `skills`
+- 执行：`tasks` `runs` `steps` `artifacts` `approvals` `evidence`
+- 记忆：`memories` `insights` `skills` `apprentice_observations` `apprentice_exam_snapshots`
 - 治理：`councils` `council_positions` `dissents` `audit_events` `reviews` `checkins`
-- 运维：`idempotency_keys` `user_actions` `rate_limits`
+- 运维：`idempotency_keys` `user_actions` `rate_limits` `outbox`
+- 记账：`agent_budget_periods` `agent_budget_reservations`
 
 状态机：
 
@@ -250,7 +256,7 @@ app/api/**（34 个 route handler）
 
 本次在本地运行：
 
-- `pnpm test`：58 个测试文件，328 个测试通过（2026-10-22）
+- `pnpm test`：68 个测试文件，405 个测试通过（2026-10-23）
 - `pnpm typecheck`：通过
 - `pnpm lint`：通过
 
@@ -258,7 +264,7 @@ CI（`.github/workflows/ci.yml`）还包含 `pnpm db:migrate` 和 `pnpm build`�
 
 ## 已知边界
 
-- **外部工具未接入**：搜索、日历、邮件、预订、支付都没有连接器；工具步骤固定 `not_connected`。
+- **只有检索是真的**：`web_search` 接了 Brave（Tavily 作为可重试的兜底），命中的来源落库为 `evidence` 行，产物必须用 `[cite:evd_x]` 引用它们。日历、预订、支付仍然没有连接器，这些工具步骤会记 `not_connected` 或 `unauthorized`。
 - **不是自治多 Agent**：没有 Agent 间消息、协商或自动委派；内阁由用户发起，立场由规则生成。
 - **没有用户覆盖 Auditor 的入口**：只有重新提交或按清单重跑；UI/charter 里的“用户可覆盖”目前只是文案。
 - **学徒考试是模拟**：考试产物由确定性模板生成；5 条验收项必须全部通过；考试前需要 5 条显式记录的观摩证据（只有 mentor 的真实模型运行、且任务已验收才算）。练习通过只把阶段推进到 `practice_passed`，不授予生产技能、不加信任分、不提等级。
@@ -267,7 +273,7 @@ CI（`.github/workflows/ci.yml`）还包含 `pnpm db:migrate` 和 `pnpm build`�
 - **管理时长没有埋点**：`user_actions` 只有 seed 写入；真实工作区会显示估算或空值。
 - **成本是估算**：按供应商返回的 token 数和配置单价计算，不是供应商账单；没有返回 usage 的运行记为“用量未知”并保留全额预留。预算是 Agent 的每周模型用量，不是个人财务。
 - **台账是唯一账目**：周预算由 `agent_budget_periods` / `agent_budget_reservations` 记账，`runs.cost_cents` 只是逐次运行的遥测，`agents.spent_cents` / `agents.budget_period_start` 已冻结，不再读写。
-- **同步执行**：没有后台队列、重试调度或流式输出。
+- **同步执行**：没有后台队列、重试调度或流式输出。邮件是唯一的异步环节，走 outbox + cron，不是 web 进程里的定时器。
 - **Agent Card 未签名**：只读 JSON，不是 A2A 实现。
 
 ## License

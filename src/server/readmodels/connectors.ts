@@ -8,6 +8,7 @@ import {
   configuredSearchProviders,
   searchWithFallback,
 } from "@/lib/connectors/registry";
+import { smtpConfigFromEnv } from "@/lib/connectors/email";
 import type { ConnectorErrorCode } from "@/lib/connectors/types";
 import { asDto } from "@/server/dto-guard";
 
@@ -44,6 +45,17 @@ export function loadConnectors(demoMode = demoModeEnabled()): ConnectorStatusDto
         configured: Boolean(process.env.OPENAI_API_KEY),
         envVar: "OPENAI_API_KEY",
       },
+      email: (() => {
+        const smtp = smtpConfigFromEnv();
+        return {
+          configured: smtp !== null,
+          host: smtp?.host ?? null,
+          port: smtp?.port ?? null,
+          from: smtp?.from ?? null,
+          secure: smtp?.secure ?? false,
+          envVars: ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"],
+        };
+      })(),
       demoMode,
     },
     "ConnectorStatus",

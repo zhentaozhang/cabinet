@@ -1,0 +1,31 @@
+import { revalidatePath } from "next/cache";
+
+import { handleMutation } from "@/lib/api/mutation";
+import { handleQuery } from "@/lib/api/read";
+import { parseBody } from "@/lib/validation/parse";
+import { notifyPrefsSchema } from "@/contracts";
+import { loadDelivery } from "@/server/readmodels/delivery";
+import { updateNotifyPrefs } from "@/server/services/commands/notify";
+
+export const dynamic = "force-dynamic";
+
+export function GET() {
+  return handleQuery((userId) => loadDelivery(userId));
+}
+
+export async function PATCH(req: Request) {
+  const body = await req.json().catch(() => null);
+
+  return handleMutation({
+    request: req,
+    endpoint: "notifications.prefs",
+    body,
+    handler: async (userId) => {
+      const input = parseBody(notifyPrefsSchema, body);
+      await updateNotifyPrefs(userId, input);
+      revalidatePath("/settings/notifications");
+      revalidatePath("/");
+      return { status: 200, body: { ok: true, ...input } };
+    },
+  });
+}

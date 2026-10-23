@@ -38,6 +38,8 @@ export const API_ROUTES = {
   reflect: "/api/reflect",
   audit: "/api/audit",
   connectors: "/api/connectors",
+  notifications: "/api/notifications",
+  notificationsRun: "/api/notifications/run",
   connectorTest: "/api/connectors/test",
   verifyAudit: "/api/audit/verify",
   setup: "/api/setup",

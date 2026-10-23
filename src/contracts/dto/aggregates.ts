@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isoDateTime } from "./common";
 import {
   agentDtoSchema,
   approvalDtoSchema,
@@ -267,6 +268,15 @@ export const connectorStatusSchema = z.object({
     configured: z.boolean(),
     envVar: z.string(),
   }),
+  /** SMTP: host/port/from are not secrets; the password never appears here. */
+  email: z.object({
+    configured: z.boolean(),
+    host: z.string().nullable(),
+    port: z.number().nullable(),
+    from: z.string().nullable(),
+    secure: z.boolean(),
+    envVars: z.array(z.string()),
+  }),
   demoMode: z.boolean(),
 });
 export type ConnectorStatusDto = z.infer<typeof connectorStatusSchema>;
@@ -319,3 +329,65 @@ export const auditVerificationSchema = z.object({
   firstMismatch: z.string().nullable(),
 });
 export type AuditVerificationDto = z.infer<typeof auditVerificationSchema>;
+
+/**
+ * `GET /api/notifications` — the delivery log plus the preferences that shape
+ * it. Statuses are the outbox states, not SMTP codes, so the page can explain
+ * "skipped because you turned it off" as distinct from failure.
+ */
+export const deliveryItemSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  subject: z.string(),
+  body: z.string(),
+  status: z.enum(["pending", "sending", "sent", "failed", "skipped"]),
+  attempts: z.number(),
+  lastError: z.string().nullable(),
+  href: z.string().nullable(),
+  targetType: z.string(),
+  targetId: z.string(),
+  nextAttemptAt: isoDateTime,
+  sentAt: isoDateTime.nullable(),
+  createdAt: isoDateTime,
+});
+export type DeliveryItemDto = z.infer<typeof deliveryItemSchema>;
+
+export const deliveryPageSchema = z.object({
+  timezone: z.string(),
+  prefs: z.object({
+    notifyEnabled: z.boolean(),
+    quietFrom: z.number(),
+    quietTo: z.number(),
+  }),
+  email: z.object({
+    configured: z.boolean(),
+    host: z.string().nullable(),
+    from: z.string().nullable(),
+    envVars: z.array(z.string()),
+  }),
+  counts: z.object({
+    pending: z.number(),
+    sent: z.number(),
+    failed: z.number(),
+    skipped: z.number(),
+  }),
+  items: z.array(deliveryItemSchema),
+});
+export type DeliveryPageDto = z.infer<typeof deliveryPageSchema>;
+
+export const notifyPrefsSchema = z.object({
+  notifyEnabled: z.boolean(),
+  quietFrom: z.number().int().min(0).max(23),
+  quietTo: z.number().int().min(0).max(23),
+});
+export type NotifyPrefsDto = z.infer<typeof notifyPrefsSchema>;
+
+/** `POST /api/notifications/run` — one manual delivery pass. */
+export const deliveryRunSchema = z.object({
+  sent: z.number(),
+  failed: z.number(),
+  skipped: z.number(),
+  deferred: z.number(),
+  claimed: z.number(),
+});
+export type DeliveryRunDto = z.infer<typeof deliveryRunSchema>;

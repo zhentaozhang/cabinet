@@ -9,3 +9,4 @@ export { loadTask } from "./task";
 export { loadShell } from "./shell";
 export { loadAudit } from "./audit";
 export { loadConnectors, testConnector, demoModeEnabled } from "./connectors";
+export { loadDelivery } from "./delivery";

@@ -10,6 +10,7 @@ import {
   users,
 } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
+import { addLocalDays, localDateKey } from "@/lib/domain/time";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { decayMemoryScores } from "@/lib/memory/decay";
 import { writeMemoryFact } from "@/server/services/commands/memory/facts";
@@ -83,7 +84,9 @@ describe("real reflection", () => {
     await db.insert(checkins).values({
       id: "chk_low",
       userId: DEMO_USER_ID,
-      date: "2026-10-22",
+      // Derived, not hardcoded: a fixed date collides with the seeded
+      // "yesterday" row as soon as the wall clock crosses a day boundary.
+      date: localDateKey(addLocalDays(new Date(), -3, "Asia/Shanghai"), "Asia/Shanghai"),
       energy: 1,
       mood: 2,
       completed: [],

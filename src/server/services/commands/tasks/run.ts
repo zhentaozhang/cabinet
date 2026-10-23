@@ -21,6 +21,7 @@ import { getPolicyConfig } from "@/lib/policy/config";
 import { planTools, type ToolStepStatus } from "@/lib/domain/tool-plan";
 import { decideRun } from "@/lib/domain/policy";
 import { usageCents } from "@/lib/domain/agent-budget";
+import { enqueueNotification, notices } from "../notify";
 import { assertTransition } from "@/lib/domain/state";
 import {
   ConflictError,
@@ -274,7 +275,22 @@ export async function runTask(taskId: string, userId: string) {
       timezone,
       amountCents: config.cost.maxRunCents,
     });
-    if (!hold.allowed) throw new PolicyDenied(hold.reason);
+    if (!hold.allowed) {
+      // The denial is the interesting event: the user must learn that an Agent
+      // stopped because of money, not because it finished.
+      await enqueueNotification({
+        userId: task.userId,
+        kind: "budget",
+        targetType: "task",
+        targetId: taskId,
+        ...notices.budget({
+          agentName: agent.name,
+          taskTitle: task.title,
+          reason: hold.reason,
+        }),
+      });
+      throw new PolicyDenied(hold.reason);
+    }
     reservation = hold;
   }
 

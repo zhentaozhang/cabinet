@@ -6,6 +6,7 @@ import { newId } from "@/lib/ids";
 import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
 import type { Tx } from "../../shared/tx";
+import { enqueueNotification, notices } from "../notify";
 import { loadLatestApproval } from "./execution";
 
 export async function requestApproval(
@@ -48,6 +49,22 @@ export async function requestApproval(
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     })
     .returning();
+
+  await enqueueNotification(
+    {
+      userId: input.userId,
+      kind: "approval",
+      targetType: "approval",
+      targetId: created.id,
+      ...notices.approval({
+        taskId: input.taskId,
+        taskTitle: input.title,
+        actionType: input.action,
+      }),
+    },
+    client,
+  );
+
   return created;
 }
 
