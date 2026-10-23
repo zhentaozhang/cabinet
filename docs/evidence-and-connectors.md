@@ -48,7 +48,7 @@ Auditor 只认 `evidence` 表里、属于本次 run 的行。正文里写什么�
 
 ## 研究任务的默认清单
 
-交给具备 `web_search` / `web_fetch` 的 Agent 的任务，如果没有显式清单，
+交给具备 `web_search` / `web_fetch`（未接入：运行时会记录为 `not_connected`，不会假装读过网页） 的 Agent 的任务，如果没有显式清单，
 创建时自动附加：
 
 ```json
@@ -76,3 +76,9 @@ node node_modules/vitest/vitest.mjs run tests/unit/connectors.test.ts \
 - 可达性/时效性校验、来源质量评分。
 - 检索成本计入预算：检索有自己的成本口径，混进 token 预算会模糊失败语义。
 - 定时调度与主动推送：需要独立进程 + 幂等 + 重试，不能靠 `setInterval`。
+
+## 默认验收清单的前置条件
+
+给研究任务自动挂 `min_evidence: 3` 需要两个条件同时成立：执行 Agent 的工具里有 `web_search` / `web_fetch`，并且**至少配置了一个搜索 key**。没有 key 时不会挂这条要求——因为运行时一行证据都落不了库，挂上就等于让每个新装环境的调研任务注定被驳回，而用户在产品里没有地方能修好它。
+
+需要人工判断的清单项（`manual`）永远不由系统判为通过，它们显示为「需人工复核」；由 Agent 运行产出、且清单里有证据要求时，`min_evidence` 才真正参与判定。

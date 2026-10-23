@@ -23,7 +23,7 @@ run / audit / approve
       ▼
    outbox 表 ──► 投递进程（cron，不是进程内定时器）──► SMTP
       │                    │
-      │                    └─ 结果写回同一行：sent / failed / skipped
+      │                    └─ 结果写回同一行：sent / failed / skipped / waiting
       ▼
 /settings/notifications（列表 + 统计 + 手动投递一次）
 ```
@@ -39,7 +39,7 @@ run / audit / approve
 - **入队幂等**：键是 `(user, kind, target, 日期)`。同一件事在同一天只会有一封，重跑任务不会重复打扰。
 - **认领用 `FOR UPDATE SKIP LOCKED`**：两个投递进程同时跑，每行只会被一个进程取走。
 - **重试**：真实失败（连接失败、5xx）记 `attempts+1`，60s / 5min / 15min 退避，最多 4 次后置 `failed`，不再重试。
-- **`skipped` ≠ `failed`**：用户关了通知、或者 `SMTP_HOST` 没配，都记 `skipped` 并写明原因。系统从不假装发出去过。
+- **`skipped` ≠ `failed`**：用户关了通知记 `skipped` 并写明原因；`SMTP_HOST` 没配记 `waiting`，邮件留在队列里每小时重试，配好就发。系统从不假装发出去过，也不因为配置缺席就把邮件丢掉。
 - **静默时段不丢消息**：落在 `quietFrom–quietTo` 里的邮件推迟到窗口结束（每小时检查一次），而不是丢弃。
 - **只有你能看**：每次投递都按 `userId` 过滤；手动投递只处理当前账号自己的队列。
 
@@ -56,7 +56,9 @@ SMTP_FROM=               # 省略时用 SMTP_USER
 NOTIFY_BATCH_SIZE=20     # 单次投递上限
 ```
 
-没有 `SMTP_HOST` 时一切照常运行，只是每条通知落为 `skipped`。`/settings/connectors` 会显示「未配置」，`/settings/notifications` 会写明原因。
+没有 `SMTP_HOST` 时一切照常运行，邮件停在 `waiting` 状态等配置。`/settings/connectors` 会显示「未配置」，`/settings/notifications` 会写明原因。
+
+单次投递（手动按钮或 cron）遇到进程崩溃不会卡住队列：认领时会写一张租约（`next_attempt_at`），租约过期后这一行可以被下一次投递重新认领。
 
 ## 开关与时区
 
