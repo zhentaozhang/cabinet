@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
   accounts,
+  agentBudgetPeriods,
   agentGrants,
   agentTemplates,
   agents,
@@ -29,6 +30,7 @@ import { canonicalJson, sha256 } from "../ids";
 import { weekLabel } from "../format";
 import { SEED_POLICY_CONFIG } from "../domain/policy";
 import {
+  addLocalDays,
   localDateKey,
   localDateTimeParts,
   startOfLocalWeek,
@@ -39,6 +41,25 @@ import { hashPassword } from "better-auth/crypto";
 
 const USER_ID = "usr_zhen";
 const DEMO_TIMEZONE = "Asia/Shanghai";
+
+/**
+ * Money is integer cents everywhere (see `money(cents)` in lib/format). A run
+ * that costs ¥2.10 stores 210, never 2.1, so `runs.cost_cents` and the weekly
+ * `agent_budget_periods` ledger can be summed and compared without rescaling.
+ * The three demo runs are the whole of this week's model usage.
+ *
+ * Exported so integration tests can assert the weekly ledger against the seeded
+ * amount instead of hardcoding a second copy of the numbers.
+ */
+export const RUN_COST_CENTS = {
+  plan: 210, // ¥2.10
+  research: 340, // ¥3.40
+  quiz: 180, // ¥1.80
+} as const;
+
+/** This week's model spend, as the seeded runs report it. */
+const WEEK_RUN_SPEND_CENTS =
+  RUN_COST_CENTS.plan + RUN_COST_CENTS.research + RUN_COST_CENTS.quiz;
 
 function at(dayOffset: number, hour: number, minute = 0): Date {
   // Demo data must mean the same wall-clock time on every machine, including
@@ -161,7 +182,7 @@ export async function seedDemo(): Promise<void> {
       tools: ["read_all", "write_plan", "dispatch", "convene_council"],
       memoryScope: ["goals", "tasks", "reviews"],
       budgetCents: 3000,
-      spentCents: 0,
+      spentCents: RUN_COST_CENTS.plan,
       successCount: 24,
       failCount: 2,
     },
@@ -183,7 +204,7 @@ export async function seedDemo(): Promise<void> {
       tools: ["web_search", "web_fetch", "read_notes"],
       memoryScope: ["notes", "web"],
       budgetCents: 800,
-      spentCents: 210,
+      spentCents: RUN_COST_CENTS.research,
       successCount: 18,
       failCount: 3,
     },
@@ -205,7 +226,7 @@ export async function seedDemo(): Promise<void> {
       tools: ["read_notes", "write_task", "calendar_read", "quiz"],
       memoryScope: ["learning", "health", "checkins", "checkin"],
       budgetCents: 1200,
-      spentCents: 340,
+      spentCents: RUN_COST_CENTS.quiz,
       successCount: 12,
       failCount: 4,
     },
@@ -646,7 +667,7 @@ export async function seedDemo(): Promise<void> {
       mode: "demo",
       startedAt: at(-1, 17, 20),
       endedAt: at(-1, 17, 24),
-      costCents: 2.1,
+      costCents: RUN_COST_CENTS.plan,
       tokensIn: 1820,
       tokensOut: 920,
       replayKey: "replay_plan_v1",
@@ -659,7 +680,7 @@ export async function seedDemo(): Promise<void> {
       mode: "demo",
       startedAt: at(-1, 11, 10),
       endedAt: at(-1, 11, 16),
-      costCents: 3.4,
+      costCents: RUN_COST_CENTS.research,
       tokensIn: 2400,
       tokensOut: 1300,
       replayKey: "replay_research_v1",
@@ -672,10 +693,58 @@ export async function seedDemo(): Promise<void> {
       mode: "demo",
       startedAt: at(0, 16, 10),
       endedAt: at(0, 16, 14),
-      costCents: 1.8,
+      costCents: RUN_COST_CENTS.quiz,
       tokensIn: 1500,
       tokensOut: 800,
       replayKey: "replay_quiz_v1",
+    },
+  ]);
+
+  /**
+   * The weekly ledger is the accounting authority for "this week's spend", so
+   * the seeded runs need a matching period row per Agent or the demo would
+   * report ¥0.00 while showing paid runs. `limitCents` mirrors `agents.budget_cents`
+   * (all three are below the policy weekly ceiling, so the per-Agent cap wins)
+   * and nothing is in flight, so `reserved_cents` stays 0 while every finished
+   * run is settled — the sums never exceed the Agent's limit.
+   */
+  const weekPeriodEnd = addLocalDays(weekStart, 7, DEMO_TIMEZONE);
+  await db.insert(agentBudgetPeriods).values([
+    {
+      id: `bpd_ag_chief_${weekStart.getTime()}`,
+      userId: USER_ID,
+      agentId: "ag_chief",
+      timezone: DEMO_TIMEZONE,
+      periodStart: weekStart,
+      periodEnd: weekPeriodEnd,
+      limitCents: 3000,
+      reservedCents: 0,
+      settledCents: RUN_COST_CENTS.plan,
+      unknownCents: 0,
+    },
+    {
+      id: `bpd_ag_research_${weekStart.getTime()}`,
+      userId: USER_ID,
+      agentId: "ag_research",
+      timezone: DEMO_TIMEZONE,
+      periodStart: weekStart,
+      periodEnd: weekPeriodEnd,
+      limitCents: 800,
+      reservedCents: 0,
+      settledCents: RUN_COST_CENTS.research,
+      unknownCents: 0,
+    },
+    {
+      id: `bpd_ag_coach_${weekStart.getTime()}`,
+      userId: USER_ID,
+      agentId: "ag_coach",
+      timezone: DEMO_TIMEZONE,
+      periodStart: weekStart,
+      periodEnd: weekPeriodEnd,
+      limitCents: 1200,
+      reservedCents: 0,
+      settledCents: RUN_COST_CENTS.quiz,
+      unknownCents: 0,
     },
   ]);
 
@@ -1156,7 +1225,7 @@ export async function seedDemo(): Promise<void> {
         aao: 5,
         adherence: 63,
         managementMin: 2.8,
-        costCents: 7,
+        costCents: WEEK_RUN_SPEND_CENTS,
         goalProgress: 38,
         auditRejectRate: 17,
       },

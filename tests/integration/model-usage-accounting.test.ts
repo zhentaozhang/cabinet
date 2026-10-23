@@ -21,6 +21,7 @@ import {
   runs,
   steps,
 } from "@/lib/db/schema";
+import { RUN_COST_CENTS } from "@/lib/db/seed";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { loadAgent } from "@/server/readmodels/agent";
 import { loadCabinet } from "@/server/readmodels/cabinet";
@@ -35,6 +36,9 @@ const TASK_ID = "tsk_read";
 const AGENT_ID = "ag_coach"; // seeded assignee, budget_cents 1200
 const TIMEZONE = "Asia/Shanghai";
 const liveCtx = { provider: "openai", model: "gpt-4.1-mini" };
+
+/** The demo seed already settled this Agent's current-week run (¥1.80). */
+const SEEDED_SETTLED_CENTS = RUN_COST_CENTS.quiz;
 
 const measuredDraft = {
   title: "本周复盘",
@@ -85,7 +89,8 @@ describe("model usage accounting", () => {
       .select()
       .from(agentBudgetPeriods)
       .where(eq(agentBudgetPeriods.agentId, AGENT_ID));
-    expect(period.settledCents).toBeCloseTo(0.27, 2);
+    // 0.27 measured for this run, on top of the seeded ¥1.80.
+    expect(period.settledCents).toBeCloseTo(SEEDED_SETTLED_CENTS + 0.27, 2);
     expect(period.unknownCents).toBe(0);
     expect(period.reservedCents).toBe(0);
   });
@@ -110,7 +115,8 @@ describe("model usage accounting", () => {
     expect(artifact.sourceType).toBe("demo_fixture");
 
     const usage = await loadWeeklyUsage(AGENT_ID, TIMEZONE);
-    expect(usage.settledCents).toBe(0);
+    // The demo draft adds nothing: the seeded ¥1.80 is the whole settled total.
+    expect(usage.settledCents).toBe(SEEDED_SETTLED_CENTS);
     expect(usage.unknownCents).toBe(0);
     expect(usage.reservedCents).toBe(0);
   });
@@ -139,7 +145,9 @@ describe("model usage accounting", () => {
 
     await runTask(TASK_ID, DEMO_USER_ID);
 
-    expect(seen).toEqual({ reserved: 50, settled: 0, holds: 1 });
+    // The hold is visible before the provider call, with the seeded ¥1.80 still
+    // the only settled amount at that moment.
+    expect(seen).toEqual({ reserved: 50, settled: SEEDED_SETTLED_CENTS, holds: 1 });
   });
 
   it("keeps the full reserve as exposure when usage is unknown", async () => {
@@ -154,7 +162,7 @@ describe("model usage accounting", () => {
 
     const usage = await loadWeeklyUsage(AGENT_ID, TIMEZONE);
     expect(usage.unknownCents).toBe(50);
-    expect(usage.settledCents).toBe(0);
+    expect(usage.settledCents).toBe(SEEDED_SETTLED_CENTS); // no measured charge added
     expect(usage.reservedCents).toBe(0);
     expect(usage.overrun).toBe(false);
   });
@@ -175,7 +183,7 @@ describe("model usage accounting", () => {
     expect(budget.timezone).toBe(TIMEZONE);
     expect(budget.limitCents).toBe(1200);
     expect(budget.reservedCents).toBe(0);
-    expect(budget.settledCents).toBeCloseTo(0.27, 2);
+    expect(budget.settledCents).toBeCloseTo(SEEDED_SETTLED_CENTS + 0.27, 2);
     expect(budget.unknownCents).toBe(0);
     expect(budget.overrun).toBe(false);
     expect(budget.legacyUnclassified).toBe(false);
@@ -186,6 +194,10 @@ describe("model usage accounting", () => {
   });
 
   it("labels a week that predates the ledger instead of inventing spend", async () => {
+    // Drop the seeded bucket for this Agent so its current week holds runs with
+    // no ledger row — the legacy branch that predates the ledger.
+    await db.delete(agentBudgetPeriods).where(eq(agentBudgetPeriods.agentId, AGENT_ID));
+
     const { periodStart } = budgetWeek(TIMEZONE);
     await db.insert(runs).values({
       id: "run_before_ledger",
@@ -211,7 +223,9 @@ describe("model usage accounting", () => {
     const budget = page.budgets[AGENT_ID];
     expect(budget).toBeDefined();
     expect(budget.limitCents).toBe(1200);
-    expect(budget.settledCents).toBe(0);
+    // This is the seeded coach bucket for the current week: one settled ¥1.80
+    // run, no unknown usage, and well under the ¥12 limit.
+    expect(budget.settledCents).toBe(SEEDED_SETTLED_CENTS);
     expect(budget.unknownCents).toBe(0);
     for (const agent of page.agents) {
       expect(page.budgets[agent.id]).toBeDefined();

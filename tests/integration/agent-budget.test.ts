@@ -15,6 +15,7 @@ import {
   agentBudgetReservations,
   runs,
 } from "@/lib/db/schema";
+import { RUN_COST_CENTS } from "@/lib/db/seed";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { startOfLocalWeek } from "@/lib/domain/time";
 import { loadWeeklyUsage, reserveBudget } from "@/server/services/commands/tasks/execution";
@@ -24,6 +25,9 @@ import { resetDb } from "../helpers/db";
 const TASK_ID = "tsk_read";
 const AGENT_ID = "ag_coach"; // seeded assignee, budget_cents 1200
 const TIMEZONE = "Asia/Shanghai";
+
+/** The demo seed already settled this Agent's current-week run (¥1.80). */
+const SEEDED_SETTLED_CENTS = RUN_COST_CENTS.quiz;
 
 async function runTaskOnce(): Promise<void> {
   await runTask(TASK_ID, DEMO_USER_ID);
@@ -78,12 +82,12 @@ describe("weekly budget ledger", () => {
     const [period] = await periodRows();
     const [reservation] = await reservationRows();
 
-    // (111 + 222) / 1000 * 0.8 = 0.2664 → 0.27
+    // (111 + 222) / 1000 * 0.8 = 0.2664 → 0.27, added on top of the seeded ¥1.80
     expect(reservation.state).toBe("settled");
     expect(reservation.providerAttemptId).toBe("att_known");
     expect(reservation.settledCents).toBeCloseTo(0.27, 5);
     expect(period.reservedCents).toBe(0);
-    expect(period.settledCents).toBeCloseTo(0.27, 5);
+    expect(period.settledCents).toBeCloseTo(SEEDED_SETTLED_CENTS + 0.27, 5);
     expect(period.unknownCents).toBe(0);
     expect(period.overrun).toBe(false);
   });
@@ -96,11 +100,12 @@ describe("weekly budget ledger", () => {
     expect("runId" in result).toBe(true);
 
     // The template fallback never contacted a provider: the hold is released and
-    // the period records no measured or unknown usage.
+    // the period records no measured or unknown usage. The seeded ¥1.80 stays as
+    // the only settled amount, which is why the assertions are deltas.
     const [reservation] = await reservationRows();
     expect(reservation.state).toBe("released");
     const [period] = await periodRows();
-    expect(period.settledCents).toBe(0);
+    expect(period.settledCents).toBe(SEEDED_SETTLED_CENTS);
     expect(period.unknownCents).toBe(0);
     expect(period.reservedCents).toBe(0);
   });
@@ -121,7 +126,7 @@ describe("weekly budget ledger", () => {
     expect(reservation.state).toBe("unknown_charged");
     expect(reservation.providerAttemptId).toBe("att_timeout");
     expect(period.unknownCents).toBe(50); // the full maxRunCents reservation
-    expect(period.settledCents).toBe(0);
+    expect(period.settledCents).toBe(SEEDED_SETTLED_CENTS); // no measured charge added
     expect(period.reservedCents).toBe(0);
   });
 
@@ -136,7 +141,7 @@ describe("weekly budget ledger", () => {
     expect(reservation.state).toBe("released");
     expect(reservation.settledCents).toBe(0);
     expect(period.reservedCents).toBe(0);
-    expect(period.settledCents).toBe(0);
+    expect(period.settledCents).toBe(SEEDED_SETTLED_CENTS);
     expect(period.unknownCents).toBe(0);
   });
 
@@ -204,7 +209,8 @@ describe("weekly budget ledger", () => {
 
     const [period] = await periodRows();
     expect(period.overrun).toBe(true);
-    expect(period.settledCents).toBeCloseTo(56, 5);
+    // 70 000 tokens * 0.8c/1k = 56c measured, on top of the seeded ¥1.80.
+    expect(period.settledCents).toBeCloseTo(SEEDED_SETTLED_CENTS + 56, 5);
 
     const next = await reserveBudget({
       userId: DEMO_USER_ID,
@@ -233,7 +239,9 @@ describe("weekly budget ledger", () => {
 
     const usage = await loadWeeklyUsage(AGENT_ID, TIMEZONE);
     expect(usage.periodStart.getTime()).toBe(current.getTime());
-    expect(usage.settledCents).toBe(0);
+    // Only the seeded current-week bucket counts; the previous week's 12 is not
+    // rolled into this total.
+    expect(usage.settledCents).toBe(SEEDED_SETTLED_CENTS);
 
     const [historical] = await db
       .select()
@@ -252,6 +260,11 @@ describe("weekly budget ledger", () => {
   });
 
   it("labels pre-ledger usage instead of reporting it as zero spend", async () => {
+    // Simulate a week that predates the ledger: drop the seeded bucket so the
+    // week holds runs with no ledger row, which is the legacy branch. The seeded
+    // bucket itself is covered by the delta assertions in the tests above.
+    await db.delete(agentBudgetPeriods).where(eq(agentBudgetPeriods.agentId, AGENT_ID));
+
     await db.insert(runs).values({
       id: "run_legacy_week",
       taskId: TASK_ID,
@@ -284,7 +297,8 @@ describe("weekly budget ledger", () => {
     await runTaskOnce();
 
     const usage = await loadWeeklyUsage(AGENT_ID, TIMEZONE);
-    expect(usage.settledCents).toBeCloseTo(0.8, 5);
+    // 1 000 tokens * 0.8c/1k = 0.8c on top of the seeded ¥1.80.
+    expect(usage.settledCents).toBeCloseTo(SEEDED_SETTLED_CENTS + 0.8, 5);
 
     const providerRuns = await db
       .select()
