@@ -17,6 +17,7 @@ import {
   Card,
   CardHeader,
   EmptyState,
+  StatusBadge,
 } from "@/components/ui";
 import { CouncilActions, NewCouncilForm } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
@@ -33,6 +34,7 @@ export default async function CouncilPage() {
     return (
       <div className="mx-auto max-w-xl py-12">
         <EmptyState
+          icon={<Gavel className="size-4" />}
           title="没有进行中的内阁会议"
           hint="自动触发（支出、时间冲突、目标变更）尚未接入。你可以在下方手动发起一场会议。"
         />
@@ -66,26 +68,10 @@ export default async function CouncilPage() {
             <Badge tone="violet">
               <Gavel className="size-2.5" /> Council
             </Badge>
-            <Badge
-              tone={
-                council.status === "open"
-                  ? "accent"
-                  : council.status === "degraded"
-                    ? "danger"
-                    : "teal"
-              }
-            >
-              {council.status === "open"
-                ? "进行中"
-                : council.status === "deliberating"
-                  ? "生成立场中"
-                  : council.status === "degraded"
-                    ? "立场生成失败"
-                    : "已决议"}
-            </Badge>
+            <StatusBadge status={council.status} />
             <span className="text-label text-faint">触发：{council.trigger}</span>
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-ink">{council.topic}</h1>
+          <h1 className="text-page font-semibold tracking-tight text-ink">{council.topic}</h1>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-label text-faint">
             <span className="inline-flex items-center gap-1">
               <Users className="size-3" /> {positions.length} 位 Agent 提交立场
@@ -195,7 +181,7 @@ export default async function CouncilPage() {
                             {agent?.title ?? ""}
                           </span>
                         </div>
-                        <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+                        <p className="mt-2 text-label leading-relaxed text-ink-soft">
                           {position.claim}
                         </p>
                         <div className="mt-2 flex flex-wrap gap-1.5">

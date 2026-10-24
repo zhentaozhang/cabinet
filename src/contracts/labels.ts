@@ -191,10 +191,26 @@ export const STATUS_LABELS: Record<string, string> = {
   superseded: "已被取代",
   conflicted: "自相矛盾",
   // audit log kind (the first segment of `audit_events.action`)
+  // Every prefix that reaches an audit chip needs a word here: the filter row
+  // on /review/audit prints raw segments for anything missing, so one gap turns
+  // the row into "任务 12 · insight 3 · council 1".
   task: "任务",
   audit: "验收",
   checkin: "打卡",
   autonomy: "自治",
+  agent: "Agent",
+  insight: "洞察",
+  grant: "授权",
+  approval: "审批",
+  council: "内阁",
+  dissent: "异议",
+  memory: "记忆",
+  goal: "目标",
+  chief: "Chief",
+  apprentice: "学徒",
+  workspace: "工作区",
+  run: "运行",
+  review: "复盘",
   // approval / insight / council
   pending: "待决定",
   expired: "已过期",

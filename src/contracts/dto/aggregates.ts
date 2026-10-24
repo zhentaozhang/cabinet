@@ -107,6 +107,21 @@ export const todayPageSchema = z.object({
   yesterdayCheckin: checkinDtoSchema.nullable(),
   brief: reviewDtoSchema.nullable(),
   weeklyMetrics: weeklyMetricsSchema,
+  /**
+   * The biggest line inside `weeklyMetrics.costCents`, derived from the same
+   * budget ledger rows. Nullable because a week with no spend has nobody to
+   * name — the card then renders no spender line at all.
+   *
+   * `cents` is not `.int()`: the ledger columns are `real`, so a fractional
+   * cent is possible and a strict DTO would turn that row into a 500.
+   */
+  topSpender: z
+    .object({
+      agentId: z.string(),
+      name: z.string(),
+      cents: z.number().nonnegative(),
+    })
+    .nullable(),
   /** Derived counters the Today cards render as evidence, not hardcoded copy. */
   counts: z.object({
     agents: z.number(),

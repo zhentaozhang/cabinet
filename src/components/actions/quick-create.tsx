@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
-import { planAdvancedFocus, validateTaskDraft } from "@/lib/presentation/task-form";
+import { money } from "@/lib/format";
+import {
+  AUDITOR_CONFLICT_MESSAGE,
+  COST_AMOUNT_MESSAGE,
+  COST_FORMAT_MESSAGE,
+  planAdvancedFocus,
+  validateTaskDraft,
+  yuanToCents,
+} from "@/lib/presentation/task-form";
 import type { AdvancedField, TaskDraftErrors } from "@/lib/presentation/task-form";
 import { call } from "./shared";
 
@@ -103,8 +111,9 @@ export function QuickCreate({
   }
 
   // Payload value only; whether the amount is *acceptable* is decided by
-  // `validateTaskDraft`, so the rule lives in one place.
-  const taskCostCents = Math.round(Number.parseFloat(taskCostYuan) * 100);
+  // `validateTaskDraft`, so the rule lives in one place. `null` means the field
+  // is blank or unreadable, and the payload falls back to 0 for non-spend tasks.
+  const taskCostCents = yuanToCents(taskCostYuan);
 
   const assigneeName =
     agents.find((agent) => agent.id === taskAssignee)?.name ?? "未指定";
@@ -161,9 +170,9 @@ export function QuickCreate({
     if (value && value === taskAuditor) {
       setErrors((prev) => ({
         ...prev,
-        auditor: "验收者不能是执行者",
+        auditor: AUDITOR_CONFLICT_MESSAGE,
       }));
-    } else if (errors.auditor === "验收者不能是执行者") {
+    } else if (errors.auditor === AUDITOR_CONFLICT_MESSAGE) {
       setErrors((prev) => ({ ...prev, auditor: undefined }));
     }
   }
@@ -173,7 +182,7 @@ export function QuickCreate({
     if (value && value === taskAssignee) {
       setErrors((prev) => ({
         ...prev,
-        auditor: "验收者不能是执行者",
+        auditor: AUDITOR_CONFLICT_MESSAGE,
       }));
     } else if (errors.auditor) {
       setErrors((prev) => ({ ...prev, auditor: undefined }));
@@ -185,9 +194,11 @@ export function QuickCreate({
     if (value !== "spend") {
       setErrors((prev) => ({ ...prev, cost: undefined }));
     } else if (taskCostYuan.trim()) {
-      const costCents = Math.round(Number.parseFloat(taskCostYuan) * 100);
-      if (!Number.isFinite(costCents) || costCents <= 0) {
-        setErrors((prev) => ({ ...prev, cost: "支出任务金额需大于 0 元" }));
+      const costCents = yuanToCents(taskCostYuan);
+      if (costCents === null) {
+        setErrors((prev) => ({ ...prev, cost: COST_FORMAT_MESSAGE }));
+      } else if (costCents <= 0) {
+        setErrors((prev) => ({ ...prev, cost: COST_AMOUNT_MESSAGE }));
       }
     }
   }
@@ -195,8 +206,8 @@ export function QuickCreate({
   function handleCostChange(value: string) {
     setTaskCostYuan(value);
     if (errors.cost) {
-      const costCents = Math.round(Number.parseFloat(value) * 100);
-      if (Number.isFinite(costCents) && costCents > 0) {
+      const costCents = yuanToCents(value);
+      if (costCents !== null && costCents > 0) {
         setErrors((prev) => ({ ...prev, cost: undefined }));
       }
     }
@@ -271,7 +282,9 @@ export function QuickCreate({
         auditorId: taskAuditor,
         actionType: taskAction,
         resource: taskAction === "external" ? "calendar" : "task",
-        estimatedCostCents: taskAction === "spend" ? taskCostCents : 0,
+        // Spend tasks are already validated above, so `null` here can only be
+        // a non-spend task; 0 keeps the payload's integer contract.
+        estimatedCostCents: taskAction === "spend" ? (taskCostCents ?? 0) : 0,
         goalId: taskGoal || null,
         estimateMin: 25,
       },
@@ -521,7 +534,8 @@ export function QuickCreate({
                     >
                       <AlertCircle className="size-3 shrink-0" />
                       <span>
-                        {errors.auditor || "验收者不能是执行者（需独立制衡）"}
+                        {errors.auditor ||
+                          `${AUDITOR_CONFLICT_MESSAGE}（需独立制衡）`}
                       </span>
                     </p>
                   ) : (
@@ -669,13 +683,17 @@ export function QuickCreate({
                 </strong>{" "}
                 项交付标准
               </span>
-              {taskAction === "spend" && taskCostYuan ? (
+              {taskAction === "spend" && taskCostCents !== null && taskCostCents > 0 ? (
                 <>
                   <span>·</span>
                   <span>
                     预估花费{" "}
+                    {/* Echo the parsed amount, not the raw input: typing 「12元」
+                        used to preview "¥12元" while the submit path silently
+                        charged 12 — the preview must spell the amount the app
+                        will actually charge, or say nothing. */}
                     <strong className="mono font-medium text-ink">
-                      ¥{taskCostYuan}
+                      {money(taskCostCents)}
                     </strong>
                   </span>
                 </>

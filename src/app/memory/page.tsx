@@ -4,6 +4,7 @@ import {
   Brain,
   Database,
   Fingerprint,
+  SearchX,
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import {
   Stat,
 } from "@/components/ui";
 import { MemoryRow } from "@/components/memory-row";
+import { memoryTypeLabel } from "@/contracts/labels";
 
 export const metadata: Metadata = {
   title: "Memory · Cabinet",
@@ -72,8 +74,8 @@ export default async function MemoryPage({
             <Brain className="size-3 text-accent" />
             Memory
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">记忆中心</h1>
-          <p className="mt-1.5 text-xs text-muted">
+          <h1 className="text-page font-semibold tracking-tight text-ink">记忆中心</h1>
+          <p className="mt-1.5 text-label text-muted">
             它记住了你什么、证据在哪、你能不能改。
           </p>
         </div>
@@ -162,6 +164,7 @@ export default async function MemoryPage({
         <div className="space-y-3">
           {data.memories.length === 0 ? (
             <EmptyState
+              icon={<SearchX className="size-4" />}
               title={view === "history" ? "没有历史版本" : "没有匹配的记忆"}
               hint={
                 view === "history"
@@ -233,15 +236,15 @@ export default async function MemoryPage({
             <CardHeader eyebrow="Legend" title="三种记忆" />
             <div className="space-y-3 px-5 py-4 text-label">
               <div>
-                <Badge tone="teal">episodic</Badge>
+                <Badge tone="teal">{memoryTypeLabel("episodic")}</Badge>
                 <p className="mt-1 text-muted">发生了什么：check-in、事件、结果。</p>
               </div>
               <div>
-                <Badge tone="blue">semantic</Badge>
+                <Badge tone="blue">{memoryTypeLabel("semantic")}</Badge>
                 <p className="mt-1 text-muted">关于你的事实：偏好、约束、精力模式。</p>
               </div>
               <div>
-                <Badge tone="violet">procedural</Badge>
+                <Badge tone="violet">{memoryTypeLabel("procedural")}</Badge>
                 <p className="mt-1 text-muted">怎么做事：技能、步骤、护栏。</p>
               </div>
             </div>

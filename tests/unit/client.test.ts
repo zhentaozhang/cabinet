@@ -57,7 +57,9 @@ describe("api client transport", () => {
       ),
     );
 
-    const result = await stalled.query("/api/slow", z.object({ a: z.number() }));
+    const result = await stalled.query("/api/slow", (value) =>
+      z.object({ a: z.number() }).parse(value),
+    );
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -92,7 +94,9 @@ describe("api client transport", () => {
       }),
     );
 
-    const result = await stalled.query("/api/half", z.object({ a: z.number() }));
+    const result = await stalled.query("/api/half", (value) =>
+      z.object({ a: z.number() }).parse(value),
+    );
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -113,7 +117,9 @@ describe("api client transport", () => {
       ),
     );
 
-    const result = await client.query("/api/truncated", z.object({ a: z.number() }));
+    const result = await client.query("/api/truncated", (value) =>
+      z.object({ a: z.number() }).parse(value),
+    );
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -131,7 +137,7 @@ describe("api client envelope", () => {
 
     const result = await client.query(
       "/api/read",
-      z.object({ count: z.number() }),
+      (value) => z.object({ count: z.number() }).parse(value),
     );
 
     expect(result).toEqual({ ok: true, data: { count: 3 } });
@@ -198,7 +204,7 @@ describe("api client envelope", () => {
 
     const result = await client.query(
       "/api/read",
-      z.object({ count: z.number() }),
+      (value) => z.object({ count: z.number() }).parse(value),
     );
 
     expect(result.ok).toBe(false);

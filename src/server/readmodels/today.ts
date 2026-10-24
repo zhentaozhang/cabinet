@@ -42,6 +42,7 @@ export async function loadToday(userId: string): Promise<TodayPageDto> {
         : null,
       brief: data.brief ? toReviewDto(data.brief) : null,
       weeklyMetrics: data.weeklyMetrics,
+      topSpender: data.topSpender,
       counts: {
         agents: data.agents.length,
         pendingApprovals: data.approvals.length,

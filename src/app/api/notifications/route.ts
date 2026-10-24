@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 
 import { handleMutation } from "@/lib/api/mutation";
-import { handleQuery } from "@/lib/api/read";
+import { handleQueryWithRequest } from "@/lib/api/read";
 import { parseBody } from "@/lib/validation/parse";
 import { notifyPrefsSchema } from "@/contracts";
 import { loadDelivery } from "@/server/readmodels/delivery";
@@ -13,7 +13,7 @@ export function GET(request: Request) {
   const url = new URL(request.url);
   const offset = Number(url.searchParams.get("offset") ?? 0);
   const limit = Number(url.searchParams.get("limit") ?? 30);
-  return handleQuery((userId) =>
+  return handleQueryWithRequest(request, (userId) =>
     loadDelivery(userId, {
       offset: Number.isFinite(offset) ? offset : 0,
       limit: Number.isFinite(limit) ? limit : 30,

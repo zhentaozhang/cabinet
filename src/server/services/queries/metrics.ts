@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agentBudgetPeriods,
@@ -25,16 +25,27 @@ import { getPolicyConfig } from "@/lib/policy/config";
  * would make the weekly cap meaningless.
  */
 
+/**
+ * The reader's local week window, and the zone that defines it.
+ *
+ * Shared by every weekly spend query: a total and its breakdown are only
+ * comparable when they are cut from the same interval, and a second hand-rolled
+ * week boundary is a second chance for the two numbers to disagree.
+ */
+async function weeklyWindow(userId: string) {
+  const userRows = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId));
+  const timezone = userRows[0]?.timezone ?? "UTC";
+  return { timezone, range: weekRange(new Date(), timezone) };
+}
+
 export async function getWeeklyMetrics(userId: string) {
-  const [userRows, config] = await Promise.all([
-    db
-      .select({ timezone: users.timezone })
-      .from(users)
-      .where(eq(users.id, userId)),
+  const [{ timezone, range }, config] = await Promise.all([
+    weeklyWindow(userId),
     getPolicyConfig(),
   ]);
-  const timezone = userRows[0]?.timezone ?? "UTC";
-  const range = weekRange(new Date(), timezone);
   const now = new Date();
   const endOfToday = addLocalDays(now, 1, timezone);
 
@@ -262,4 +273,38 @@ export async function getWeeklyMetrics(userId: string) {
     auditRejectRate: auditTotal > 0 ? (rejects / auditTotal) * 100 : null,
     sample: { planned, completed, accepts, rejects },
   };
+}
+/**
+ * This week's model spend, split by agent.
+ *
+ * Same rows, same window and same tenancy join as the `costCents` total above.
+ * The Today card prints that total and names the biggest spender right beside
+ * it, so the two must be two views of one sum — reading the second one from
+ * `agents.spent_cents` (frozen legacy, database default 0, never written at
+ * runtime) is how the same card ended up quoting two different facts.
+ */
+export async function getWeeklySpendByAgent(
+  userId: string,
+): Promise<{ agentId: string; name: string; cents: number }[]> {
+  const { range } = await weeklyWindow(userId);
+  const spent = sql<number>`coalesce(sum(${agentBudgetPeriods.settledCents} + ${agentBudgetPeriods.unknownCents}), 0)`;
+  const rows = await db
+    .select({ agentId: agents.id, name: agents.name, cents: spent })
+    .from(agentBudgetPeriods)
+    .innerJoin(agents, eq(agents.id, agentBudgetPeriods.agentId))
+    .where(
+      and(
+        eq(agents.userId, userId),
+        gte(agentBudgetPeriods.periodStart, range.start),
+        lt(agentBudgetPeriods.periodStart, range.end),
+      ),
+    )
+    .groupBy(agents.id, agents.name)
+    .orderBy(desc(spent));
+
+  return rows.map((row) => ({
+    agentId: row.agentId,
+    name: row.name,
+    cents: Number(row.cents),
+  }));
 }

@@ -2,17 +2,37 @@
 
 @theme inline {
   --color-bg: #07090d;
-  --color-bg-void: #05070a;
+  /*
+   * Three surfaces, one meaning each — do not add a fourth without naming what
+   * it means:
+   *   panel         the page's card surface
+   *   panel2        a control or inset row sitting *on* a card
+   *   panel-raised  the one card the page wants read first
+   * `sunken` (below) is the fourth and only for code / JSON / artifact bodies.
+   */
   --color-panel: #0e1219;
-  --color-panel-base: #0a0d14;
   --color-panel2: #131822;
   --color-panel-raised: #18202d;
   --color-line: #1f2735;
   --color-line2: #2b3548;
   --color-hairline: rgba(255, 255, 255, 0.06);
   --color-ink: #e8ebf1;
-  --color-muted: #8b96a8;
-  --color-faint: #566173;
+  /*
+   * `faint` is now readable (see below), which would otherwise flatten the
+   * ladder by putting it almost on top of `muted`. Muted moves up one step to
+   * keep four distinct reading levels: faint 4.63 < muted 6.60 < ink-soft
+   * 10.08 < ink 13.60 (worst-case ratios across the defined surfaces).
+   */
+  --color-muted: #9ba6b8;
+  /*
+   * `faint` carries real sentences — hints, empty-state explanations, the
+   * metadata under a title — not just decorative eyebrows. At #566173 it only
+   * reached 3.00:1 on `panel` and 2.61:1 on `panel-raised`, which is under the
+   * 4.5:1 that reading-size text needs. #7c8a9f clears 4.5:1 on every surface
+   * this palette defines (worst case 4.63:1 on `panel-hover`) while staying a
+   * step quieter than `muted`, so the visual ladder survives.
+   */
+  --color-faint: #7c8a9f;
   /* body copy: brighter than `muted`, dimmer than `ink` */
   --color-ink-soft: #c6ccd8;
   /* recessed surface for code, JSON traces and artifact bodies */
@@ -24,16 +44,32 @@
   --color-accent-hi: #efb954;
   --color-accent: #e2a336;
   --color-teal: #3bb99e;
-  --color-danger: #ea5555;
+  /*
+   * Danger red is read both flat on a surface and as a self-tinted fill
+   * (`bg-danger/10`), so the value has to clear 4.5:1 in the filled case too.
+   * #ea5555 only reached 4.13:1 on `panel-hover` at a 10% fill; #ef6262 holds
+   * 4.51:1 there and stays 5.89:1 flat, which is why the red is a shade
+   * lighter than the usual alarm tone.
+   */
+  --color-danger: #ef6262;
   --color-blue: #5b9ff8;
-  --color-violet: #a371f7;
+  /* Reads as a badge tint as well as flat text, so it needs the same headroom
+     as `danger`: #a371f7 bottomed out at 3.94:1 on its own 15% fill. */
+  --color-violet: #b58ffb;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
   /*
-   * Typographic scale — four roles, not four sizes. CJK glyphs lose strokes
-   * below 12px on this dark background, so `label` is the floor for any text a
-   * user reads; `eyebrow` is the single exemption and only for uppercase Latin.
+   * Typographic scale — roles, not sizes. CJK glyphs lose strokes below 12px on
+   * this dark background, so `label` is the floor for any text a user reads;
+   * `eyebrow` is the single exemption and only for uppercase Latin.
+   *
+   * Body roles:  eyebrow(10) < label(12) < body(13) < emphasis(14) < title(15)
+   * Headings:    section(16) < page(22)
+   *
+   * Every size the UI actually uses has a name here. A page reaching for
+   * `text-sm` or `text-2xl` bypasses the scale, and two screens drift apart
+   * while each one still looks locally reasonable.
    */
   --text-eyebrow: 10px;
   --text-eyebrow--line-height: 14px;
@@ -41,8 +77,14 @@
   --text-label--line-height: 17px;
   --text-body: 13px;
   --text-body--line-height: 19px;
+  --text-emphasis: 14px;
+  --text-emphasis--line-height: 20px;
   --text-title: 15px;
   --text-title--line-height: 22px;
+  --text-section: 16px;
+  --text-section--line-height: 24px;
+  --text-page: 22px;
+  --text-page--line-height: 30px;
 }
 
 html {
@@ -73,7 +115,7 @@ body::before {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2c3546 transparent;
+  scrollbar-color: var(--color-line2) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -82,7 +124,7 @@ body::before {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #2c3546;
+  background: var(--color-line2);
   border-radius: 999px;
 }
 
@@ -116,30 +158,43 @@ body::before {
   box-shadow: 0 0 16px -2px currentColor;
 }
 
-.prose-cabinet h1,
+/*
+ * `Markdown` demotes every heading one level (its `#` becomes an `<h2>`) so an
+ * embedded document cannot introduce a second page-level heading. These sizes
+ * are therefore keyed to the *rendered* level: `h2` is the visual equivalent of
+ * the author's `#`, and so on down. Keep the two in step.
+ */
 .prose-cabinet h2,
-.prose-cabinet h3 {
+.prose-cabinet h3,
+.prose-cabinet h4,
+.prose-cabinet h5,
+.prose-cabinet h6 {
   font-weight: 600;
   letter-spacing: -0.01em;
   margin-top: 1.1em;
   margin-bottom: 0.45em;
 }
 
-.prose-cabinet h1 {
+.prose-cabinet h2 {
   font-size: 1.15rem;
 }
 
-.prose-cabinet h2 {
+.prose-cabinet h3 {
   font-size: 1rem;
 }
 
-.prose-cabinet h3 {
+.prose-cabinet h4 {
   font-size: 0.92rem;
+}
+
+.prose-cabinet h5,
+.prose-cabinet h6 {
+  font-size: 0.875rem;
 }
 
 .prose-cabinet p,
 .prose-cabinet li {
-  color: #c6ccd8;
+  color: var(--color-ink-soft);
   line-height: 1.75;
   font-size: 0.875rem;
 }
@@ -159,15 +214,15 @@ body::before {
 .prose-cabinet code {
   font-family: var(--font-mono), monospace;
   font-size: 0.8rem;
-  background: #1a2030;
+  background: var(--color-panel-hover);
   padding: 0.1rem 0.3rem;
   border-radius: 4px;
 }
 
 .prose-cabinet blockquote {
-  border-left: 2px solid #2c3546;
+  border-left: 2px solid var(--color-line2);
   padding-left: 0.9rem;
-  color: #8b95a7;
+  color: var(--color-muted);
   margin: 0.6rem 0;
 }
 

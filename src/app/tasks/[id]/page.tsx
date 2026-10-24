@@ -42,6 +42,7 @@ import {
   getStatusBannerInfo,
   getNextActionCopy,
   getStatusSummary,
+  resolveFailurePresentation,
   summarizeTaskCitations,
 } from "@/lib/presentation/task-view";
 import {
@@ -53,7 +54,11 @@ import {
   StatusBadge,
 } from "@/components/ui";
 import { parseClaimsTable } from "@/lib/domain/claims";
-import { ArtifactSubmitForm, TaskActions } from "@/components/actions";
+import {
+  ApprovalActions,
+  ArtifactSubmitForm,
+  TaskActions,
+} from "@/components/actions";
 import { Markdown } from "@/components/markdown";
 
 export const metadata: Metadata = {
@@ -133,10 +138,20 @@ export default async function TaskPage({
   const allPassed =
     totalChecklistCount > 0 && passedCount === totalChecklistCount;
 
+  // One failure verdict for the whole page. The banner and the reason panel
+  // used to test different conditions, so a run that failed while recovery
+  // rewound the task row to `planned` got a banner promising "the reason is
+  // below" and no panel below it.
+  const failure = resolveFailurePresentation({
+    taskStatus: task.status,
+    hasFailedRun: Boolean(failedRun),
+    failureReason,
+    isRejected,
+  });
   const bannerInfo = getStatusBannerInfo(
     task.status,
     approvals.some((a) => a.status === "pending"),
-    task.status === "failed" || Boolean(failedRun),
+    failure.showBanner,
     isRejected,
     toolStep
   );
@@ -241,7 +256,13 @@ export default async function TaskPage({
             ) : null}
           </div>
 
-          <div className="shrink-0">
+          {/*
+            `shrink-0` here kept the action row at its min-content width, which
+            overflowed the card on a 320px screen where the buttons cannot fit
+            side by side. Taking the full row width below `sm` lets
+            TaskActions' own `flex-wrap` do its job.
+          */}
+          <div className="w-full min-w-0 sm:w-auto sm:shrink-0">
             <TaskActions taskId={task.id} status={task.status} actions={actions} />
           </div>
         </div>
@@ -277,8 +298,10 @@ export default async function TaskPage({
                       >
                         <XCircle className="size-3 shrink-0" />
                         <span>{getChecklistRuleLabel(item)}</span>
+                        {/* No extra opacity here: stacking 0.8 on the danger
+                            tone dropped this to 4.3:1, under the reading floor. */}
                         {result?.reason ? (
-                          <span className="opacity-80">（{result.reason}）</span>
+                          <span className="text-danger/90">（{result.reason}）</span>
                         ) : null}
                       </span>
                     ))}
@@ -290,13 +313,13 @@ export default async function TaskPage({
         ) : null}
 
         {/* Hoisted alert reason if failed */}
-        {task.status === "failed" && failureReason && !isRejected ? (
+        {failure.showPanel ? (
           <div className="mt-4 rounded-lg border border-danger/30 bg-danger/10 p-3.5">
             <div className="flex items-start gap-2.5">
               <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" />
               <div className="min-w-0 flex-1">
                 <div className="text-label font-semibold text-danger">
-                  执行中断 / 失败原因
+                  {failure.title}
                 </div>
                 <div className="mt-1 text-label leading-relaxed text-ink-soft font-mono break-words">
                   {failureReason}
@@ -474,8 +497,15 @@ export default async function TaskPage({
                                     <ChevronDown className="size-3 transition-transform group-open:rotate-180" />
                                     <span>查看输入 / 输出参数</span>
                                   </summary>
+                                  {/*
+                                    `min-w-0` on both columns is what lets the
+                                    `pre` scroll: a grid item defaults to
+                                    `min-width: auto`, so without it the widest
+                                    JSON line sets the track width and
+                                    `overflow-x-auto` never engages.
+                                  */}
                                   <div className="mt-2 grid gap-2.5 sm:grid-cols-2">
-                                    <div>
+                                    <div className="min-w-0">
                                       <div className="mb-1 text-eyebrow font-medium uppercase text-faint">
                                         输入 Input
                                       </div>
@@ -483,7 +513,7 @@ export default async function TaskPage({
                                         {JSON.stringify(step.input, null, 2)}
                                       </pre>
                                     </div>
-                                    <div>
+                                    <div className="min-w-0">
                                       <div className="mb-1 text-eyebrow font-medium uppercase text-faint">
                                         输出 Output
                                       </div>
@@ -1083,9 +1113,25 @@ export default async function TaskPage({
                     <div className="mt-1 leading-relaxed">
                       {String(approval.payload.reason ?? approval.payload.note ?? "")}
                     </div>
-                    <Badge tone={statusTone(approval.status)} className="mt-2">
-                      {statusLabel(approval.status)}
-                    </Badge>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <Badge tone={statusTone(approval.status)}>
+                        {statusLabel(approval.status)}
+                      </Badge>
+                      {/*
+                        The decision belongs on the page that shows what is being
+                        decided. This card used to be the only reachable view of
+                        a pending approval on this route while carrying no
+                        controls at all, so the reader was asked to approve
+                        something they could not approve here. Same component
+                        the dashboard uses, unchanged.
+                      */}
+                      {approval.status === "pending" ? (
+                        <ApprovalActions
+                          approvalId={approval.id}
+                          actionType={approval.action}
+                        />
+                      ) : null}
+                    </div>
                   </div>
                 ))}
               </div>

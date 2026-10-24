@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { planBusyFocus, planTab, type TrapPlacement } from "@/lib/presentation/dialog-focus";
 import { cn } from "@/lib/format";
 
 export function ConfirmDialog({
@@ -39,17 +40,12 @@ export function ConfirmDialog({
     busyRef.current = busy;
   }, [busy]);
 
-  /*
-   * Disabling the focused button moves focus to `<body>`, which drops a screen
-   * reader out of the dialog at exactly the moment it is announcing progress.
-   * Park focus on the surface instead — it is `tabIndex={-1}`, so Tab still
-   * walks into the controls from there.
-   */
+  // Disabling the focused button drops focus out of the dialog; `planBusyFocus`
+  // holds the rule and the measurements behind it.
   useEffect(() => {
-    if (!open || !busy) return;
-    const active = document.activeElement;
-    if (active instanceof Node && dialogRef.current?.contains(active)) return;
-    dialogRef.current?.focus();
+    if (planBusyFocus({ open, busy }).kind === "focus-surface") {
+      dialogRef.current?.focus();
+    }
   }, [open, busy]);
 
   /*
@@ -89,34 +85,22 @@ export function ConfirmDialog({
       const nodes = Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [],
       );
-      if (nodes.length === 0) {
+      const active = document.activeElement;
+      const placement: TrapPlacement =
+        active === dialogRef.current
+          ? { zone: "surface" }
+          : nodes.indexOf(active as HTMLElement) >= 0
+            ? { zone: "control", index: nodes.indexOf(active as HTMLElement) }
+            : { zone: "outside" };
+
+      // `planTab` holds the wrap and pull-back rules, and why each exists.
+      const action = planTab({ placement, count: nodes.length, shiftKey: event.shiftKey });
+      if (action.kind === "focus-surface") {
         event.preventDefault();
         dialogRef.current?.focus();
-        return;
-      }
-
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-
-      /*
-       * Focus can end up outside the dialog — a click on the backdrop, a stray
-       * programmatic focus, or the browser restoring focus after a re-render.
-       * The wrap-around checks below only fire when focus sits exactly on the
-       * first or last control, so an outside focus would tab through the page
-       * behind the modal. Pull it back in first.
-       */
-      if (!dialogRef.current?.contains(document.activeElement)) {
+      } else if (action.kind === "focus") {
         event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-        return;
-      }
-
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
+        nodes[action.index].focus();
       }
     };
 

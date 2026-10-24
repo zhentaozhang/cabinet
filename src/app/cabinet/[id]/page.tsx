@@ -18,9 +18,12 @@ import {
   grantStateTone,
   passRate,
   roleMeta,
-  statusTone,
+  statusLabel,
 } from "@/lib/agents";
 import { money, pct, relative, shortDate, timeOnly } from "@/lib/format";
+import { memoryTypeLabel } from "@/contracts/labels";
+import { sourceLabel } from "@/lib/domain/provenance";
+import { completionPercent } from "@/lib/presentation/ratio";
 import {
   Avatar,
   Badge,
@@ -28,6 +31,7 @@ import {
   CardHeader,
   Progress,
   Stat,
+  StatusBadge,
 } from "@/components/ui";
 import {
   AgentAdmin,
@@ -80,12 +84,10 @@ export default async function AgentPage({
           <Avatar initials={agent.avatar} accent={meta.accent} size={52} />
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight text-ink">{agent.name}</h1>
-              <Badge tone={statusTone(agent.status)}>
-                {agent.status === "active" ? "在岗" : agent.status === "probation" ? "试用期" : agent.status}
-              </Badge>
+              <h1 className="text-page font-semibold tracking-tight text-ink">{agent.name}</h1>
+              <StatusBadge status={agent.status} />
               {agent.lifecycleStage !== "active" ? (
-                <Badge tone="accent">{agent.lifecycleStage}</Badge>
+                <Badge tone="accent">{statusLabel(agent.lifecycleStage)}</Badge>
               ) : null}
               <Link
                 href={`/api/agents/${agent.id}/card`}
@@ -95,7 +97,7 @@ export default async function AgentPage({
                 Agent Card
               </Link>
             </div>
-            <div className="mt-1 text-xs text-muted">
+            <div className="mt-1 text-label text-muted">
               {agent.title} · {meta.objective}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-label text-faint">
@@ -118,7 +120,7 @@ export default async function AgentPage({
           <Card>
             <CardHeader eyebrow="Charter" title="宪章" right={<Badge tone="accent">不可违反</Badge>} />
             <div className="px-5 py-4">
-              <p className="text-xs leading-relaxed text-ink-soft">{agent.charter}</p>
+              <p className="text-label leading-relaxed text-ink-soft">{agent.charter}</p>
             </div>
           </Card>
 
@@ -144,14 +146,18 @@ export default async function AgentPage({
                   <span>信任分</span>
                   <span className="mono">{Math.round(agent.trustScore)} / 100</span>
                 </div>
-                <Progress value={agent.trustScore} tone="teal" />
+                <Progress value={agent.trustScore} tone="teal" label="信任分" />
               </div>
               <div>
                 <div className="mb-1 flex items-center justify-between text-label text-faint">
                   <span>本周模型用量（{money(budget.settledCents)} 已结算 + {money(budget.unknownCents)} 未知）</span>
                   <span className="mono">{budget.limitCents > 0 ? pct(weekUsedPct) : "—"}</span>
                 </div>
-                <Progress value={budget.limitCents > 0 ? weekUsedPct : 0} tone="accent" />
+                <Progress
+                  value={budget.limitCents > 0 ? weekUsedPct : 0}
+                  tone="accent"
+                  label="本周模型用量占预算比例"
+                />
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-label text-faint">
                   <span className="mono">
                     {shortDate(budget.periodStart, tz)} – {shortDate(budget.periodEnd, tz)}
@@ -206,7 +212,7 @@ export default async function AgentPage({
                 </Link>
               ))}
               {runs.length === 0 ? (
-                <div className="px-5 py-8 text-center text-xs text-faint">还没有运行记录。</div>
+                <div className="px-5 py-8 text-center text-label text-faint">还没有运行记录。</div>
               ) : null}
             </div>
           </Card>
@@ -219,12 +225,14 @@ export default async function AgentPage({
                   <div key={skill.id} className="px-5 py-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-xs font-medium text-ink">{skill.name}</div>
+                        <div className="text-label font-medium text-ink">{skill.name}</div>
                         <div className="mt-0.5 text-label text-faint">
                           v{skill.version} · {skill.label} · {skill.successCount} 通过 / {skill.failCount} 失败
                         </div>
                       </div>
-                      <Badge tone={skill.status === "active" ? "teal" : "accent"}>{skill.status}</Badge>
+                      <Badge tone={skill.status === "active" ? "teal" : "accent"}>
+                        {statusLabel(skill.status)}
+                      </Badge>
                     </div>
                     <ol className="mt-3 space-y-1 text-label text-muted">
                       {skill.steps.map((step, i) => (
@@ -294,9 +302,10 @@ export default async function AgentPage({
                       </span>
                     </div>
                     <Progress
-                      value={Math.min(
-                        1,
-                        apprenticeship.observed / apprenticeship.required,
+                      label="观摩证据收集进度"
+                      value={completionPercent(
+                        apprenticeship.observed,
+                        apprenticeship.required,
                       )}
                       tone={
                         apprenticeship.observed >= apprenticeship.required
@@ -430,12 +439,16 @@ export default async function AgentPage({
                     <BookOpen className="mt-0.5 size-3 text-faint" />
                     <div className="min-w-0">
                       <div className="text-label leading-relaxed text-muted">{memory.content}</div>
-                      <div className="mt-1 flex items-center gap-2 text-label text-faint">
-                        <span>{memory.type}</span>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-label text-faint">
+                        <span>{memoryTypeLabel(memory.type)}</span>
                         <span>·</span>
                         <span>{Math.round(memory.confidence * 100)}%</span>
                         <span>·</span>
                         <span>{memory.domain}</span>
+                        <span>·</span>
+                        {/* Same rule as the Memory page: the reader must be able
+                            to tell a demo memory from something established. */}
+                        <span>{sourceLabel(memory.sourceType)}</span>
                       </div>
                     </div>
                   </div>

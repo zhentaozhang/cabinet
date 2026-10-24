@@ -22,6 +22,12 @@ export async function PATCH(
       });
       revalidatePath("/");
       revalidatePath("/review");
+      // The approval card is rendered on the task page too, so a decision taken
+      // there must invalidate that route as well. Without it, navigating back
+      // to the task (hard navigation, or another tab) shows the pre-decision
+      // "待审批" card while the API has already moved the task on.
+      // Dynamic segment: Next requires the route pattern plus `type`.
+      revalidatePath("/tasks/[id]", "page");
       return { status: 200, body: { ok: true } };
     },
   });

@@ -10,7 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import { fetchCabinetPage } from "@/lib/api/pages";
-import { AUTONOMY_LABELS, roleMeta, statusLabel, statusTone } from "@/lib/agents";
+import { AUTONOMY_LABELS, roleMeta, statusLabel } from "@/lib/agents";
 import { money } from "@/lib/format";
 import {
   Avatar,
@@ -19,6 +19,7 @@ import {
   CardHeader,
   EmptyState,
   SectionTitle,
+  StatusBadge,
 } from "@/components/ui";
 
 export const metadata: Metadata = {
@@ -58,7 +59,7 @@ function KnowledgeCell({
         {label}
       </div>
       <div className="mt-2 flex items-baseline gap-1.5">
-        <span className="mono text-xl text-ink">{value}</span>
+        <span className="mono text-page text-ink">{value}</span>
         <span className="text-label text-muted">{unit}</span>
       </div>
       <div
@@ -118,8 +119,8 @@ function AgentCard({
           <Avatar initials={agent.avatar} accent={meta.accent} size={38} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-medium text-ink">{agent.name}</span>
-              <Badge tone={statusTone(agent.status)}>{statusLabel(agent.status)}</Badge>
+              <span className="truncate text-emphasis font-medium text-ink">{agent.name}</span>
+              <StatusBadge status={agent.status} />
             </div>
             <div className="mt-0.5 text-label text-faint">
               {agent.title} · {meta.objective}
@@ -147,41 +148,75 @@ function AgentCard({
           </div>
           {agent.lifecycleStage !== "active" ? (
             <div className="mt-2 inline-flex items-center gap-1 text-label text-accent">
-              <Sparkles className="size-2.5" /> {agent.lifecycleStage}
+              <Sparkles className="size-2.5" /> {statusLabel(agent.lifecycleStage)}
             </div>
           ) : null}
         </div>
 
         <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line px-5 py-3">
           <div>
-            <div className="mono text-sm text-ink">{Math.round(agent.trustScore)}</div>
+            <div className="mono text-emphasis text-ink">{Math.round(agent.trustScore)}</div>
             <div className="text-eyebrow uppercase tracking-wider text-faint">trust</div>
           </div>
           <div>
-            <div className="mono text-sm text-ink">{rate}%</div>
+            <div className="mono text-emphasis text-ink">{rate}%</div>
             <div className="text-eyebrow uppercase tracking-wider text-faint">pass</div>
           </div>
           <div>
-            <div className="mono text-sm text-ink">
+            <div className="mono text-emphasis text-ink">
               {money(budget.settledCents + budget.unknownCents)}
             </div>
             <div className="text-eyebrow uppercase tracking-wider text-faint">本周用量</div>
           </div>
         </div>
 
-        <div className="border-t border-line px-5 py-2.5 text-label text-faint">
-          {taskCount} 个任务 · {agent.successCount} 次通过 · {agent.failCount} 次驳回
-        </div>
-        <div className="flex flex-wrap items-center gap-x-1.5 border-t border-line px-5 py-2 text-label text-faint">
-          <span className="mono">上限 {money(budget.limitCents)}</span>
-          <span>· 已结算 {money(budget.settledCents)}</span>
-          {budget.unknownCents > 0 ? <span>· 未知 {money(budget.unknownCents)}</span> : null}
-          {budget.reservedCents > 0 ? <span className="text-accent">· 预留 {money(budget.reservedCents)}</span> : null}
-          {budget.overrun ? <span className="text-danger">· 已超支</span> : null}
-          {budget.legacyUnclassified ? <span className="text-accent">· 含台账前运行</span> : null}
+        {/* One footer, not three stacked rules: three hairlines in a row read as
+            a table edge and chop the card into stripes. The activity line sits
+            above the budget line and a single rule separates them from the
+            metrics grid. */}
+        <div className="space-y-1 border-t border-line px-5 py-3 text-label text-faint">
+          <div>
+            {taskCount} 个任务 · {agent.successCount} 次通过 · {agent.failCount} 次驳回
+          </div>
+          <div className="flex flex-wrap items-center gap-x-1.5">
+            <span className="mono">上限 {money(budget.limitCents)}</span>
+            <span>· 已结算 {money(budget.settledCents)}</span>
+            {budget.unknownCents > 0 ? <span>· 未知 {money(budget.unknownCents)}</span> : null}
+            {budget.reservedCents > 0 ? <span className="text-accent">· 预留 {money(budget.reservedCents)}</span> : null}
+            {budget.overrun ? <span className="text-danger">· 已超支</span> : null}
+            {budget.legacyUnclassified ? <span className="text-accent">· 含台账前运行</span> : null}
+          </div>
         </div>
       </Card>
     </Link>
+  );
+}
+
+/**
+ * The org-chart branch: stem → bar → one drop per column.
+ *
+ * Rendered as three separate pieces rather than one tall line because the bar
+ * has to stop at the outer column centres (16.7% / 83.3% of a 3-column grid);
+ * a full-width bar would visibly overhang past the first and last nodes.
+ */
+function BranchConnector() {
+  return (
+    <div aria-hidden="true">
+      {/* Wide layout: stem, bar, three drops. */}
+      <div className="hidden sm:block">
+        <div className="mx-auto h-4 w-px bg-line2" />
+        <div className="mx-auto h-px w-2/3 bg-line2" />
+        <div className="grid grid-cols-3">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="flex justify-center">
+              <div className="h-3 w-px bg-line2" />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Narrow layout: a single column has nothing to branch to. */}
+      <div className="mx-auto my-3 h-4 w-px bg-line2 sm:hidden" />
+    </div>
   );
 }
 
@@ -206,7 +241,7 @@ function OrgNode({
   return (
     <Link
       href={`/cabinet/${agent.id}`}
-      className="flex min-w-[150px] items-center gap-2 rounded-lg border border-line bg-panel px-2.5 py-2 transition-colors hover:border-line2"
+      className="flex items-center gap-2 rounded-lg border border-line bg-panel px-2.5 py-2 transition-colors hover:border-line2"
     >
       <span
         className="flex size-7 items-center justify-center rounded-md border font-mono text-label"
@@ -231,6 +266,7 @@ export default async function CabinetPage() {
     return (
       <div className="mx-auto max-w-xl py-12">
         <EmptyState
+          icon={<Users className="size-4" />}
           title="这个内阁还没有成员"
           hint="七个 Agent 的位置已经留好：Chief 拆解、Auditor 验收、Critic 唱反调。创建工作区后它们会按宪章上岗。"
         />
@@ -265,8 +301,8 @@ export default async function CabinetPage() {
             <Users className="size-3 text-accent" />
             Cabinet
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">你的个人内阁</h1>
-          <p className="mt-1.5 text-xs text-muted">
+          <h1 className="text-page font-semibold tracking-tight text-ink">你的个人内阁</h1>
+          <p className="mt-1.5 text-label text-muted">
             {data.agents.length} 个 Agent · {data.agents.filter((a) => a.status === "active").length} 在岗 ·{" "}
             {data.agents.filter((a) => a.lifecycleStage !== "active").length} 成长中
           </p>
@@ -296,14 +332,31 @@ export default async function CabinetPage() {
               <OrgNode agent={chief} />
             </div>
           ) : null}
-          <div className="mx-auto my-3 h-4 w-px bg-line2" />
+
+          {/* A single 1px stem said nothing about who reports to whom. The
+              branch below is a stem, a bar spanning the three column centres,
+              and one drop per column, so the line lands on each node. */}
+          <BranchConnector />
+
           <div className="grid gap-2 sm:grid-cols-3">
             {["researcher", "coach", "treasurer"].map((role) => {
               const agent = byRole(role)[0];
               return agent ? <OrgNode key={agent.id} agent={agent} /> : null;
             })}
           </div>
-          <div className="mx-auto my-3 h-4 w-px bg-line2" />
+
+          {/* The second band is not a child of the first: Auditor and Critic
+              answer to the Chief, not to the Researcher. Drawing a plain
+              vertical line here would assert a chain of command that does not
+              exist, so the band gets its own label and a dashed link. */}
+          <div className="mt-4 mb-3 flex items-center gap-3">
+            <span className="h-px flex-1 border-t border-dashed border-line2" />
+            <span className="text-eyebrow tracking-[0.14em] text-faint uppercase">
+              监督与成长 · 同样向 Chief 汇报
+            </span>
+            <span className="h-px flex-1 border-t border-dashed border-line2" />
+          </div>
+
           <div className="grid gap-2 sm:grid-cols-3">
             {["auditor", "apprentice", "critic"].map((role) => {
               const agent = byRole(role)[0];
@@ -321,11 +374,11 @@ export default async function CabinetPage() {
           <span className="inline-flex items-center gap-1">
             <span className="size-1.5 rounded-full bg-teal" /> 执行者不能验收自己的产物
           </span>
-          <span className="text-line2">·</span>
+          <span aria-hidden="true" className="text-faint">·</span>
           <span className="inline-flex items-center gap-1">
             <span className="size-1.5 rounded-full bg-accent" /> 升级靠信用和审计
           </span>
-          <span className="text-line2">·</span>
+          <span aria-hidden="true" className="text-faint">·</span>
           <span className="inline-flex items-center gap-1">
             <span className="size-1.5 rounded-full bg-violet" /> 学徒要考试才能转正
           </span>

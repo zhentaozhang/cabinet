@@ -44,12 +44,18 @@ export function TaskActions({
     setMsg(null);
     const data = await call(`/api/tasks/${taskId}/cancel`, "POST", {});
     setBusy(null);
-    setConfirmCancel(false);
     if (!data.ok) {
+      /*
+       * Keep the dialog open on failure. Closing it drops the only retry
+       * button on the page and returns focus to the trigger, so the error
+       * toast lands detached from the action that produced it. The account
+       * delete dialog already stays open for the same reason.
+       */
       setMsg(data.error ?? "取消失败");
       toast.error(data.error ?? "取消失败");
       return;
     }
+    setConfirmCancel(false);
     setMsg("已取消：记录和已花掉的钱都保留");
     toast.success("已取消，记录保留");
     router.refresh();

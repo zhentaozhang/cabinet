@@ -6,7 +6,9 @@ import {
   CheckCircle2,
   CircleAlert,
   Clock3,
+  FileCode2,
   Gavel,
+  Inbox,
   Layers,
   ShieldCheck,
   Sparkles,
@@ -16,18 +18,19 @@ import { fetchTodayPage } from "@/lib/api/pages";
 import { roleMeta } from "@/lib/agents";
 import { dateTime, money, pct, timeOnly } from "@/lib/format";
 import {
-  countPendingDecisions,
+  buildTodayActionQueue,
   getProvenanceLabel,
   getTaskTypeLabel,
+  inFlightTasks,
   pickLearningTask,
-  pickTopSpender,
+  queuedTaskIds,
+  secondaryTasks,
   weeklyMetricRows,
 } from "@/lib/presentation/today-view";
 import {
   Badge,
   Card,
   CardHeader,
-  Dot,
   EmptyState,
   Progress,
   Stat,
@@ -52,7 +55,18 @@ export default async function TodayPage() {
   const data = await fetchTodayPage();
   const tz = data.user.timezone;
   const primaryGoal = data.goals[0];
-  const topSpender = pickTopSpender(data.agents);
+  /*
+    Who spent the week's model budget. It comes from the same ledger rows as
+    `weekly.costCents`, so the card's big number and its "top spender" line
+    can never quote two different sources.
+  */
+  const topSpender = data.topSpender;
+  /*
+    `data.tasks` is every open task, failed and awaiting_approval included.
+    Those are waiting on the reader, not progressing, so the counters and the
+    check-in candidates use the in-flight subset instead.
+  */
+  const inFlight = inFlightTasks(data.tasks);
   const agentById = new Map(data.agents.map((a) => [a.id, a]));
   const today = new Intl.DateTimeFormat("zh-CN", {
     weekday: "long",
@@ -61,13 +75,43 @@ export default async function TodayPage() {
     timeZone: tz,
   }).format(new Date());
 
-  const pendingCount = countPendingDecisions(data);
+  /*
+    One ordered queue of everything blocked on the reader. It is built from the
+    same `data` the rest of the page renders, so it cannot disagree with the
+    lists below; it only decides what comes first.
+  */
+  const actionQueue = buildTodayActionQueue({
+    timeZone: tz,
+    approvals: data.approvals.map((approval) => ({
+      id: approval.id,
+      taskId: approval.taskId,
+      action: approval.action,
+      payload: approval.payload,
+    })),
+    council: data.council
+      ? {
+          id: data.council.id,
+          topic: data.council.topic,
+          trigger: data.council.trigger,
+        }
+      : null,
+    tasks: data.tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      dueAt: task.dueAt,
+    })),
+  });
+  const inQueue = queuedTaskIds(actionQueue);
+  /* Everything the queue already names is removed from the lists below, so a
+     task is never shown twice with two different calls to action. */
+  const remainingTasks = secondaryTasks(data.tasks, actionQueue);
 
-  const learningTask = pickLearningTask(data.tasks);
+  const learningTask = pickLearningTask(data.tasks, { excludeIds: inQueue });
 
   const brief =
     data.brief?.narrative ??
-    `# 今日早报\n\n目标：${data.goals.map((g) => `${g.title}（${pct(g.progress)}）`).join(" · ")}\n\n## 今天的关键判断\n- 今天有 ${data.tasks.length} 个待推进任务。\n- 有 ${data.approvals.length} 个决定等你。`;
+    `# 今日早报\n\n目标：${data.goals.map((g) => `${g.title}（${pct(g.progress)}）`).join(" · ")}\n\n## 今天的关键判断\n- 今天有 ${inFlight.length} 个待推进任务。\n- 有 ${data.approvals.length} 个决定等你。`;
 
   const weekly = data.weeklyMetrics;
   const metricRows = weeklyMetricRows(weekly);
@@ -94,13 +138,13 @@ export default async function TodayPage() {
             </span>
             <span>·</span>
             <span className="text-ink font-medium">
-              {data.tasks.length} 项任务推进中
+              {inFlight.length} 项任务推进中
             </span>
-            {pendingCount > 0 ? (
+            {actionQueue.counts.total > 0 ? (
               <>
                 <span>·</span>
                 <span className="text-accent font-medium">
-                  {pendingCount} 项待决策
+                  {actionQueue.counts.total} 项待处理
                 </span>
               </>
             ) : null}
@@ -130,27 +174,32 @@ export default async function TodayPage() {
       </div>
 
       {/*
-        Priority 1 is always rendered, including when nothing is waiting. A card
-        that silently disappears leaves the reader unsure whether the queue is
-        empty or the page failed to load it — the empty state says which.
+        Priority 1: everything blocked on the reader, in one ordered list.
+        Always rendered, including when empty. A card that silently disappears
+        leaves the reader unsure whether the queue is empty or the page failed
+        to load it — the empty state says which.
       */}
-      <Card variant={pendingCount > 0 ? "decision" : "default"} className="mb-6">
+      <Card
+        variant={actionQueue.isEmpty ? "default" : "decision"}
+        className="mb-6"
+      >
         <CardHeader
-          eyebrow="需要你决定"
+          eyebrow="Action Queue"
           title="现在需要我处理"
           right={
-            pendingCount > 0 ? (
-              <Badge tone="accent">{pendingCount} 项待处理</Badge>
-            ) : (
+            actionQueue.isEmpty ? (
               <Badge tone="neutral">当前没有待办</Badge>
+            ) : (
+              <Badge tone="accent">{actionQueue.counts.total} 项待处理</Badge>
             )
           }
         />
-        {pendingCount === 0 ? (
+        {actionQueue.isEmpty ? (
           <div className="px-5 py-6">
             <EmptyState
-              title="没有需要你决定的事"
-              hint="审批、内阁决议和驳回后待修改的任务都会出现在这里。Agent 推进到需要人工放行的动作时会主动停下并提醒你。"
+              icon={<Inbox className="size-4" />}
+              title={actionQueue.empty.title}
+              hint={actionQueue.empty.hint}
               action={
                 <Link
                   href="/cabinet"
@@ -164,73 +213,79 @@ export default async function TodayPage() {
           </div>
         ) : (
           <div className="divide-y divide-line">
-            {data.approvals.map((approval) => {
-              const payload = approval.payload;
-              const title = String(
-                payload.title ?? payload.provider ?? "待批准动作",
-              );
-              const at =
-                typeof payload.dueAt === "string"
-                  ? dateTime(payload.dueAt, tz)
-                  : String(payload.time ?? "");
-              const reason = String(payload.reason ?? payload.note ?? "");
-              const costCents = Number(
-                payload.estimatedCostCents ?? payload.costCents ?? 0,
-              );
-              return (
-                <div key={approval.id} className="px-5 py-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                      <CircleAlert className="mt-0.5 size-4 shrink-0 text-accent" />
-                      <div className="min-w-0">
-                        <div className="text-label font-semibold text-ink">
-                          {title} {at ? `· ${at}` : ""}
-                        </div>
-                        <div className="mt-1 text-label text-muted">
-                          {reason ? <span>{reason} · </span> : null}
-                          <span className="mono text-ink">
-                            预计 ¥{(costCents / 100).toFixed(2)}
-                          </span>
-                        </div>
-                      </div>
+            {actionQueue.items.map((item) => {
+              const approval =
+                item.kind === "approval"
+                  ? data.approvals.find((a) => a.id === item.refId)
+                  : undefined;
+              const icon =
+                item.kind === "council" ? (
+                  <Gavel className="mt-0.5 size-4 shrink-0 text-violet" />
+                ) : item.kind === "approval" ? (
+                  <CircleAlert className="mt-0.5 size-4 shrink-0 text-accent" />
+                ) : (
+                  <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" />
+                );
+              const body = (
+                <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                  {icon}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="text-label font-semibold text-ink"
+                        title={item.title}
+                      >
+                        {item.title}
+                      </span>
+                      {item.status ? <StatusBadge status={item.status} /> : null}
                     </div>
+                    <div className="mt-1 text-label text-muted">{item.hint}</div>
+                    {item.detail ? (
+                      <div className="mt-0.5 text-label text-faint">
+                        {item.detail}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+              // An approval is decided in place; the row itself is not a link,
+              // because the decision buttons already sit in it.
+              return approval ? (
+                <div key={item.key} className="px-5 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    {body}
                     <ApprovalActions
                       approvalId={approval.id}
                       actionType={approval.action}
                     />
                   </div>
                 </div>
+              ) : (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className="group flex items-center gap-3 px-5 py-4 transition-colors hover:bg-white/[0.02]"
+                >
+                  {body}
+                  <div className="flex shrink-0 items-center gap-1.5 text-label font-medium text-muted transition-colors group-hover:text-ink">
+                    <span>{item.kind === "council" ? "进入决策室" : "查看任务"}</span>
+                    <ArrowRight className="size-3.5" />
+                  </div>
+                </Link>
               );
             })}
-
-            {data.council ? (
-              <Link
-                href="/council"
-                className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-white/[0.02]"
-              >
-                <Gavel className="size-4 shrink-0 text-violet" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-label font-semibold text-ink">
-                    内阁会议：{data.council.topic}
-                  </div>
-                  <div className="mt-1 text-label text-faint">
-                    触发：{data.council.trigger}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 text-label font-medium text-violet">
-                  <span>进入决策室</span>
-                  <ArrowRight className="size-3.5" />
-                </div>
-              </Link>
-            ) : null}
           </div>
         )}
       </Card>
 
-      {/* Priority 2: "推荐的下一步" (Coach / Recommended Next Step) */}
+      {/*
+        Priority 2: exactly one next action, or a clear way to create one.
+        The learning task is picked with the action-queue ids excluded, so this
+        card can never recommend a task the reader was just asked to unblock.
+      */}
       <Card variant="elevated" className="mb-6 border-accent/30 bg-panel-raised/95">
         <CardHeader
-          eyebrow="推荐下一步"
+          eyebrow="Next step"
           title={primaryGoal ? `围绕「${primaryGoal.title}」的下一步` : "推荐的下一步"}
           right={<NextLearningTaskButton />}
         />
@@ -243,7 +298,10 @@ export default async function TodayPage() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-emphasis font-semibold text-ink">
+                    <span
+                      className="truncate text-emphasis font-semibold text-ink"
+                      title={learningTask.title}
+                    >
                       {learningTask.title}
                     </span>
                     <StatusBadge status={learningTask.status} />
@@ -285,26 +343,93 @@ export default async function TodayPage() {
           ) : (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line2/60 bg-panel2/30 px-6 py-8 text-center">
               <Brain className="size-8 text-accent/60 mb-2" />
-              <div className="text-label font-medium text-ink">还没有进行中的学习任务</div>
+              {
+                /*
+                  A learning task awaiting approval is excluded from this card on
+                  purpose (it is in the queue above), so "没有学习任务" would
+                  contradict what the reader can see on the same screen.
+                */
+              }
+              <div className="text-label font-medium text-ink">没有可以直接开始的学习任务</div>
               <p className="mt-1 max-w-md text-label text-muted">
-                Coach 可以根据你的知识网络与记忆召回率，为你安排针对性巩固与新内容学习。
+                待处理队列里的学习任务要先处理；若队列里也没有，Coach 可以根据你的知识网络与记忆召回率，为你安排针对性巩固与新内容学习。
               </p>
-              <div className="mt-4">
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
                 <NextLearningTaskButton />
+                <Link
+                  href="/cabinet"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-line2 bg-panel2 px-3 py-1.5 text-label text-ink transition-colors hover:bg-panel-hover"
+                >
+                  让内阁规划新任务
+                  <ArrowRight className="size-3" />
+                </Link>
               </div>
             </div>
           )}
         </div>
       </Card>
 
-      {/* Priority 3: "今天的进展" (Today's Tasks & Active Progress) */}
+      {/*
+        Priority 3: goal progress, before the background material. The reader
+        needs to know whether the week is moving toward the goal before reading
+        how many tokens it cost.
+      */}
+      <Card className="mb-6">
+        <CardHeader
+          eyebrow="Goals"
+          title="目标进度"
+          right={
+            primaryGoal ? (
+              <Badge tone="accent">{pct(primaryGoal.progress)}</Badge>
+            ) : (
+              <Badge tone="neutral">尚未设定目标</Badge>
+            )
+          }
+        />
+        <div className="space-y-4 px-5 py-4">
+          {data.goals.length > 0 ? (
+            data.goals.map((goal) => (
+              <div key={goal.id}>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-label text-ink">{goal.title}</span>
+                  <span className="mono text-label text-muted">
+                    {pct(goal.progress)}
+                  </span>
+                </div>
+                <Progress
+                  label={`${goal.title} 的目标进度`}
+                  value={goal.progress}
+                  tone={goal.domain === "health" ? "teal" : "accent"}
+                />
+                <div className="mt-1 text-label text-faint">{goal.target}</div>
+              </div>
+            ))
+          ) : (
+            <div className="text-label text-faint">
+              还没有设定目标。有了目标，内阁才知道该替你推进什么。
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/*
+        The secondary task list. Tasks already named in the action queue are
+        removed from it entirely — not greyed out, not repeated with a different
+        button — so one task never appears twice with two different calls to
+        action. The header states where they went.
+      */}
       <Card className="mb-8">
         <CardHeader
-          eyebrow="今天的进展"
-          title="今天的任务与进展"
+          eyebrow="Today"
+          title="其他推进中的任务"
           right={
             <div className="flex items-center gap-3">
-              <Badge tone="neutral">{data.tasks.length} 项进行中</Badge>
+              <Badge tone="neutral">{remainingTasks.length} 项进行中</Badge>
+              {actionQueue.counts.task > 0 ? (
+                <span className="text-label text-faint">
+                  {actionQueue.counts.task} 项待处理见上
+                </span>
+              ) : null}
               <Link
                 href="/cabinet"
                 className="flex items-center gap-1 text-label text-muted transition-colors hover:text-ink"
@@ -314,9 +439,9 @@ export default async function TodayPage() {
             </div>
           }
         />
-        {data.tasks.length > 0 ? (
+        {remainingTasks.length > 0 ? (
           <div className="divide-y divide-line">
-            {data.tasks.map((task) => {
+            {remainingTasks.map((task) => {
               const agent = task.assigneeId ? agentById.get(task.assigneeId) : null;
               const typeLabel = getTaskTypeLabel(task);
               const provenanceLabel = getProvenanceLabel(task.createdBy);
@@ -327,26 +452,18 @@ export default async function TodayPage() {
                   href={`/tasks/${task.id}`}
                   className="group flex items-center gap-3.5 px-5 py-3.5 transition-colors hover:bg-white/[0.02]"
                 >
-                  <Dot
-                    tone={
-                      task.status === "failed" || task.status === "cancelled"
-                        ? "danger"
-                        : task.status === "awaiting_approval" || task.status === "auditing"
-                          ? "accent"
-                          : task.status === "done" || task.status === "accepted"
-                            ? "teal"
-                            : "muted"
-                    }
-                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-label font-medium text-ink group-hover:text-accent transition-colors">
+                      <span
+                        className="truncate text-label font-medium text-ink group-hover:text-accent transition-colors"
+                        title={task.title}
+                      >
                         {task.title}
                       </span>
-                      <span className="rounded border border-line bg-panel2/60 px-1.5 py-0.5 text-[10px] text-faint">
+                      <span className="rounded border border-line bg-panel2/60 px-1.5 py-0.5 text-eyebrow text-faint">
                         {provenanceLabel}
                       </span>
-                      <span className="rounded border border-line bg-panel2/60 px-1.5 py-0.5 text-[10px] text-muted">
+                      <span className="rounded border border-line bg-panel2/60 px-1.5 py-0.5 text-eyebrow text-muted">
                         {typeLabel}
                       </span>
                     </div>
@@ -377,8 +494,17 @@ export default async function TodayPage() {
         ) : (
           <div className="px-5 py-10">
             <EmptyState
-              title="今天暂无待推进任务"
-              hint="内阁成员目前都在就绪状态。你可以让 Coach 规划学习任务，或在下方快速创建新任务。"
+              icon={<Sparkles className="size-4" />}
+              title={
+                actionQueue.counts.task > 0
+                  ? "其余任务都在正常推进"
+                  : "今天暂无待推进任务"
+              }
+              hint={
+                actionQueue.counts.task > 0
+                  ? "需要你介入的任务都排在上方；这里只列出 Agent 正在自行推进的部分。"
+                  : "内阁成员目前都在就绪状态。你可以让 Coach 规划学习任务，或在下方快速创建新任务。"
+              }
               action={
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   <NextLearningTaskButton />
@@ -436,11 +562,17 @@ export default async function TodayPage() {
               <div className="mt-2 text-page font-semibold tracking-tight text-ink tabular-nums font-mono">
                 {weekly.costCents > 0 ? money(weekly.costCents) : "¥0.00"}
               </div>
-              <p className="mt-1.5 text-label text-muted">
-                {topSpender
-                  ? `主要消耗者：${topSpender.name}（${money(topSpender.spentCents)}）`
-                  : "本周还没有产生模型费用"}
-              </p>
+              {/*
+                No fallback sentence when nobody spent: the figure above already
+                reads ¥0.00, and a second line about spending nothing is noise.
+                Naming the spender now uses the ledger's cents, the same rows
+                that produce the total above.
+              */}
+              {topSpender ? (
+                <p className="mt-1.5 text-label text-muted">
+                  主要消耗者：{topSpender.name}（{money(topSpender.cents)}）
+                </p>
+              ) : null}
               <div className="mt-2 text-label text-faint">
                 {data.agents.length} 位内阁 Agent 共同分担
               </div>
@@ -499,7 +631,7 @@ export default async function TodayPage() {
           {/* 左侧：今日早报 */}
           <Card>
             <CardHeader
-              eyebrow="Morning Brief · Atlas"
+              eyebrow="Morning Brief"
               title="今天的关键判断"
               right={<BriefButton />}
             />
@@ -507,8 +639,19 @@ export default async function TodayPage() {
               <Markdown content={brief} />
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3">
+              {/*
+                Provenance, stated plainly: this brief is assembled by
+                `regenerateBrief` from counts in the read model. Nothing here
+                asks a model, so the card must not imply one wrote it.
+              */}
+              <Badge
+                tone="neutral"
+                title="由 regenerateBrief 按任务数、审批数和目标进度套模板生成，没有调用模型"
+              >
+                <FileCode2 className="size-2.5" /> 由规则脚本生成
+              </Badge>
               <Badge tone="teal">
-                <ShieldCheck className="size-2.5" /> 基于 {data.tasks.length} 个进行中的任务
+                <ShieldCheck className="size-2.5" /> 基于 {inFlight.length} 个进行中的任务
               </Badge>
               <Badge tone="accent">
                 <Sparkles className="size-2.5" /> {data.counts.proposedInsights} 条洞察待采纳
@@ -560,7 +703,7 @@ export default async function TodayPage() {
                   </div>
                 ) : (
                   <CheckinForm
-                    tasks={data.tasks.map((t) => ({ id: t.id, title: t.title }))}
+                    tasks={inFlight.map((t) => ({ id: t.id, title: t.title }))}
                   />
                 )}
               </div>
@@ -576,7 +719,7 @@ export default async function TodayPage() {
                         {data.yesterdayCheckin.energy}/5
                       </span>{" "}
                       精力
-                      <span className="text-line2">·</span>
+                      <span aria-hidden="true" className="text-faint">·</span>
                       <span className="mono text-ink">
                         {data.yesterdayCheckin.mood}/5
                       </span>{" "}
@@ -603,30 +746,8 @@ export default async function TodayPage() {
           </div>
         </div>
 
-        {/* 目标进度、Agent 动态与快速创建 */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <Card>
-            <CardHeader eyebrow="Goals" title="目标进度" />
-            <div className="space-y-4 px-5 py-4">
-              {data.goals.map((goal) => (
-                <div key={goal.id}>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-label text-ink">{goal.title}</span>
-                    <span className="mono text-label text-muted">
-                      {pct(goal.progress)}
-                    </span>
-                  </div>
-                  <Progress
-                    label={`${goal.title} 的目标进度`}
-                    value={goal.progress}
-                    tone={goal.domain === "health" ? "teal" : "accent"}
-                  />
-                  <div className="mt-1 text-label text-faint">{goal.target}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
-
+        {/* Agent 动态与快速创建（目标进度已上移到优先级 3，此处不再重复） */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_1fr]">
           <Card>
             <CardHeader eyebrow="Cabinet Pulse" title="Agent 动态" />
             <div className="divide-y divide-line">

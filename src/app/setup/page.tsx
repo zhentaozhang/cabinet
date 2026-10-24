@@ -22,10 +22,10 @@ export default async function SetupPage() {
       <div className="mx-auto max-w-2xl py-10">
         <div className="mb-6">
           <Badge tone="teal">Workspace</Badge>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-ink">
+          <h1 className="mt-3 text-page font-semibold tracking-tight text-ink">
             设置
           </h1>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted">
+          <p className="mt-1.5 text-label leading-relaxed text-muted">
             账号、内阁规模和数据的出口都在这里。改动即时生效，审计链会记录关键变更。
           </p>
         </div>
@@ -67,7 +67,7 @@ export default async function SetupPage() {
             right={<Database className="size-4 text-blue" />}
           />
           <div className="px-5 py-4">
-            <p className="mb-3 text-xs leading-relaxed text-muted">
+            <p className="mb-3 text-label leading-relaxed text-muted">
               导出一份 JSON 备份，或彻底删除这个账号。删除前建议先导出。
             </p>
             <DataControls />
@@ -88,10 +88,10 @@ export default async function SetupPage() {
     <div className="mx-auto max-w-2xl py-10">
       <div className="mb-6">
         <Badge tone="accent">Setup</Badge>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-ink">
+        <h1 className="mt-3 text-page font-semibold tracking-tight text-ink">
           创建你的个人内阁
         </h1>
-        <p className="mt-1.5 text-xs leading-relaxed text-muted">
+        <p className="mt-1.5 text-label leading-relaxed text-muted">
           一次创建 7 个 Agent：Chief / Researcher / Coach / Treasurer / Auditor / Apprentice / Critic。
           之后可以暂停、退休或修改宪章。
         </p>

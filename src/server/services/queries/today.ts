@@ -10,7 +10,7 @@ import {
   tasks,
 } from "@/lib/db/schema";
 import { addLocalDays, localDateKey } from "@/lib/domain/time";
-import { getWeeklyMetrics } from "./metrics";
+import { getWeeklyMetrics, getWeeklySpendByAgent } from "./metrics";
 import { getWorkspace } from "./workspace";
 export async function getTodayData(userId: string) {
   // Batch 1: everything that only needs `userId`. These are independent
@@ -24,6 +24,7 @@ export async function getTodayData(userId: string) {
     openCouncilRows,
     dailyReviewRows,
     weeklyMetrics,
+    spendByAgent,
   ] = await Promise.all([
     getWorkspace(userId),
     db
@@ -47,6 +48,11 @@ export async function getTodayData(userId: string) {
             "running",
             "submitted",
             "rejected",
+            // A failed task is not finished work: it is the state that most
+            // needs a human decision (retry, fix, or abandon). Filtering it out
+            // meant Today could never answer "what went wrong". This is a
+            // read-model widening only — no new domain status is introduced.
+            "failed",
           ]),
         ),
       )
@@ -71,6 +77,11 @@ export async function getTodayData(userId: string) {
       .orderBy(desc(reviews.createdAt))
       .limit(1),
     getWeeklyMetrics(userId),
+    // Same ledger rows as `weeklyMetrics.costCents`, split by agent: the
+    // spend card names the biggest spender next to that total, so a second
+    // source (the frozen `agents.spentCents` column) made the card
+    // contradict itself.
+    getWeeklySpendByAgent(userId),
   ]);
 
   const { user, profile } = workspace;
@@ -106,5 +117,8 @@ export async function getTodayData(userId: string) {
     yesterdayCheckin: yesterdayCheckinRows[0] ?? null,
     brief: dailyReviewRows[0] ?? null,
     weeklyMetrics,
+    // null rather than a zero-valued stand-in: the card shows nothing when
+    // there is nobody to name.
+    topSpender: spendByAgent.find((row) => row.cents > 0) ?? null,
   };
 }

@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, Link2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Link2, SearchX, ShieldCheck } from "lucide-react";
 import { fetchAuditPage } from "@/lib/api/pages";
 import { dateTime } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
 import { VerifyAuditButton } from "@/components/actions";
 import { cn } from "@/lib/format";
+import { statusLabel } from "@/contracts/labels";
 
 export const metadata: Metadata = {
   title: "审计日志 · Cabinet",
@@ -63,10 +64,10 @@ export default async function AuditPage({
           <div className="text-eyebrow tracking-[0.16em] text-faint uppercase">
             Audit trail
           </div>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-ink">
+          <h1 className="mt-1 text-page font-semibold tracking-tight text-ink">
             审计日志
           </h1>
-          <p className="mt-1.5 max-w-2xl text-xs leading-relaxed text-muted">
+          <p className="mt-1.5 max-w-2xl text-label leading-relaxed text-muted">
             每一次验收、审批和授权变更都在这里留下一条哈希链记录。改动任何一条，
             后面所有记录的 hash 校验都会失败。
           </p>
@@ -100,7 +101,7 @@ export default async function AuditPage({
                   : "border-line bg-panel2 text-muted hover:border-line2",
               )}
             >
-              {entry.kind}
+              {statusLabel(entry.kind)}
               <span className="ml-1.5 text-faint">{entry.count}</span>
             </Link>
           );
@@ -120,6 +121,7 @@ export default async function AuditPage({
         {data.events.length === 0 ? (
           <div className="px-5 py-8">
             <EmptyState
+              icon={<SearchX className="size-4" />}
               title="没有匹配的审计事件"
               hint="换一个筛选条件，或者先完成一次验收。"
             />
@@ -160,14 +162,15 @@ export default async function AuditPage({
                     <summary className="cursor-pointer text-label text-faint hover:text-muted">
                       查看变更
                     </summary>
+                    {/* `min-w-0` lets the `pre` scroll instead of widening the grid track. */}
                     <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-                      <div>
+                      <div className="min-w-0">
                         <div className="mb-1 text-label text-faint">before</div>
                         <pre className="overflow-x-auto rounded border border-line bg-sunken p-2 text-label leading-relaxed text-muted">
                           {JSON.stringify(event.before, null, 2)}
                         </pre>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="mb-1 text-label text-faint">after</div>
                         <pre className="overflow-x-auto rounded border border-line bg-sunken p-2 text-label leading-relaxed text-teal/80">
                           {JSON.stringify(event.after, null, 2)}
