@@ -22,7 +22,7 @@ src/
 │   ├── mappers.ts      DB row → DTO
 │   └── dto-guard.ts    asDto()：运行时校验出参
 │
-├── app/api/**          ← 后端入口：18 个 route handler（唯一的服务器 API 面）
+├── app/api/**          ← 后端入口：44 个 route handler（唯一的服务器 API 面）
 ├── lib/api/**          ← 客户端 SDK + 服务端调用器 + 写操作管线（CSRF / 限流 / 幂等）
 │
 ├── app/**/page.tsx     ← 前端页面（RSC）：只调 fetchXxx()，不 import server/

@@ -1,149 +1,123 @@
-# CodeGraph 索引与架构分析（2026-10-22）
+# CodeGraph 索引与架构分析（2026-10-24）
 
-> 工具：`codegraph` v0.9.9（本地 daemon，SQLite / node:sqlite，WAL）
-> 索引位置：`.codegraph/codegraph.db`　分析脚本：`scripts/codegraph-analyze.py`（barrel 感知的分层统计）
+> 工具：`codegraph` 本地索引（SQLite / node:sqlite，WAL），DB 在 `.codegraph/codegraph.db`
+> 分析脚本：`scripts/codegraph-analyze.py`（barrel 感知 + type-only 感知的分层统计）
+> 数据来源：**脚本直读 DB**。MCP 的 `codegraph_status` 会返回缓存的旧数字（见 §5.1），不要用它当口径。
 
 ---
 
-## 1. 本次更新结果
+## 1. 索引现状
 
-| 项 | 更新前 | 更新后 |
+| 项 | 值 |
+|---|---|
+| 文件 | **388**（其中 `src/lib/db/schema/` 10 个域模块） |
+| 节点 | **3,953** |
+| 边 | **8,697** |
+| DB 体积 | 7.50 MB |
+| 幽灵文件（索引里有、磁盘上没有） | **0** |
+| 语言 | typescript 304 · tsx 69 · yaml 4 · python 1 · javascript 1 |
+
+仓库规模：`src` 35,365 行，`tests` 97 个 `.test.ts` / 852 个测试，`src/app` 44 个 `route.ts` + 13 个 `page.tsx`，数据库 35 张表。
+
+---
+
+## 2. 本次（2026-10-24）修掉的问题
+
+上一版（2026-10-22）列了 6 条建议，这次执行了其中 5 条：
+
+| # | 问题 | 处理 |
 |---|---|---|
-| 文件数 | 209 | **241**（分析脚本入库后 242） |
-| 节点数 | 1,812 | **2,106**（脚本入库后 2,138） |
-| 边数 | 3,922 | **4,152**（脚本入库后 4,184） |
-| DB 体积 | 3.57 MB | **4.31 MB** |
+| 1 | 边界规则漏掉 `src/lib` | `tests/unit/boundary.test.ts` 新增 "the shared layer never imports the server"，`LIB_TO_SERVER_ALLOWED` 只放 `lib/engine.ts`，先跑红再跑绿 |
+| 2 | `src/lib/auth/session.ts` 是零引用真孤儿 | 删除（`src/lib/auth/context.ts:11` 早已内联同样逻辑） |
+| 3 | 分析器把 `import type` 当运行时边 | 新增 `is_type_only()`，拆 `deps` / `type_deps`；环检测只看 `deps`。**假环 policy.ts ↔ standing-grants.ts 归零** |
+| 4 | `src/lib/db/schema.ts` 1,128 行单体 | 拆成 10 个域模块 + 25 行 barrel，`drizzle-kit generate` 报 "No schema changes" 证明零语义漂移 |
+| 5 | `runTask` 827 行单函数 | 抽出 `resetForRetry` / `suggestInsteadOfRunning` / `awaitApproval`，主函数降到 701 行 |
+| 6 | 文档口径失真 | README 的 33 张表 / 34 个 route / 792 个测试，以及 separation 文档的 18 个 route，全部改真值 |
 
-`codegraph sync` 处理了 **110 个变更文件**（新增 33 / 修改 76 / 删除 1），耗时 476 ms。
-
-节点构成：import 963 · function 372 · file 237 · property 208 · constant 193 · type_alias 113 · method 11 · class 8。
-语言：typescript 192 · tsx 44 · yaml 4 · javascript 1。**0 个文件解析报错。**
-
-> ⚠️ 索引不会自动更新：daemon 日志显示 `CODEGRAPH_NO_WATCH=1`，且 `.git/hooks` 里没有 codegraph 钩子。
-> 目前只能靠手动 `codegraph sync` 或 MCP 启动时的 catch-up。建议 `codegraph init` 装 git 钩子，或在 CI 里加一步 sync。
+**当前状况：循环依赖 0、真孤儿 0。**
 
 ---
 
-## 2. 分层是否被遵守：是
+## 3. 分层是被遵守的
 
-按 `import` / `export … from` 语句还原的**模块级依赖矩阵**（行 = 引用方，列 = 被引用方，仅统计内部模块）：
+模块级依赖矩阵（行 = 引用方，列 = 被引用方；只统计 `import` / `export … from`，且不含编译期擦除的 type-only 边）：
 
 | from \ to | contracts | lib | server | components | app/api | app/pages | proxy | scripts | tests | config |
 |---|---|---|---|---|---|---|---|---|---|---|
 | **contracts** | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **lib** | 7 | 0 | **1** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **server** | 11 | 162 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **components** | 4 | 15 | **0** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **app/api** | 0 | 69 | 28 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **app/pages** | 2 | 23 | **0** | 36 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **lib** | 8 | 0 | **1** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **server** | 14 | 228 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **components** | 7 | 31 | **0** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **app/api** | 2 | 84 | 40 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **app/pages** | 5 | 36 | **0** | 53 | 0 | 0 | 0 | 0 | 0 | 0 |
 | **proxy** | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **scripts** | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **tests** | 0 | 129 | 22 | 1 | 1 | 0 | 0 | 0 | 0 | 1 |
+| **scripts** | 0 | 12 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **tests** | 8 | 230 | 48 | 2 | 3 | 0 | 0 | 1 | 0 | 1 |
+| **config** | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
-结论与 `docs/frontend-backend-separation.md` 的设计完全一致：
+结论：
 
 - `contracts` 出度为 0（只依赖 zod），是真正的叶子层。
-- `components` / `app/pages` 对 `server` **0 条边** —— 前端确实只经 `@/lib/api/*` 走 HTTP。
-- `server` 不反向引用 UI（0 条），`app/api` 是唯一入口（34 个 route，全部有 handler）。
-- **循环依赖 0 个**（Tarjan SCC，>1 文件的分量数量为 0）。
-
-### 唯一的分层瑕疵
-
-- `src/lib/engine.ts:1` → `@/server/services/engine`
-  这是带 `@deprecated` 注释的迁移垫片，靠 ESLint `no-restricted-imports` 禁止 UI 引用它。
-  但 ESLint 规则只覆盖 `src/app/**`、`src/components/**`，**`src/lib` 自身不受约束**，所以 `lib → server` 这条边在规则上是漏网的。
-  建议在边界测试里补一条：`src/lib/**` 不得 import `@/server/*`，并把 `engine.ts` 加进白名单。
+- `components` / `app/pages` 对 `server` **0 条边** —— 前端只经 `@/lib/api/*` 走 HTTP。
+- `server` 不反向引用 UI（0 条）；`app/api` 是唯一入口，44 个 route 全部声明了 handler。
+- 唯一 `lib → server` 边仍是 `src/lib/engine.ts:16` 的 `export * from "@/server/services/engine"`。它是 @deprecated 垫片，现在**被边界测试按文件名钉死**，再往里加一条就得改那份白名单。
 
 ---
 
-## 3. 热点：耦合集中在哪里
+## 4. 耦合热点
 
-### 3.1 文件级 fan-in（有多少内部模块依赖它）
+### 4.1 文件级 fan-in
 
 | 被依赖 | 次数 | 层 |
 |---|---|---|
-| `src/lib/db/schema.ts` | 71 | lib |
-| `src/lib/db/index.ts`（`db` 句柄） | 64 | lib |
-| `src/lib/domain/errors.ts` | 39 | lib |
-| `src/lib/api/mutation.ts` | 25 | lib |
-| `src/lib/demo.ts` | 22 | lib |
-| `src/lib/audit.ts` | 21 | lib |
-| `src/lib/ids.ts` | 20 | lib |
-| `src/components/ui.tsx` | 19 | components |
-| `src/contracts/index.ts`（barrel） | 17 | contracts |
-| `src/lib/domain/time.ts` | 16 | lib |
-| `src/lib/policy/config.ts` | 16 | lib |
+| `src/lib/db/index.ts`（`db` 句柄） | 104 | lib |
+| `src/lib/db/schema.ts`（barrel） | 104 | lib |
+| `src/lib/domain/errors.ts` | 48 | lib |
+| `tests/helpers/db.ts` | 45 | tests |
+| `src/lib/demo.ts` | 40 | lib |
+| `src/lib/api/mutation.ts` | 31 | lib |
+| `src/lib/format.ts` / `src/lib/ids.ts` | 29 | lib |
+| `src/components/ui.tsx` | 27 | components |
+| `src/lib/audit.ts` | 24 | lib |
 
-`src/` 共 183 个 ts/tsx，**schema.ts 被 39% 的模块直接引用**；加 `db/index.ts` 后，
-一次表结构调整的辐射面接近整个后端。这是当前最大的单点耦合。
+`schema.ts` 的 104 里有 6 个是 type-only（被新口径排除），拆分前按旧口径是 110。**关键是这个数字不再随表数量增长**：加一张记忆相关的表只改 `schema/memory.ts`。
 
-### 3.2 符号级 fan-in
+真正的辐射面仍是 `db/index.ts`（104，全站直接拿 `db` 句柄）与 `domain/errors.ts`（48，所有命令层都抛它们）。
 
-`db` 163 次、`newId` 38 次、`logAuditTx` 35 次、`toIso` 23 次、`deny` 23 次、
-`assertTransition` 21 次、`handleQuery` 12 次。
+### 4.2 barrel
 
-`codegraph impact logAuditTx -d 3` → **53 个受影响符号**，跨越 `src/lib/audit.ts`、
-`council/decide.ts`、`goals.ts`、`reflection.ts`、`api/memories/[id]/route.ts`、`lib/setup.ts` 等。
-审计链是事实上的全局横切关注点。
+4 个：`src/components/actions.tsx`(8)、`src/components/actions/index.ts`(1)、`src/contracts/index.ts`(19)、`src/server/readmodels/index.ts`(13)。
 
-### 3.3 复杂节点
+### 4.3 路由与服务的耦合
 
-| 文件 | LOC | 说明 |
-|---|---|---|
-| `src/lib/db/seed.ts` | 1625 | 演示数据，fan-out 93，占全库最大 |
-| `src/lib/db/schema.ts` | 725 | 66 个符号，单一 schema 文件 |
-| `src/components/actions/task-actions.tsx` | 581 | 22 符号，前端最重的组件文件 |
-| `src/server/services/commands/tasks/run.ts` | 565 | 14 个内部依赖，后端最长链路 |
-| `src/contracts/dto/entities.ts` | 487 | 58 个 DTO 符号 |
-| `src/lib/domain/policy.ts` | 470 | 73 个符号，全部是策略类型 + 3 个纯函数 |
-
-`policy.ts` 是"类型多、函数少"（73 符号 / 3 个决策函数 `decideRun`、`decideAudit`、`decideUpgrade`），
-本身不算复杂度问题；真正的执行复杂度集中在两个函数：`runTask`（`tasks/run.ts:32`，55 条出边）
-与 `runApprenticeExam`（`apprentice.ts`，43 条出边）。
+**36 of 44** route 文件直接 import `src/server/*`，平均每个 route 只 import 不到 1 个 server 模块 —— 转发逻辑都在 `handleQuery` / `handleMutation` 里，物理拆分 `apps/api` 的成本仍然很低。
 
 ---
 
-## 4. 索引质量问题（影响后续所有图查询）
+## 5. 索引质量问题（会误导判断，务必知道）
 
-| 现象 | 数据 | 影响 |
-|---|---|---|
-| 引用未解析 | **4,004 条** unresolved（vs 4,152 条已解析边） | 主要为 zod / drizzle 链式方法：`eq` 278、`notNull` 206、`z.string` 201、`where` 181、`text` 167、`z.number` 158 |
-| `export … from` 不计边 | 4 个 barrel：`contracts/index.ts`(17 引用)、`server/readmodels/index.ts`(11)、`components/actions.tsx`(5)、`components/actions/index.ts`(1) | 裸索引里会产生 **21 个假孤儿**（`readmodels/*`、`actions/*` 全部"没人引用"） |
-| 嵌套箭头函数内调用丢失 | `src/app/api/tasks/[id]/run/route.ts:17` 的 `await runTask(...)` 位于 `handler: async () => {}` 中，**既无 call 边也不在 unresolved 表** | `codegraph callers runTask` 返回 empty，实际有调用方 |
-| JSX 渲染不算 call | 组件 fan-in 普遍偏低 | `ui.tsx` / 组件复用度被低估 |
-| 类型使用不建模 | 302 个"导出但无引用"符号 | 其中绝大多数是 zod schema / DTO 类型 / route handler，**不能当作死代码清单** |
+### 5.1 `codegraph_status` 返回缓存值
 
-把 barrel 展开后重新计算，**真正的孤儿只剩 1 个**：`src/lib/auth/session.ts`。
-`getSession()` / `requireUser()` 无人引用，`src/lib/auth/context.ts:11` 已经内联了同样的逻辑 —— 可以删除。
+重建索引之后，MCP 的 `codegraph_status` 仍报 379 files / 3,899 nodes / 8,398 edges，而 DB 实测是 **388 / 3,953 / 8,697**。判断"索引新不新"要看脚本直读的结果，或者看分析器有没有打 `### Index is stale` 警告。
 
----
+### 5.2 索引不会自动刷新
 
-## 5. 其他发现
+`codegraph init .` 在已初始化时是 **no-op**。删了文件、加了文件，索引都不会变。要刷新只有一条路：`rm -rf .codegraph && codegraph init .`（约 1.5 s）。分析器现在会检测"索引里有、磁盘上没有"的幽灵文件并打印警告，但**新增文件不会被发现** —— 所以改完代码就先重建。
 
-1. **文档漂移**：`docs/frontend-backend-separation.md` 写"18 个 route handler"，实际 **34 个**。
-2. **路由命名不一致**：读路径用单数、写路径用复数 —— `GET /api/council` 与 `POST /api/councils`，
-   以及 `GET /api/memory` 与 `DELETE /api/memories/[id]`。
-   `src/contracts/routes.ts:1` 是路径的唯一来源（纯常量白名单，出度为 0 属正常），
-   里面已经用 `councilBoard` / `councils` 区分开了，但同一行塞了两个属性（`routes.ts:14` 的
-   `memoryItem` 与 `councilBoard` 挤在一行），建议拆行并补一句"单数读 / 复数写"的注释。
-3. **测试触达率**：139 个非 API 的 src 模块中，被测试文件直接 import 的只有 **43 个**。
-   50 个测试文件 / 5,580 行测试，覆盖重心在 `tests/integration/`（25 个）。
-   `readmodels/*`、`services/queries/*` 在图上显示"未覆盖"，实际是通过 `@/server/readmodels` barrel 间接覆盖的
-   —— 属于第 4 节的同一处盲区，不能直接当覆盖率结论用。
-4. **路由-服务耦合很干净**：34 个 route 平均只 import **0.8 个** `src/server/*` 模块，
-   最重的 `agents/[id]/route.ts` 也只 import 2 个（readmodel + command），
-   转发逻辑基本都在 `handleQuery` / `handleMutation` 里，抽 `apps/api` 的成本很低。
+### 5.3 嵌套箭头函数里的调用丢边
+
+`src/app/api/tasks/[id]/run/route.ts` 的 `await runTask(...)` 位于 `handler: async () => {}` 里，图上既没有 call 边也不在 unresolved 表 —— `codegraph callers runTask` 返回空。跨模块的调用关系以 `scripts/codegraph-analyze.py` 的文本解析为准。
+
+### 5.4 符号级 fan-in 有噪声
+
+对象字面量的属性名会被当成同名符号：旧版索引里 `email.ts:17` 的 property `from` 报了 293 次 fan-in，`limit` 报了 67/37 次。**文件级 fan-in 可信，符号级要人工过滤。**
 
 ---
 
-## 6. 建议（按性价比排序）
+## 6. 还没做的（按性价比排序）
 
-1. **装 codegraph git 钩子**或 CI 里 `codegraph sync`，否则图会持续过期（当前 110 个文件才刚追平）。
-2. **补一条边界测试**：`src/lib/**` 禁止 import `@/server/*`，白名单只留 `lib/engine.ts`
-   （`tests/unit/boundary.test.ts:35` 的 `SERVER_ONLY` 目前只作用于 `src/app/**` 与 `src/components/**`）。
-3. **删 `src/lib/auth/session.ts`**（唯一真孤儿）。
-4. **拆 `schema.ts`**（71 个模块直接依赖）到按域的多个文件 + 统一 `src/lib/db/tables.ts` barrel；
-   这是降低"改一处表结构动全站"成本的唯一结构性手段。
-5. **修文档**：route 数量 18 → 34；把 `council` / `councils` 的命名规则写进 `contracts/routes.ts`。
-6. **查图时用 barrel 展开**：`codegraph callers/impact` 对通过 barrel 的符号会漏，
-   跨模块的调用关系以 `scripts/codegraph-analyze.py` 的文本解析结果为准。
+1. **删 `src/lib/engine.ts`**：仍有 18 个模块 import 它。现在它被边界测试钉死，迁移成本可度量 —— 把 18 个 import 改成 `@/server/services/engine`，删文件，删白名单条目。集成测试是主要阻力。
+2. **`db` 句柄收口**：104 个模块直接 `import { db }`。按域提供 repository 会让事务边界看得见，但这是个大迁移。
+3. **`seedDemo` 1,611 行**：它是 demo 数据字面量，拆开只是分装。真正的改进是让 CI 用 SQL fixture，那是另一个议题。
+4. **页面巨型组件**（`TaskPage` 1,105 行、`TodayPage` 773 行、`QuickCreate` 829 行）：需要先有组件级视觉回归测试，否则改动风险高于收益。
+5. **CI 里加一步** `rm -rf .codegraph && codegraph init . && python3 scripts/codegraph-analyze.py`，并在循环数 / 孤儿数不为 0 时失败。图表能长期可信的前提是它每次都被重新生成。

@@ -217,13 +217,14 @@ DEMO_MODE=false
 RSC 页面 / 客户端组件
   → @/contracts + @/lib/api
   → HTTP（同源；可配 API_BASE_URL）
-app/api/**（34 个 route handler）
+app/api/**（44 个 route handler）
   → server/readmodels · server/services（queries / commands）
   → domain（纯函数：policy / state / acceptance）
   → Postgres（Drizzle）
 ```
 
 - 页面和组件不能 import `server/`、`lib/db`、`engine`；ESLint + `tests/unit/boundary.test.ts` 强制。
+- `src/lib` 也不能 import `@/server/*`。唯一豁免是 `src/lib/engine.ts`（@deprecated 垫片），它在边界测试里按文件名列出，加第二个豁免是一次关于边界放在哪里的决定。
 - `server/services/engine.ts` 只是 re-export barrel，业务在 `queries/` 和 `commands/`。
 - 运行在请求内同步完成；唯一的后台动作是邮件投递（`outbox` 表 + `pnpm notify:deliver`，由部署层 cron 触发，不是进程内定时器）。
 - 没有使用 LangGraph / CrewAI；状态机和审计是应用代码。
@@ -231,14 +232,14 @@ app/api/**（34 个 route handler）
 
 技术栈：Next.js 16、React 19、TypeScript、Tailwind 4、Postgres + Drizzle、better-auth、Vercel AI SDK（可选）。
 
-## 数据模型（33 张表）
+## 数据模型（35 张表）
 
 - 账号：`users` `sessions` `accounts` `verifications`
 - 工作区：`profiles` `agents` `agent_templates` `agent_grants` `goals` `policy_config`
-- 执行：`tasks` `runs` `steps` `artifacts` `approvals` `evidence`
+- 执行：`tasks` `runs` `steps` `artifacts` `approvals` `evidence` `retrieval_calls`
 - 记忆：`memories` `insights` `skills` `apprentice_observations` `apprentice_exam_snapshots`
 - 治理：`councils` `council_positions` `dissents` `audit_events` `reviews` `checkins`
-- 运维：`idempotency_keys` `user_actions` `rate_limits` `outbox`
+- 运维：`idempotency_keys` `user_actions` `rate_limits` `outbox` `run_jobs`
 - 记账：`agent_budget_periods` `agent_budget_reservations`
 
 状态机：
@@ -262,7 +263,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-2026-10-24 在当前分支跑通：97 个测试文件 / 792 个测试通过，typecheck / lint / build 均通过。没有调用真实模型，也没有做浏览器 E2E。
+2026-10-24 在当前分支跑通：97 个测试文件 / 852 个测试通过，typecheck / lint / build 均通过。没有调用真实模型，也没有做浏览器 E2E。
 
 ### GitHub Actions 现在需要手动触发
 
