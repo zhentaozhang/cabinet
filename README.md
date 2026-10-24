@@ -254,13 +254,28 @@ app/api/**（34 个 route handler）
 
 ## 验证
 
-本次在本地运行：
+本地门禁和 CI 是同一组步骤，跑一份即可：
 
-- `pnpm test`：68 个测试文件，405 个测试通过（2026-10-23）
-- `pnpm typecheck`：通过
-- `pnpm lint`：通过
+```bash
+pnpm verify            # 等价于 bash scripts/verify.sh
+```
 
-CI（`.github/workflows/ci.yml`）还包含 `pnpm db:migrate` 和 `pnpm build`。本次没有调用真实模型，也没有做浏览器 E2E。
+它依次跑 `drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
+
+2026-10-24 在当前分支跑通：97 个测试文件 / 792 个测试通过，typecheck / lint / build 均通过。没有调用真实模型，也没有做浏览器 E2E。
+
+### GitHub Actions 现在需要手动触发
+
+`.github/workflows/ci.yml` 配了 `push`（`main`、`fix/**`、`feat/**`、`refactor/**`）和 `pull_request`，但**这个仓库的 push 事件从未产生过 workflow run**：从建 workflow 到 2026-10-24 的 `actions/runs` 累计 0 条；推一个空提交（`f818051`）和新建一个 `feat/ci-probe-*` 分支分别推送后仍是 0 条；同一份 workflow 用 `gh workflow run` 手动触发却能跑完 8 个步骤。仓库不是 fork、未归档、未禁用，`actions/permissions` 是 enabled/all，所以问题在触发侧而不是配置侧。
+
+推完要显式触发，否则等于没有门禁：
+
+```bash
+gh workflow run ci.yml --ref "$(git branch --show-current)"
+gh run watch
+```
+
+2026-10-24 手动触发的 run 40052577312 全绿（install / migrate / typecheck / lint / test / build）。
 
 ## 已知边界
 

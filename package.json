@@ -21,7 +21,8 @@
     "run:worker:once": "tsx scripts/run-worker.ts --once",
     "preflight": "tsx scripts/preflight.ts",
     "bench:reads": "tsx scripts/bench-reads.ts",
-    "e2e:probe": "tsx scripts/e2e-probe.ts"
+    "e2e:probe": "tsx scripts/e2e-probe.ts",
+    "verify": "bash scripts/verify.sh"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.99",
