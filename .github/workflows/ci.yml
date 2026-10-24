@@ -4,6 +4,11 @@ on:
   push:
     branches: [main, "fix/**", "feat/**", "refactor/**"]
   pull_request:
+  # Push-triggered runs never appeared for this repo (zero runs in its whole
+  # history), so the gate could not be observed. A manual trigger makes it
+  # possible to answer "is CI broken or did it just not fire" without
+  # inventing a commit.
+  workflow_dispatch:
 
 jobs:
   verify:
