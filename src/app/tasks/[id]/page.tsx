@@ -531,12 +531,12 @@ export default async function TaskPage({
 
                       {/* Attempt identifier. It locates this run's step rows
                           later; it is not a replay handle. */}
-                      {run.replayKey ? (
+                      {run.runLabel ? (
                         <div className="mt-3 flex items-center gap-1.5 border-t border-line/60 pt-2.5 text-label text-faint">
                           <Play className="size-3 text-muted" />
-                          <span>运行标识 replayKey:</span>
-                          <span className="mono text-ink select-all break-all" title={run.replayKey}>
-                            {run.replayKey}
+                          <span>运行标识 runLabel:</span>
+                          <span className="mono text-ink select-all break-all" title={run.runLabel}>
+                            {run.runLabel}
                           </span>
                         </div>
                       ) : null}
@@ -1163,7 +1163,7 @@ export default async function TaskPage({
             <div className="flex items-start gap-3 px-5 py-4">
               <Clock3 className="mt-0.5 size-4 text-blue shrink-0" />
               <div className="text-label leading-relaxed text-muted">
-                每次运行都会写入一个 <span className="mono text-ink">replayKey</span>
+                每次运行都会写入一个 <span className="mono text-ink">runLabel</span>
                 ，它只是一次尝试的编号，用来在运行记录里定位这次执行的步骤、耗时与花费。上方展示的步骤输入与输出就是当时落库的记录，不是重新执行的结果。
               </div>
             </div>

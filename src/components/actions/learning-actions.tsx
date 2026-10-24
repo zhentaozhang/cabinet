@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
+import { API_ROUTES } from "@/contracts/routes";
 import { call } from "./shared";
 
 export function NextLearningTaskButton() {
@@ -15,7 +16,7 @@ export function NextLearningTaskButton() {
   async function run() {
     setBusy(true);
     setMsg(null);
-    const data = await call("/api/learning/next-task", "POST");
+    const data = await call(API_ROUTES.learningNextTask, "POST");
     setBusy(false);
     if (!data.ok) {
       setMsg(data.error ?? "生成失败");

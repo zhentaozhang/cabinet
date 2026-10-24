@@ -320,7 +320,7 @@ export async function runTask(taskId: string, userId: string) {
       mode: demoMode ? "demo" : "live",
       sourceType: "system_event",
       startedAt,
-      replayKey: `replay_${taskId}_${prior.length + 1}`,
+      runLabel: `replay_${taskId}_${prior.length + 1}`,
     });
 
     await tx
@@ -876,7 +876,7 @@ async function suggestInsteadOfRunning(input: {
       sourceType: demoMode ? "demo_fixture" : "rule_generated",
       startedAt: new Date(),
       endedAt: new Date(),
-      replayKey: `suggest_${taskId}_${priorRunCount + 1}`,
+      runLabel: `suggest_${taskId}_${priorRunCount + 1}`,
     });
     await tx.insert(artifacts).values({
       id: artifactId,

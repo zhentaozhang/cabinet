@@ -195,7 +195,6 @@ export const taskDtoSchema = z.object({
   requiresApproval: z.boolean(),
   approvalThresholdCents: z.number().nullable(),
   estimatedCostCents: z.number(),
-  qualityGate: z.string().nullable(),
   template: z.string().nullable(),
   acceptedAt: isoDateTime.nullable(),
   acceptedAutonomyLevel: z.number().nullable(),
@@ -223,7 +222,7 @@ export const runDtoSchema = z.object({
   providerAttemptId: z.string().nullable(),
   costSource: z.string().nullable(),
   error: z.string().nullable(),
-  replayKey: z.string().nullable(),
+  runLabel: z.string().nullable(),
   createdAt: isoDateTime,
 });
 export type RunDto = z.infer<typeof runDtoSchema>;

@@ -8,6 +8,7 @@ import { localDateKey } from "@/lib/domain/time";
 import { ValidationError } from "@/lib/domain/errors";
 import { getWorkspace } from "../queries/workspace";
 import { getPolicyConfig } from "@/lib/policy/config";
+import { ensureNextLearningTask } from "./learning";
 import { recalculateUserGoalProgress } from "./progress";
 
 export async function saveCheckin(
@@ -154,4 +155,17 @@ export async function saveCheckin(
       },
     });
   });
+
+  // The loop closes here. A check-in is the only signal that says which weak
+  // point the next study task should be about, so the task is scheduled by the
+  // check-in itself instead of waiting for someone to press a button.
+  //
+  // Deliberately outside the transaction: it reads through `db`, not `tx`, and
+  // it refuses to run for a workspace with no coach/auditor or no learning goal.
+  // A check-in is worth keeping either way, so only that refusal is swallowed.
+  try {
+    await ensureNextLearningTask(userId);
+  } catch (error) {
+    if (!(error instanceof ValidationError)) throw error;
+  }
 }

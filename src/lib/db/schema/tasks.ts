@@ -31,7 +31,6 @@ export const tasks = pgTable(
     requiresApproval: boolean("requires_approval").notNull().default(false),
     approvalThresholdCents: integer("approval_threshold_cents"),
     estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
-    qualityGate: text("quality_gate"),
     template: text("template"),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     acceptedAutonomyLevel: integer("accepted_autonomy_level"),

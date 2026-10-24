@@ -118,7 +118,7 @@ async function auditTaskInner(taskId: string, userId: string) {
       mode: "demo",
       sourceType: "system_event",
       startedAt: new Date(),
-      replayKey: `audit_${taskId}_${taskRuns.length + 1}`,
+      runLabel: `audit_${taskId}_${taskRuns.length + 1}`,
     });
 
     let idx = 0;

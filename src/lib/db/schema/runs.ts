@@ -25,7 +25,7 @@ export const runs = pgTable(
     providerAttemptId: text("provider_attempt_id"),
     costSource: text("cost_source"),
     error: text("error"),
-    replayKey: text("replay_key"),
+    runLabel: text("run_label"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

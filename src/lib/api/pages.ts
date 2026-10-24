@@ -159,7 +159,7 @@ export async function fetchWorkspaceReady(): Promise<boolean> {
  */
 export const fetchShellContext = cache(async (): Promise<ShellContextDto> => {
   const api = await serverApi();
-  const result = await api.query("/api/shell", (value) =>
+  const result = await api.query(API_ROUTES.shell, (value) =>
     shellContextSchema.parse(value),
   );
   if (!result.ok) throw new Error(result.error);

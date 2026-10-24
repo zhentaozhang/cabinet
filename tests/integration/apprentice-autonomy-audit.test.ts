@@ -66,7 +66,7 @@ async function seedShadowRuns(
       sourceType: "system_event",
       startedAt: new Date(),
       endedAt: new Date(),
-      replayKey: `shadow_${mentorId}_${index}`,
+      runLabel: `shadow_${mentorId}_${index}`,
     });
     await db.insert(artifacts).values({
       id: `art_shadow_${mentorId}_${index}`,

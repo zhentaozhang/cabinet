@@ -16,6 +16,7 @@ import { Button, Progress } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import type { InsightDto } from "@/contracts";
+import { API_ROUTES } from "@/contracts/routes";
 import { cn } from "@/lib/format";
 import { call } from "./shared";
 
@@ -113,7 +114,7 @@ export function TaskActions({
   async function markDone() {
     setBusy("done");
     setMsg(null);
-    const data = await call(`/api/tasks/${taskId}/done`, "POST");
+    const data = await call(API_ROUTES.taskDone(taskId), "POST");
     setBusy(null);
     if (!data.ok) {
       setMsg(data.error ?? "操作失败");
@@ -533,7 +534,7 @@ export function ArtifactSubmitForm({
   async function submit() {
     setBusy(true);
     setMsg(null);
-    const data = await call(`/api/tasks/${taskId}/submit`, "POST", {
+    const data = await call(API_ROUTES.taskSubmit(taskId), "POST", {
       title: title.trim() || undefined,
       content,
     });

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, artifacts, goals, tasks, users } from "@/lib/db/schema";
 import { setupWorkspace } from "@/lib/setup";
@@ -52,10 +52,28 @@ describe("new-user learning loop", () => {
       NEW_USER,
     );
 
-    const task = await ensureNextLearningTask(NEW_USER);
+    // Nothing calls ensureNextLearningTask here: saving the check-in has to be
+    // what queues the next study task, otherwise the loop only advances when
+    // someone remembers to press the button.
+    const [task] = await db
+      .select()
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.userId, NEW_USER),
+          inArray(tasks.template, ["learning", "learning_retest"]),
+        ),
+      )
+      .limit(1);
+    expect(task).toBeDefined();
     expect(task.template).toBe("learning");
     expect(task.title).toContain("rerank");
     expect(task.assigneeId).not.toBeNull();
+
+    // Asking again reuses the open task rather than queueing a second one.
+    await expect(ensureNextLearningTask(NEW_USER)).resolves.toMatchObject({
+      id: task.id,
+    });
 
     const [coachBefore] = await db
       .select()
@@ -119,6 +137,38 @@ describe("new-user learning loop", () => {
 
     const again = await regenerateWeeklyReview(NEW_USER);
     expect(again.id).toBe(review.id);
+  });
+
+  it("keeps the check-in when there is no learning goal to continue", async () => {
+    const NO_GOAL = "usr_learning_no_goal";
+    await db.insert(users).values({
+      id: NO_GOAL,
+      email: "learning-no-goal@cabinet.local",
+      name: "No Goal",
+      emailVerified: true,
+      timezone: "Asia/Shanghai",
+      updatedAt: new Date(),
+    });
+
+    // Scheduling the next task needs a coach, an auditor and a learning goal.
+    // None of that should be able to lose the check-in the user just wrote.
+    await expect(
+      saveCheckin(
+        {
+          energy: 3,
+          mood: 3,
+          completed: [],
+          note: "还没定学习目标，先记一笔",
+        },
+        NO_GOAL,
+      ),
+    ).resolves.toBeUndefined();
+
+    const created = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.userId, NO_GOAL));
+    expect(created).toHaveLength(0);
   });
 
   it("rejects learner submissions for external tasks", async () => {

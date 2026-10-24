@@ -3,7 +3,7 @@
 审查对象：`/Users/zhentao/Documents/Workspace/Cabinet`（Next 16 + React 19 + Drizzle/PostgreSQL，`src` 约 35,349 行 TS）
 审查日期：2026-02-19　｜　方式：只读静态审查（codegraph 索引 + 全量代码通读）+ 同分支修复（第 9–12 节）
 
-> **状态**：第 0–8 节是审查当时（未改代码）的结论，保持原样以便对照；第 9–12 节是随后在同分支的修复落地记录。**P0 三条、P1 中 12 条已闭环**，其余每条都有「未做/判断不做」的明确去向（9.2、12.3），不存在"看起来做完了"的空白。全量闸门：`bash scripts/verify.sh` **exit 0，104 test files / 907 tests passed**。
+> **状态**：第 0–8 节是审查当时（未改代码）的结论，保持原样以便对照；第 9–12 节是随后在同分支的修复落地记录，**第 13–14 节是第二轮复核与改动**（前提改为「本地学习项目、不部署」，并推翻了第一轮的六条结论）。**P0 三条、P1 中 12 条已闭环**，其余每条都有「未做/判断不做」的明确去向（9.2、12.3、14 节末），不存在"看起来做完了"的空白。全量闸门：`bash scripts/verify.sh` **exit 0，104 test files / 907 tests passed**。
 
 ---
 
@@ -412,8 +412,37 @@ tick 里有三个清扫函数按时间删除旧行，而 0027 之前的索引一
 | `seedDemo(userId)`（9.2） | 单租户 demo：`policy_config`、`agent_templates` 等表根本没有 `user_id` 列，按用户重置要跨 30+ 张表定义「什么算这个用户的数据」，属于多租户产品模型变更，不是链路修复。P1-13 的双闸（`DEMO_MODE` + `DEMO_RESET_ENABLED`）已经挡住误触 |
 | 记忆衰减挂 tick | 缺的是产品口径（`policy_config` 无 half-life 键），见 10.2 |
 | 反思只产出 1 条 insight、按 claim 字面去重 | 提取策略问题；改成「多条 + 语义去重」需要模型侧可测口径，先留在 9.2 |
-| `outbox` 失败行没有终态 | 现在靠 `attempts` / `nextAttemptAt` 无限退避；加 `dead` 会改 `deliverOutbox` 的计数契约，要连 UI 的「通知失败」文案一起改 |
-| 8 条 `/api/*` 不在 `src/contracts/routes.ts` | 属契约表维护，不是链路断点；改法是把组件里的字符串调用换成常量，收益是编译期发现拼写 |
+| `outbox` 失败行没有终态 | ~~现在靠 `attempts` / `nextAttemptAt` 无限退避~~ **本条已在 13.6 推翻**：`MAX_ATTEMPTS` 耗尽即写 `failed` 终态，且不会被重新认领 |
+| 8 条 `/api/*` 不在 `src/contracts/routes.ts` | **已部分完成（14 节 A 批次）**：5 条页面路由已进常量表；剩 `/api/auth/*`、`/api/health`、`/api/metrics` 三条运维入口，不是页面契约，判定不做 |
 
 
 
+
+## 13. 第二轮复核：六条「未闭环」被证据推翻（2026-02-19）
+
+前提变了：**这是本地学习项目，不部署、单进程运行。** 重新按「假语义 / 能否亲手验证 / 认知负担」三条判据过了一遍，
+逐条去代码里取证之后，第一轮列出的问题里有六条站不住。这一节把它们记下来，因为**「我以为断了、其实没断」和「真的断了」一样需要留证**。
+
+| # | 第一轮的说法 | 取证结果 | 处置 |
+|---|---|---|---|
+| 1 | `jobs.ts` 里 `leaseMs` 与 `leaseMsFromEnv` 两份重复实现 | 现在只有一份 `leaseMs()`（`src/server/services/commands/tasks/jobs.ts:30-35`，读 `RUN_LEASE_MINUTES`，回退 `DEFAULT_LEASE_MS`）；`CLAIMABLE` 也已改用 `sql`now()`` 而不是模块顶层的 `new Date()`（:53-59） | 计划作废，不删 |
+| 2 | `/api/notifications/run` 返回体缺 `lost` | 已返回 `lost: report.lost`（`src/app/api/notifications/run/route.ts`，注释指向 `deliveryRunSchema`） | 计划作废 |
+| 3 | `user_actions` 只被读、没有写入方 | 有写入方：`src/lib/db/seed.ts:1640` 的 demo 种子（`ua_seed_1/2/3`），`tests/integration/metrics-samples.test.ts:128` 也直接插。`git grep 'insert(userActions)'` 只命中这两处 | **不删表**。真实性质是「demo-only producer」：不跑 seed 的工作区里管理时间会静默退回估算。这条留在文档里，不靠删代码解决 |
+| 4 | `reviews.metrics` 是死列 | 有数据、无读方：`src/server/services/queries/review.ts:46-51` 整行取出、:138 返回页面，页面只读 `decisions/narrative/period/createdAt`。但它冻结的是**生成当时**的数字（`weeklyMetrics` 是实时重算的） | 保留，定位为「有意义的快照，暂无读方」 |
+| 5 | `artifacts` 该加 (taskId, runId) 唯一索引 | 约束不到真正的重复：`src/server/services/commands/tasks/submit.ts:33-44` 用户提交时写 `runId: null`，重复提交本来就该多插一行（版本历史语义） | 不建。「一次运行一个产物」是当前实现的副产品，不是要固化的不变量 |
+| 6 | `outbox` 失败行没有终态（12.3 第 4 行） | 有终态：`MAX_ATTEMPTS` 耗尽后写 `status: "failed"`（`src/server/services/commands/delivery.ts:350-372`），而认领只取 `pending`/`sending`（:144-145），所以 `failed` 不会再被重试。`archiveOldOutbox` 只删 `sent`/`skipped` 是**刻意**的（`src/server/jobs/maintenance.ts:150-152` 注释：失败行是「地址为什么不再可用」的记录），且有读方：`src/app/api/metrics/route.ts:42` 按状态分组、`src/server/services/queries/delivery.ts:31` 给设置页列表 | 12.3 该行作废；失败行不再是缺口 |
+
+结论：第一轮报告的**方向**（最后一公里没接线）在契约与学习链上成立，但具体清单里有一半是「我读得快了」。第 9–12 节的修复不受影响，这一节只是把不再成立的说法收回。
+
+## 14. 第二轮实际改动
+
+| 批次 | 改动 | 落点 |
+|---|---|---|
+| A 契约收口 | 5 条路由进常量表，组件不再拼字符串 | `src/contracts/routes.ts`（`taskSubmit`/`taskDone`/`learningNextTask`/`reviewsWeekly`/`shell`）；调用点 `src/components/actions/task-actions.tsx:116,536`、`utility-buttons.tsx:75`、`learning-actions.tsx:18`、`src/lib/api/pages.ts:162` |
+| B 学习链最后一跳 | 打卡提交后自动接续下一道学习题 | `src/server/services/commands/checkins.ts` 在**事务提交之后**调 `ensureNextLearningTask`，且只吞 `ValidationError`（没有学习目标的用户不该因为打卡失败）；测试 `tests/integration/learning-loop.test.ts` 加「无目标也能打卡」用例 |
+| D 假语义清理 | 删掉零读方的 `tasks.quality_gate`；`runs.replay_key` 更名 `run_label`（注释本来就写「它是一次尝试的编号，不是回放句柄」） | `src/lib/db/schema/tasks.ts`、`src/lib/db/schema/runs.ts:28`、`src/lib/db/seed.ts`、`src/contracts/dto/entities.ts`、`src/app/tasks/[id]/page.tsx`；迁移 `drizzle/0029_drop_quality_gate.sql`、`drizzle/0030_rename_replay_key.sql`（手写 `ALTER TABLE ... RENAME COLUMN` + 对齐快照，因此不丢数据；`drizzle-kit generate` 再跑一次输出 `No schema changes`） |
+| E 文档对齐 | 三篇「描述永不发生场景」的文档加适用范围横幅；新增读码路径 | `docs/deployment.md`、`docs/run-durability.md`、`docs/frontend-backend-separation.md`；新增 `docs/reading-order.md`（10 步，每步配可跑的测试文件） |
+
+验证：`tsc --noEmit` 与 `eslint --max-warnings=0` 均 exit 0；隔离库 `cabinet_rename`（`drizzle-kit migrate` 全量迁移）上跑 `setup`/`apprentice-graduation`/`apprentice-autonomy-audit`/`metrics-samples`/`learning-loop` 共 **26 passed**。
+
+**仍未做（明确保留）**：`seedDemo` 按域拆分（1696 行单函数，纯重构、风险集中在种子数据回归）；`/api/auth/*`、`/api/health`、`/api/metrics` 三条运维入口不进 `routes.ts`（它们不是页面调用的契约）。

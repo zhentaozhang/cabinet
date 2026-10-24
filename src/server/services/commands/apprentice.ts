@@ -303,7 +303,7 @@ export async function runApprenticeExam(userId: string) {
       costCents: 0,
       tokensIn: null,
       tokensOut: null,
-      replayKey: `apprentice_exam_v1#${attemptCount}`,
+      runLabel: `apprentice_exam_v1#${attemptCount}`,
     });
     await tx.insert(artifacts).values({
       id: artifactId,

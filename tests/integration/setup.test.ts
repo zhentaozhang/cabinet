@@ -196,7 +196,7 @@ describe("account export and deletion", () => {
       taskId: "tsk_account_test",
       agentId: agent.id,
       status: "submitted",
-      replayKey: "replay-account-test",
+      runLabel: "replay-account-test",
       mode: "demo",
     });
     await db.insert(steps).values([

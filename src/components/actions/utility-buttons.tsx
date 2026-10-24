@@ -72,7 +72,7 @@ export function WeeklyReviewButton() {
   const [busy, setBusy] = useState(false);
   async function run() {
     setBusy(true);
-    const data = await call("/api/reviews/weekly", "POST");
+    const data = await call(API_ROUTES.reviewsWeekly, "POST");
     setBusy(false);
     if (!data.ok) {
       toast.error(data.error ?? "周复盘生成失败");

@@ -623,7 +623,6 @@ export async function seedDemo(): Promise<void> {
       actionType: "internal",
       resource: "task",
       estimatedCostCents: 60,
-      qualityGate: "rubric_required",
     },
     {
       id: "tsk_budget",
@@ -670,7 +669,7 @@ export async function seedDemo(): Promise<void> {
       costCents: RUN_COST_CENTS.plan,
       tokensIn: 1820,
       tokensOut: 920,
-      replayKey: "replay_plan_v1",
+      runLabel: "replay_plan_v1",
     },
     {
       id: "run_research",
@@ -683,7 +682,7 @@ export async function seedDemo(): Promise<void> {
       costCents: RUN_COST_CENTS.research,
       tokensIn: 2400,
       tokensOut: 1300,
-      replayKey: "replay_research_v1",
+      runLabel: "replay_research_v1",
     },
     {
       id: "run_quiz",
@@ -696,7 +695,7 @@ export async function seedDemo(): Promise<void> {
       costCents: RUN_COST_CENTS.quiz,
       tokensIn: 1500,
       tokensOut: 800,
-      replayKey: "replay_quiz_v1",
+      runLabel: "replay_quiz_v1",
     },
   ]);
 

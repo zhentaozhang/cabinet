@@ -1,0 +1,1 @@
+ALTER TABLE "tasks" DROP COLUMN "quality_gate";
