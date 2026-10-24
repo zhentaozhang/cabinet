@@ -13,6 +13,16 @@ import {
 } from "./grants";
 import { loadLatestApproval } from "./execution";
 
+/**
+ * Ask a human to approve an external action.
+ *
+ * `tx` is mandatory: `pg_advisory_xact_lock` lives exactly as long as the
+ * transaction that took it. Falling back to `db` put the lock in an implicit
+ * single-statement transaction that released it the moment the statement
+ * returned, so two concurrent requests both saw "no pending approval" and
+ * inserted duplicates — a lock that silently did nothing. The lock and the
+ * insert must therefore share one caller-owned transaction.
+ */
 export async function requestApproval(
   input: {
     userId: string;
@@ -24,16 +34,22 @@ export async function requestApproval(
     reason: string;
     estimatedCostCents: number;
   },
-  tx?: Tx,
+  tx: Tx,
 ) {
-  const client = tx ?? db;
-  await client.execute(
+  // TypeScript cannot stop an untyped caller from omitting the transaction,
+  // and continuing without it would recreate the unprotected path silently.
+  if (!tx) {
+    throw new Error(
+      "requestApproval requires a caller transaction (tx) so the advisory lock and the insert commit together.",
+    );
+  }
+  await tx.execute(
     sql`select pg_advisory_xact_lock(hashtext(${`approval:${input.taskId}:${input.action}`}))`,
   );
   const existing = await loadLatestApproval(input.taskId, tx);
   if (existing?.status === "pending") return existing;
 
-  const [created] = await client
+  const [created] = await tx
     .insert(approvals)
     .values({
       id: newId("appr"),
@@ -66,7 +82,7 @@ export async function requestApproval(
         actionType: input.action,
       }),
     },
-    client,
+    tx,
   );
 
   return created;

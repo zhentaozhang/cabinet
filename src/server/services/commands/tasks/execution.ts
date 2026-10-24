@@ -97,6 +97,21 @@ export async function reserveBudget(
       .limit(1)
       .for("update");
 
+    // A missing bucket is not "unlimited allowance": without the row there is
+    // nothing to hold the reservation against, and dereferencing it threw a
+    // TypeError that surfaced as a 500. The two refusals stay distinguishable
+    // so a closed week never reads as a lost one.
+    if (!period) {
+      return {
+        allowed: false as const,
+        reason: "未找到当前预算周期，无法预留预算。",
+      };
+    }
+    // Refuse a closed period before any of its fields are read as authority.
+    if (period.closedAt) {
+      return { allowed: false as const, reason: "该预算周期已关闭。" };
+    }
+
     const decision: ReservationDecision = decideReservation(
       {
         limitCents: period.limitCents,
@@ -108,9 +123,6 @@ export async function reserveBudget(
       input.amountCents,
     );
     if (!decision.allowed) return decision;
-    if (period.closedAt) {
-      return { allowed: false as const, reason: "该预算周期已关闭。" };
-    }
 
     const amountCents = Math.max(0, input.amountCents);
     await tx

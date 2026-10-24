@@ -28,6 +28,19 @@ const MAX_QUOTE_CHARS = 300;
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
+ * DNS lookups get their own budget, separate from the body fetch.
+ *
+ * A resolver that is merely slow — overseas names such as `fda.gov` are — must
+ * not be reported as an attack, so the wait is generous and one failed attempt is
+ * retried. This is deliberately **not** fail-open: a lookup that never answers is
+ * still refused, because an attacker who controls DNS can answer slowly for the
+ * check and promptly for the fetch, which is the rebinding race below.
+ */
+export const DNS_TIMEOUT_MS = 3_000;
+/** One retry: enough to ride out a cold or flaky resolver, small enough to bound the wait. */
+const DNS_ATTEMPTS = 2;
+
+/**
  * The first absolute http(s) URL in a string, with trailing punctuation
  * stripped. Tasks are prose, so the URL is usually written inline.
  */
@@ -46,39 +59,235 @@ export function extractFirstUrl(text: string): string | null {
 /** Redirects are followed by hand so every hop can be checked. */
 const MAX_REDIRECTS = 3;
 
-/**
- * True for anything that is not a public unicast address.
- *
- * Covers loopback, RFC1918, link-local, CGNAT, multicast/reserved and the
- * IPv6 forms a naive parser misses (`::1`, `fc00::/7`, `::ffff:127.0.0.1`).
- */
-export function isPrivateAddress(address: string): boolean {
-  const host = address.toLowerCase().replace(/^\[|\]$/g, "");
-  if (host === "" || host === "::" || host === "::1") return true;
-  if (host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) {
-    return true;
+/** `[::1]`, `[::ffff:7f00:1]` and `127.0.0.1` differ only in decoration. */
+function bareHost(hostname: string): string {
+  const bare = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  // A zone index (`fe80::1%eth0`) is not part of the address.
+  const zone = bare.indexOf("%");
+  return zone >= 0 ? bare.slice(0, zone) : bare;
+}
+
+/** One octet group, where a leading `0` means octal and `0x` means hex. */
+function parseIpv4Group(group: string): number | null {
+  if (group === "") return null;
+  let digits = group;
+  let radix = 10;
+  if (group.length > 1 && group.startsWith("0x")) {
+    radix = 16;
+    digits = group.slice(2);
+  } else if (group.length > 1 && group.startsWith("0")) {
+    radix = 8;
+    digits = group.slice(1);
   }
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(host);
-  const v4 = mapped ? mapped[1] : host;
-  const parts = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(v4);
-  if (!parts) return false;
-  const [a, b] = [Number(parts[1]), Number(parts[2])];
+  const pattern = radix === 16 ? /^[0-9a-f]+$/ : radix === 8 ? /^[0-7]+$/ : /^[0-9]+$/;
+  if (!pattern.test(digits)) return null;
+  const value = Number.parseInt(digits, radix);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+/**
+ * An IPv4 address in any of the spellings `inet_aton` accepts.
+ *
+ * The URL parser folds most of these itself, but the guard is also called with
+ * raw strings, so it must read `2130706433`, `0x7f.0.0.1`, `0177.0.0.1` and the
+ * short form `127.1` without relying on that. Returns null for anything that is
+ * not a literal, which is how a hostname stays a hostname.
+ */
+export function parseIpv4(host: string): number[] | null {
+  const text = bareHost(host);
+  if (text === "") return null;
+  const raw = text.split(".");
+  // A trailing dot is the root label, not an empty octet.
+  if (raw.length > 1 && raw[raw.length - 1] === "") raw.pop();
+  if (raw.length > 4) return null;
+  const groups: number[] = [];
+  for (const group of raw) {
+    const value = parseIpv4Group(group);
+    if (value === null) return null;
+    groups.push(value);
+  }
+  // `inet_aton` lets the final group absorb the remaining bytes: `127.1` is
+  // 127.0.0.1 and `2130706433` is a whole address.
+  const head = groups.slice(0, -1);
+  const last = groups[groups.length - 1];
+  const tailBytes = 4 - head.length;
+  if (head.some((value) => value > 255)) return null;
+  if (last >= 2 ** (8 * tailBytes)) return null;
+  const bytes = [...head];
+  for (let shift = tailBytes - 1; shift >= 0; shift -= 1) {
+    bytes.push((last >>> (8 * shift)) & 0xff);
+  }
+  return bytes;
+}
+
+/**
+ * An IPv6 address as 16 bytes, including the forms that hide an IPv4 address.
+ *
+ * `::ffff:127.0.0.1` and `::ffff:7f00:1` are the same address, and the URL
+ * parser rewrites the first into the second — so both spellings must parse.
+ */
+export function parseIpv6(host: string): number[] | null {
+  let text = bareHost(host);
+  if (!text.includes(":")) return null;
+  // Rewrite a dotted IPv4 tail into two hex groups so one grammar covers both.
+  const lastColon = text.lastIndexOf(":");
+  if (text.slice(lastColon + 1).includes(".")) {
+    const embedded = parseIpv4(text.slice(lastColon + 1));
+    if (!embedded) return null;
+    const high = (((embedded[0] << 8) | embedded[1]) >>> 0).toString(16);
+    const low = (((embedded[2] << 8) | embedded[3]) >>> 0).toString(16);
+    text = `${text.slice(0, lastColon + 1)}${high}:${low}`;
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const split = (part: string): string[] => (part === "" ? [] : part.split(":"));
+  const head = split(halves[0]);
+  const tail = halves.length === 2 ? split(halves[1]) : [];
+  const groups = [...head, ...tail];
+  if (!groups.every((group) => /^[0-9a-f]{1,4}$/.test(group))) return null;
+  const toValue = (group: string): number => Number.parseInt(group, 16);
+  let values: number[];
+  if (halves.length === 2) {
+    // `::` stands for at least one all-zero group, never for nothing.
+    const zeros = 8 - groups.length;
+    if (zeros < 1) return null;
+    values = [
+      ...head.map(toValue),
+      ...Array.from({ length: zeros }, () => 0),
+      ...tail.map(toValue),
+    ];
+  } else {
+    if (groups.length !== 8) return null;
+    values = groups.map(toValue);
+  }
+  const bytes: number[] = [];
+  for (const value of values) bytes.push(value >> 8, value & 0xff);
+  return bytes;
+}
+
+/** The IPv4 ranges that are not public unicast. */
+function isPrivateIpv4(octets: number[]): boolean {
+  const [a, b, c] = octets;
   if (a === 0 || a === 10 || a === 127) return true;
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
   if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 192 && b === 0 && c === 0) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
   return a >= 224;
+}
+
+/** Non-public IPv6 ranges, including the IPv4 addresses some of them embed. */
+function isPrivateIpv6(bytes: number[]): boolean {
+  const zeros = (start: number, end: number): boolean =>
+    bytes.slice(start, end).every((byte) => byte === 0);
+  const embedded = (offset: number): boolean =>
+    isPrivateIpv4(bytes.slice(offset, offset + 4));
+  // ::/96: unspecified, loopback, and the deprecated IPv4-compatible form.
+  if (zeros(0, 12)) return true;
+  // ::ffff:0:0/96 IPv4-mapped (::ffff:127.0.0.1 and ::ffff:7f00:1 alike).
+  if (zeros(0, 10) && bytes[10] === 0xff && bytes[11] === 0xff) return embedded(12);
+  // 64:ff9b::/96 NAT64 and 2002::/16 6to4 carry an IPv4 address in plain sight.
+  if (bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b) {
+    if (zeros(4, 12)) return embedded(12);
+  }
+  if (bytes[0] === 0x20 && bytes[1] === 0x02) return embedded(2);
+  // fe80::/10 link-local, fec0::/10 site-local.
+  if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) return true;
+  if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0xc0) return true;
+  // fc00::/7 unique-local, ff00::/8 multicast.
+  if ((bytes[0] & 0xfe) === 0xfc) return true;
+  if (bytes[0] === 0xff) return true;
+  return false;
+}
+
+/**
+ * True for anything that is not a public unicast address.
+ *
+ * Literals are normalised first, so every spelling of one address gets one
+ * verdict: loopback, RFC1918, link-local, CGNAT, multicast/reserved, plus the
+ * IPv6 forms a naive parser misses (`::1`, `fc00::/7`, `::ffff:127.0.0.1`).
+ * Input that is not a literal at all is not decided here — it has to be
+ * resolved, which is `checkHostSafety`'s job.
+ */
+export function isPrivateAddress(address: string): boolean {
+  const host = bareHost(address);
+  if (host === "") return true;
+  const v6 = parseIpv6(host);
+  if (v6) return isPrivateIpv6(v6);
+  const v4 = parseIpv4(host);
+  if (v4) return isPrivateIpv4(v4);
+  return false;
 }
 
 /** Literal-host check: names that cannot be public however they resolve. */
 export function isBlockedHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const host = bareHost(hostname);
   if (host === "" || host === "localhost" || host === "0.0.0.0") return true;
   if (host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
     return true;
   }
+  // Only literals are judged here. A bare `startsWith("fc")` test used to live
+  // in this function and refused `fda.gov` for looking like a `fc00::/7`
+  // address; a name is never a prefix match against an IPv6 range.
   return isPrivateAddress(host);
+}
+
+/** Why a host was refused, kept apart so logs can tell slow DNS from an attack. */
+export type HostSafetyReason = "blocked_literal" | "private_answer" | "dns_timeout" | "dns_failure";
+
+export type HostSafety =
+  | { safe: true; hostname: string; addresses: string[] }
+  | {
+      safe: false;
+      hostname: string;
+      reason: HostSafetyReason;
+      /** The offending answers, when the reason came from a lookup. */
+      addresses: string[];
+      /** Operator-facing detail: the timeout value, or the resolver's error. */
+      detail: string;
+    };
+
+type LookupAttempt =
+  | { ok: true; addresses: string[] }
+  | { ok: false; timedOut: boolean; detail: string };
+
+/** One lookup, bounded: a resolver that never answers must not hang the task. */
+async function lookupOnce(
+  hostname: string,
+  dnsLookup: typeof lookup,
+  timeoutMs: number,
+): Promise<LookupAttempt> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(`DNS lookup for ${hostname} exceeded ${timeoutMs}ms`);
+      error.name = "DnsTimeoutError";
+      reject(error);
+    }, timeoutMs);
+  });
+  try {
+    const records = await Promise.race([
+      dnsLookup(hostname, { all: true, verbatim: true }),
+      deadline,
+    ]);
+    return { ok: true, addresses: records.map((record) => record.address) };
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "DnsTimeoutError";
+    return {
+      ok: false,
+      timedOut,
+      detail:
+        "code" in Object(error)
+          ? `${(error as { code?: string }).code ?? ""} ${error instanceof Error ? error.message : ""}`.trim()
+          : error instanceof Error
+            ? error.message
+            : "未知解析错误",
+    };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 /**
@@ -86,23 +295,115 @@ export function isBlockedHost(hostname: string): boolean {
  *
  * Checking the URL text alone lets `evil.example → 127.0.0.1` through, which is
  * the classic SSRF shape. This resolves first and refuses when any answer is
- * private. Residual risk, stated rather than hidden: the fetch resolves the
- * name again, so a DNS server that changes its answer between the two lookups
- * (rebinding) can still win the race; closing that needs a dialer pinned to the
- * checked IP, which the fetch API does not expose.
+ * private. A private answer is refused at once — retrying it would only give a
+ * rebinding server a second chance to say something public.
+ *
+ * Residual risk, stated rather than hidden: the fetch resolves the name again,
+ * so a DNS server that changes its answer between the two lookups (rebinding)
+ * can still win the race; closing that needs a dialer pinned to the checked IP,
+ * which the fetch API does not expose.
+ *
+ * A lookup that times out or fails is a refusal too, never a pass: with the
+ * generous timeout and the single retry, a healthy public name is not caught by
+ * it, while a name the attacker keeps unresolved cannot slip through.
  */
+export async function checkHostSafety(
+  hostname: string,
+  options: {
+    lookupImpl?: typeof lookup;
+    /** Overridable so tests never wait out the real budget. */
+    timeoutMs?: number;
+    attempts?: number;
+  } = {},
+): Promise<HostSafety> {
+  if (isBlockedHost(hostname)) {
+    return {
+      safe: false,
+      hostname,
+      reason: "blocked_literal",
+      addresses: [],
+      detail: "字面量地址不在公网单播范围内",
+    };
+  }
+  const dnsLookup = options.lookupImpl ?? lookup;
+  const timeoutMs = options.timeoutMs ?? DNS_TIMEOUT_MS;
+  const attempts = Math.max(1, options.attempts ?? DNS_ATTEMPTS);
+
+  let last: Extract<LookupAttempt, { ok: false }> = {
+    ok: false,
+    timedOut: false,
+    detail: "未尝试解析",
+  };
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = await lookupOnce(hostname, dnsLookup, timeoutMs);
+    if (result.ok) {
+      if (result.addresses.length === 0) {
+        last = { ok: false, timedOut: false, detail: "解析结果为空" };
+        continue;
+      }
+      const privateAnswers = result.addresses.filter((address) => isPrivateAddress(address));
+      if (privateAnswers.length > 0) {
+        return {
+          safe: false,
+          hostname,
+          reason: "private_answer",
+          addresses: privateAnswers,
+          detail: `解析到 ${privateAnswers.join(", ")}`,
+        };
+      }
+      return { safe: true, hostname, addresses: result.addresses };
+    }
+    last = result;
+  }
+
+  return last.timedOut
+    ? {
+        safe: false,
+        hostname,
+        reason: "dns_timeout",
+        addresses: [],
+        detail: `每 ${timeoutMs}ms 超时，已尝试 ${attempts} 次`,
+      }
+    : {
+        safe: false,
+        hostname,
+        reason: "dns_failure",
+        addresses: [],
+        detail: `${last.detail}（已尝试 ${attempts} 次）`,
+      };
+}
+
+/** The boolean shape kept for callers that only need a verdict. */
 export async function resolvesToPrivateAddress(
   hostname: string,
   dnsLookup: typeof lookup = lookup,
 ): Promise<boolean> {
-  if (isBlockedHost(hostname)) return true;
-  try {
-    const records = await dnsLookup(hostname, { all: true, verbatim: true });
-    return records.some((record) => isPrivateAddress(record.address));
-  } catch {
-    // Unresolvable: let the request fail on its own terms rather than calling
-    // it a security refusal.
-    return false;
+  const verdict = await checkHostSafety(hostname, { lookupImpl: dnsLookup });
+  return !verdict.safe;
+}
+
+/** One refusal, in the connector's own vocabulary. */
+function hostSafetyError(verdict: Extract<HostSafety, { safe: false }>, target: URL): ConnectorError {
+  switch (verdict.reason) {
+    case "blocked_literal":
+    case "private_answer":
+      return {
+        code: "invalid_response",
+        retryable: false,
+        message: `${target.hostname} 不是公网地址（或在 DNS 中解析到私网），已拒绝抓取。`,
+      };
+    case "dns_timeout":
+      return {
+        code: "timeout",
+        retryable: true,
+        message: `${target.hostname} 解析超时：${verdict.detail}，已拒绝抓取。`,
+      };
+    case "dns_failure":
+      return {
+        code: "network_error",
+        retryable: true,
+        message: `${target.hostname} 解析失败：${verdict.detail}，无法确认是公网地址，已拒绝抓取。`,
+      };
   }
 }
 
@@ -186,6 +487,8 @@ export async function fetchPage(input: {
   /** Injected DNS resolver, so tests never touch the network. */
   lookupImpl?: typeof lookup;
   timeoutMs?: number;
+  /** Overrides `DNS_TIMEOUT_MS` per lookup; tests use it to stay fast. */
+  dnsTimeoutMs?: number;
 }): Promise<PageOutcome> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const startedAt = Date.now();
@@ -215,19 +518,23 @@ export async function fetchPage(input: {
       },
     };
   }
-  const blocked = await resolvesToPrivateAddress(
-    target.hostname,
-    input.lookupImpl ?? lookup,
-  );
-  if (blocked) {
+  // One DNS budget for the whole call: `timeout + one retry` per lookup, shared
+  // by every redirect hop, so a chain of slow names cannot stack a fresh six
+  // seconds onto each hop. Exhausting it is still a refusal, never a pass.
+  const perLookupDnsMs = input.dnsTimeoutMs ?? DNS_TIMEOUT_MS;
+  const dnsDeadlineAt = startedAt + 2 * perLookupDnsMs;
+  const checkHost = (hostname: string): Promise<HostSafety> =>
+    checkHostSafety(hostname, {
+      lookupImpl: input.lookupImpl ?? lookup,
+      timeoutMs: Math.max(1, Math.min(perLookupDnsMs, dnsDeadlineAt - Date.now())),
+    });
+
+  const checked = await checkHost(target.hostname);
+  if (!checked.safe) {
     return {
       ok: false,
-      latencyMs: 0,
-      error: {
-        code: "invalid_response",
-        message: `${target.hostname} 不是公网地址（或在 DNS 中解析到私网），已拒绝抓取。`,
-        retryable: false,
-      },
+      latencyMs: Date.now() - startedAt,
+      error: hostSafetyError(checked, target),
     };
   }
 
@@ -301,16 +608,27 @@ export async function fetchPage(input: {
           },
         };
       }
-      // Every hop is checked, not just the first and the last.
-      if (await resolvesToPrivateAddress(next.hostname, input.lookupImpl ?? lookup)) {
+      // Every hop is checked, not just the first and the last: a redirect is the
+      // easiest way to turn a public URL into an internal one.
+      const hop = await checkHost(next.hostname);
+      if (!hop.safe) {
+        const refusal = hostSafetyError(hop, next);
+        const landedOnInternal =
+          hop.reason === "private_answer" || hop.reason === "blocked_literal";
         return {
           ok: false,
           latencyMs: Date.now() - startedAt,
-          error: {
-            code: "invalid_response",
-            message: `重定向到了非公网地址 ${next.toString()}，已拒绝。`,
-            retryable: false,
-          },
+          error: landedOnInternal
+            ? {
+                code: "invalid_response",
+                message: `重定向到了非公网地址 ${next.toString()}，已拒绝。`,
+                retryable: false,
+              }
+            : {
+                code: refusal.code,
+                message: `重定向目标 ${next.toString()}：${hop.detail}，已拒绝。`,
+                retryable: refusal.retryable,
+              },
         };
       }
       current = next;

@@ -37,41 +37,82 @@ const CLAIMABLE = or(
   and(eq(runJobs.status, "running"), lte(runJobs.leaseUntil, new Date())),
 );
 
+/** Statuses a job only leaves; a live job blocks a second one for its task. */
+const ACTIVE_JOB = or(eq(runJobs.status, "queued"), eq(runJobs.status, "running"));
+
+/**
+ * The predicate of `run_jobs_active_task_idx`, repeated verbatim.
+ *
+ * Postgres only infers a partial index in `ON CONFLICT` when the conflict
+ * target names the same predicate, so the two definitions must stay identical.
+ */
+const ACTIVE_JOB_PREDICATE = sql`${runJobs.status} in ('queued', 'running')`;
+
+/** How many times to re-read the winner before giving up on a conflict. */
+const ENQUEUE_ATTEMPTS = 5;
+
+async function liveJobId(
+  userId: string,
+  taskId: string,
+): Promise<string | null> {
+  const [pending] = await db
+    .select({ id: runJobs.id })
+    .from(runJobs)
+    .where(
+      and(
+        eq(runJobs.userId, userId),
+        eq(runJobs.taskId, taskId),
+        ACTIVE_JOB,
+      ),
+    )
+    .orderBy(desc(runJobs.createdAt))
+    .limit(1);
+  return pending?.id ?? null;
+}
+
 /**
  * Queue a run. Idempotent per task: asking twice while one is still queued
  * returns the same job rather than starting two runs of the same task.
+ *
+ * The read above is not a lock, so two callers can both find no live job. The
+ * insert then loses to `run_jobs_active_task_idx` instead of creating a second
+ * job, and the loser adopts the winner's row — reporting the id it tried to
+ * insert would hand out a job id that does not exist.
  */
 export async function enqueueRun(input: {
   userId: string;
   taskId: string;
   requestedBy?: string;
 }): Promise<{ jobId: string; existing: boolean }> {
-  const [pending] = await db
-    .select({ id: runJobs.id })
-    .from(runJobs)
-    .where(
-      and(
-        eq(runJobs.userId, input.userId),
-        eq(runJobs.taskId, input.taskId),
-        or(eq(runJobs.status, "queued"), eq(runJobs.status, "running")),
-      ),
-    )
-    .orderBy(desc(runJobs.createdAt))
-    .limit(1);
-  if (pending) return { jobId: pending.id, existing: true };
+  const pending = await liveJobId(input.userId, input.taskId);
+  if (pending) return { jobId: pending, existing: true };
 
-  const jobId = newId("job");
-  await db
-    .insert(runJobs)
-    .values({
-      id: jobId,
-      userId: input.userId,
-      taskId: input.taskId,
-      status: "queued",
-      requestedBy: input.requestedBy ?? "user",
-    })
-    .onConflictDoNothing();
-  return { jobId, existing: false };
+  for (let attempt = 0; attempt < ENQUEUE_ATTEMPTS; attempt += 1) {
+    const [inserted] = await db
+      .insert(runJobs)
+      .values({
+        id: newId("job"),
+        userId: input.userId,
+        taskId: input.taskId,
+        status: "queued",
+        requestedBy: input.requestedBy ?? "user",
+      })
+      .onConflictDoNothing({
+        target: runJobs.taskId,
+        where: ACTIVE_JOB_PREDICATE,
+      })
+      .returning({ id: runJobs.id });
+    if (inserted) return { jobId: inserted.id, existing: false };
+
+    // The conflict means someone else queued this task first — unless that job
+    // finished in the meantime, in which case the slot is free again.
+    const winner = await liveJobId(input.userId, input.taskId);
+    if (winner) return { jobId: winner, existing: true };
+  }
+
+  throw new Error(
+    `Could not queue task ${input.taskId}: the active job kept changing.`,
+  );
 }
 
 /**

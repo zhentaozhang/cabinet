@@ -51,6 +51,24 @@ describe("run jobs", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("queues a fresh job once the previous one finished", async () => {
+    const first = await enqueueRun({ userId: DEMO_USER_ID, taskId: TASK_ID });
+    await db
+      .update(runJobs)
+      .set({ status: "succeeded", finishedAt: new Date() })
+      .where(eq(runJobs.id, first.jobId));
+
+    const second = await enqueueRun({ userId: DEMO_USER_ID, taskId: TASK_ID });
+
+    expect(second.existing).toBe(false);
+    expect(second.jobId).not.toBe(first.jobId);
+    const rows = await db
+      .select()
+      .from(runJobs)
+      .where(eq(runJobs.taskId, TASK_ID));
+    expect(rows).toHaveLength(2);
+  });
+
   it("lets exactly one worker hold a job", async () => {
     await enqueueRun({ userId: DEMO_USER_ID, taskId: TASK_ID });
 

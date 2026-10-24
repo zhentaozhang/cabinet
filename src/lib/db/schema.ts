@@ -378,6 +378,7 @@ export const runs = pgTable(
   },
   (t) => [
     index("runs_task_idx").on(t.taskId),
+    index("runs_task_created_idx").on(t.taskId, t.createdAt),
     index("runs_agent_idx").on(t.agentId),
     index("runs_provider_attempt_idx").on(t.providerAttemptId),
     check(
@@ -404,7 +405,10 @@ export const steps = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [index("steps_run_idx").on(t.runId)],
+  (t) => [
+    index("steps_run_idx").on(t.runId),
+    uniqueIndex("steps_run_seq_idx").on(t.runId, t.idx),
+  ],
 );
 
 export const artifacts = pgTable(
@@ -669,7 +673,9 @@ export const checkins = pgTable(
   "checkins",
   {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   date: text("date").notNull(),
   energy: integer("energy").notNull(),
   mood: integer("mood").notNull(),
@@ -1110,6 +1116,12 @@ export const runJobs = pgTable(
     index("run_jobs_claim_idx").on(t.status, t.createdAt),
     index("run_jobs_user_created_idx").on(t.userId, t.createdAt),
     index("run_jobs_task_idx").on(t.taskId),
+    // At most one live job per task. A finished job leaves the slot free, so a
+    // task can always be queued again; only the select-then-insert race that
+    // produced two workers for one task is excluded.
+    uniqueIndex("run_jobs_active_task_idx")
+      .on(t.taskId)
+      .where(sql`${t.status} in ('queued', 'running')`),
   ],
 );
 

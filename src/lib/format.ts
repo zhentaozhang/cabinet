@@ -11,7 +11,7 @@ const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
       "font-size": [
-        { text: ["eyebrow", "label", "body", "title"] },
+        { text: ["eyebrow", "label", "body", "emphasis", "title", "section", "page"] },
       ],
       "text-color": [
         {
@@ -26,7 +26,6 @@ const twMerge = extendTailwindMerge({
             "violet",
             "bg",
             "panel",
-            "panel-base",
             "panel2",
             "panel-raised",
             "line",
@@ -39,9 +38,7 @@ const twMerge = extendTailwindMerge({
         {
           bg: [
             "bg",
-            "bg-void",
             "panel",
-            "panel-base",
             "panel2",
             "panel-raised",
             "line",
@@ -96,17 +93,63 @@ export function usd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+type DateFormatKind = "shortDate" | "dateTime" | "timeOnly";
+
+/**
+ * `new Intl.DateTimeFormat()` resolves locale and time-zone data on every
+ * construction and is a known CPU hotspot: one task page formats 20+ timestamps
+ * per render. Instances are therefore cached for the lifetime of the process.
+ *
+ * Only the formatter is cached — never a `Date` or a formatted string — so the
+ * helpers keep identical semantics and nothing stale can leak between calls.
+ *
+ * A cache key must carry the format kind *and* the time zone: a key that omitted
+ * the zone would hand a formatter built for Asia/Shanghai to a caller asking for
+ * UTC and silently format in the wrong zone. `undefined` means "runtime default
+ * zone", so it is encoded with a sentinel that no IANA zone name can contain
+ * (zone names have no NUL) and can never collide with a named zone.
+ */
+const NO_TIME_ZONE = "\u0000default";
+
+const formatterCache = new Map<string, Intl.DateTimeFormat>();
+
+const FORMAT_OPTIONS: Record<DateFormatKind, Intl.DateTimeFormatOptions> = {
+  shortDate: { month: "2-digit", day: "2-digit" },
+  dateTime: {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  },
+  timeOnly: { hour: "2-digit", minute: "2-digit" },
+};
+
+/** Cached formatter for one (kind, timeZone) pair; the key space stays tiny. */
+function dateFormatter(
+  kind: DateFormatKind,
+  timeZone?: string,
+): Intl.DateTimeFormat {
+  const key = `${kind}|${timeZone ?? NO_TIME_ZONE}`;
+  const cached = formatterCache.get(key);
+  if (cached) return cached;
+
+  // Built inside the miss branch: an invalid zone throws here, and a throwing
+  // construction must leave no entry behind rather than cache a broken one.
+  const formatter = new Intl.DateTimeFormat("zh-CN", {
+    ...FORMAT_OPTIONS[kind],
+    timeZone,
+  });
+  formatterCache.set(key, formatter);
+  return formatter;
+}
+
 export function shortDate(
   value: Date | string | null | undefined,
   timeZone?: string,
 ): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    timeZone,
-  }).format(d);
+  return dateFormatter("shortDate", timeZone).format(d);
 }
 
 export function dateTime(
@@ -115,13 +158,7 @@ export function dateTime(
 ): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone,
-  }).format(d);
+  return dateFormatter("dateTime", timeZone).format(d);
 }
 
 export function timeOnly(
@@ -130,11 +167,7 @@ export function timeOnly(
 ): string {
   if (!value) return "—";
   const d = typeof value === "string" ? new Date(value) : value;
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone,
-  }).format(d);
+  return dateFormatter("timeOnly", timeZone).format(d);
 }
 
 export function weekLabel(date = new Date()): string {
