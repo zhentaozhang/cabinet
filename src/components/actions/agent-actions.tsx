@@ -4,12 +4,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Brain,
+  GraduationCap,
   Loader2,
   Pause,
   Play,
   Sparkles,
   UserMinus,
 } from "lucide-react";
+import { API_ROUTES } from "@/contracts/routes";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/format";
@@ -107,6 +109,46 @@ export function ExamButton() {
       <span className="text-label text-faint">
         考试产物为确定性模拟，由 Auditor 按常规审计流程验收。
       </span>
+    </div>
+  );
+}
+
+/**
+ * 转正按钮。只有练习通过、且真实审计证据达标时后端才会放行；这里不预先判断，
+ * 让 evaluateGraduation 的拒绝理由原样显示给用户。
+ */
+export function GraduateButton() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    const data = await call(API_ROUTES.apprenticeGraduate, "POST");
+    setBusy(false);
+    if (!data.ok) {
+      const text = data.error ?? "转正失败";
+      setResult(text);
+      toast.error(text);
+      return;
+    }
+    const text = `已转正：技能 v1 已激活，依据 ${Number(data.samples ?? 0)} 份有效审计样本（通过率 ${Math.round(Number(data.passRate ?? 0) * 100)}%）。`;
+    setResult(text);
+    toast.success(text);
+    router.refresh();
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="primary" onClick={run} disabled={busy}>
+        {busy ? (
+          <Loader2 className="size-3 animate-spin" />
+        ) : (
+          <GraduationCap className="size-3" />
+        )}
+        转正为正式 Agent
+      </Button>
+      {result ? <span className="text-label text-muted">{result}</span> : null}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
 } from "@/lib/db/schema";
 import {
   decideReservation,
+  effectiveLimitCents,
   periodLimitCents,
   type ReservationDecision,
 } from "@/lib/domain/agent-budget";
@@ -114,7 +115,14 @@ export async function reserveBudget(
 
     const decision: ReservationDecision = decideReservation(
       {
-        limitCents: period.limitCents,
+        // Read the same live limit `loadWeeklyUsage` reports, so the number the
+        // UI shows is the number admission used. The stored snapshot is only a
+        // ceiling: lowering an Agent's cap mid-week must bite in this week.
+        limitCents: effectiveLimitCents(
+          period.limitCents,
+          agent.budgetCents,
+          config.budget.weeklyLimitCents,
+        ),
         reservedCents: period.reservedCents,
         settledCents: period.settledCents,
         unknownCents: period.unknownCents,

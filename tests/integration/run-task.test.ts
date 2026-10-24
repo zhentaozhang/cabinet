@@ -2,7 +2,7 @@ import { DEMO_USER_ID } from "@/lib/demo";
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { agents, runs, tasks } from "@/lib/db/schema";
+import { agents, approvals, runs, tasks } from "@/lib/db/schema";
 import {
   auditTask,
   decideApproval,
@@ -61,6 +61,32 @@ describe("runtime policy enforcement", () => {
     expect("runId" in result).toBe(true);
 
     await expect(runTask("tsk_booking", DEMO_USER_ID)).rejects.toBeInstanceOf(PolicyDenied);
+  });
+
+  it("asks for a fresh approval when a failed task is retried", async () => {
+    // A consumed approval is historical: the retry path (run.ts:88-93) drops it
+    // so the policy sees "no approval" and the task parks in awaiting_approval
+    // again, instead of the task inheriting a yes it already spent.
+    await decideApproval("appr_booking", "approve", "test", DEMO_USER_ID);
+    await expect(runTask("tsk_booking", DEMO_USER_ID)).resolves.toHaveProperty(
+      "runId",
+    );
+
+    await db
+      .update(tasks)
+      .set({ status: "failed" })
+      .where(eq(tasks.id, "tsk_booking"));
+
+    const retry = await runTask("tsk_booking", DEMO_USER_ID);
+    expect(retry).toMatchObject({ requiresApproval: true });
+    expect("runId" in retry).toBe(false);
+
+    const [approval] = await db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.id, "appr_booking"));
+    expect(approval.status).toBe("approved");
+    expect(approval.consumedAt).not.toBeNull();
   });
 
   it("rejects a repeated approval decision", async () => {

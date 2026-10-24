@@ -33,10 +33,13 @@ export type TaskActionInput = {
 const RUNNABLE = new Set(["planned", "assigned", "approved", "rejected", "failed"]);
 
 /**
- * Cancelling stops future work; it never removes the record. An in-flight run
- * is not interruptible, so it must finish (or fail) before the task can be
- * cancelled — pretending otherwise would leave a live run writing to a closed
- * task.
+ * Cancelling stops work; it never removes the record.
+ *
+ * A running task is cancellable too: refusing it only helped when a live run
+ * could still write back into a closed task. The cancel command now closes the
+ * run, its job and the budget hold in the same transaction, and the run's own
+ * write-back is guarded by `status = 'running'` — so the button can be offered
+ * instead of leaving an abandoned task unstoppable forever.
  */
 const CANCELLABLE = new Set([
   "planned",
@@ -46,10 +49,10 @@ const CANCELLABLE = new Set([
   "approved",
   "rejected",
   "failed",
+  "running",
 ]);
 
 const CANCEL_REASON: Record<string, string> = {
-  running: "正在执行，不能中途取消；等它跑完或失败",
   submitted: "已提交，验收期间不能取消",
   auditing: "正在验收，不能取消",
   accepted: "已通过验收，记录不可撤回",

@@ -41,6 +41,28 @@ export function periodLimitCents(
     : weeklyLimitCents;
 }
 
+/**
+ * The limit a period is actually judged against.
+ *
+ * `agentBudgetPeriods.limitCents` is written once, when the bucket is created,
+ * so that later policy edits cannot rewrite history. That snapshot is wrong for
+ * one direction: lowering an Agent's cap is how an operator stops a bleed, and
+ * a snapshot made it take effect the following Monday. The live limit is
+ * therefore `min(stored, current)` — a reduction applies to the week it was
+ * made in, while an increase still waits for the next period (re-opening a
+ * closed-over week mid-flight would let an existing overrun be argued away).
+ */
+export function effectiveLimitCents(
+  storedLimitCents: number,
+  agentBudgetCents: number,
+  weeklyLimitCents: number,
+): number {
+  return Math.min(
+    storedLimitCents,
+    periodLimitCents(agentBudgetCents, weeklyLimitCents),
+  );
+}
+
 export type ReservationDecision =
   | { allowed: true }
   | { allowed: false; reason: string };
@@ -55,7 +77,18 @@ export function decideReservation(
       reason: "本周预算已超支，需等到下一个预算周期。",
     };
   }
-  if (amountCents <= 0) return { allowed: true };
+  // A zero amount means "no per-run cap configured", which must still be an
+  // admission decision. Returning `allowed` unconditionally made a workspace
+  // with `maxRunCents: 0` completely ungated: every run passed, because the
+  // number it was compared against was zero, and nothing ever noticed.
+  if (amountCents <= 0) {
+    return remainingCents(usage) > 0
+      ? { allowed: true }
+      : {
+          allowed: false,
+          reason: "本周预算已用完，需等到下一个预算周期。",
+        };
+  }
   const remaining = remainingCents(usage);
   if (remaining < amountCents) {
     return {

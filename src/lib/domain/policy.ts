@@ -606,3 +606,108 @@ export function decideUpgrade(input: {
 
   return outcome(allow("Agent meets upgrade thresholds."), null);
 }
+
+/** The finite set of reasons a 转正 (apprentice → active) can be refused. */
+export type GraduationDenialCode =
+  | "no_practice_pass"
+  | "retired"
+  | "paused"
+  | "low_trust"
+  | "too_few_successes"
+  | "insufficient_samples"
+  | "low_pass_rate";
+
+export type GraduationDecision = PolicyDecision & {
+  /** Null when graduation is allowed. */
+  code: GraduationDenialCode | null;
+  samples: number;
+  passRate: number;
+};
+
+/**
+ * Decide whether an apprentice who practice-passed the deterministic exam may
+ * become a real, on-duty Agent.
+ *
+ * This is the "separately designed real evaluation" the exam comment points at:
+ * the practice exam only proves the drill was completed, so graduation is
+ * judged on evidence the apprentice produced *after* it — audited tasks that
+ * count as real model execution — plus the same trust/success floors a level
+ * upgrade uses. Without this, `practice_passed` had exactly one exit
+ * (retirement) and the 「学徒需先通过转正考核」 message in `decideUpgrade` pointed
+ * at nothing.
+ *
+ * `auditPassRate`/`auditSamples` come from an already-filtered audit window,
+ * same contract as `decideUpgrade`: an empty window is missing evidence, not a
+ * zero pass rate, so the sample floor is checked before the rate.
+ */
+export function decideGraduation(input: {
+  actor: Actor;
+  auditPassRate: number;
+  auditSamples: number;
+  config: PolicyConfig;
+}): GraduationDecision {
+  const { actor, auditPassRate, auditSamples, config } = input;
+  const outcome = (decision: PolicyDecision, code: GraduationDenialCode | null) => ({
+    ...decision,
+    code,
+    samples: auditSamples,
+    passRate: auditPassRate,
+  });
+
+  if (actor.status === "retired" || actor.lifecycleStage === "retired") {
+    return outcome(deny("退休的学徒不能转正。"), "retired");
+  }
+
+  if (actor.status === "paused") {
+    return outcome(deny("学徒已暂停，先恢复再谈转正。"), "paused");
+  }
+
+  if (actor.lifecycleStage !== "practice_passed") {
+    return outcome(
+      deny(
+        `转正需要先通过练习考核，当前阶段是 ${actor.lifecycleStage}。`,
+      ),
+      "no_practice_pass",
+    );
+  }
+
+  if (actor.trustScore < config.autonomy.minTrust) {
+    return outcome(
+      deny(
+        `信任分 ${actor.trustScore.toFixed(0)} 低于 ${config.autonomy.minTrust}，转正需要真实任务积累。`,
+      ),
+      "low_trust",
+    );
+  }
+
+  if (actor.successCount < config.autonomy.minSuccesses) {
+    return outcome(
+      deny(
+        `成功任务 ${actor.successCount} 少于要求的 ${config.autonomy.minSuccesses}。`,
+      ),
+      "too_few_successes",
+    );
+  }
+
+  if (auditSamples < config.autonomy.minAuditSamples) {
+    return outcome(
+      deny(
+        `有效审计样本 ${auditSamples} 个，少于要求的 ${config.autonomy.minAuditSamples} 个。`,
+      ),
+      "insufficient_samples",
+    );
+  }
+
+  if (auditPassRate < config.autonomy.minAuditPassRate) {
+    return outcome(
+      deny(
+        `审计通过率 ${(auditPassRate * 100).toFixed(1)}% 低于 ${(
+          config.autonomy.minAuditPassRate * 100
+        ).toFixed(0)}%。`,
+      ),
+      "low_pass_rate",
+    );
+  }
+
+  return outcome(allow("练习通过，且真实审计证据达标，可以转正。"), null);
+}

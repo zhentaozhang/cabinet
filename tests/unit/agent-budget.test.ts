@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   decideReservation,
+  effectiveLimitCents,
   periodLimitCents,
   planSettlement,
   remainingCents,
@@ -27,6 +28,23 @@ describe("weekly budget limit", () => {
   });
 });
 
+describe("live limit", () => {
+  it("applies a cap lowered after the period was opened", () => {
+    // The bucket was opened against 1200; the Agent's cap is now 100.
+    expect(effectiveLimitCents(1200, 100, 60000)).toBe(100);
+  });
+
+  it("ignores a cap raised after the period was opened until the next one", () => {
+    expect(effectiveLimitCents(1200, 9000, 60000)).toBe(1200);
+  });
+
+  it("keeps the stored limit when nothing changed", () => {
+    expect(effectiveLimitCents(1200, 1200, 60000)).toBe(1200);
+    // A weekly ceiling tightened mid-week also bites immediately.
+    expect(effectiveLimitCents(1200, 1200, 500)).toBe(500);
+  });
+});
+
 describe("remaining allowance", () => {
   it("counts reserved, settled and unknown exposure together", () => {
     const u = usage({ reservedCents: 50, settledCents: 100, unknownCents: 25 });
@@ -48,6 +66,17 @@ describe("reservation decision", () => {
 
   it("allows a reservation that exactly fits", () => {
     expect(decideReservation(usage({ settledCents: 950 }), 50).allowed).toBe(true);
+  });
+
+  it("still refuses a zero-amount admission once the week is spent", () => {
+    // `maxRunCents: 0` means "no per-run cap", not "no gate": a hold of 0 used
+    // to be allowed unconditionally, which made the budget ledger advisory.
+    const spent = usage({ settledCents: 1000 });
+    const decision = decideReservation(spent, 0);
+    expect(decision.allowed).toBe(false);
+    expect(decision.allowed === false && decision.reason).toContain("用完");
+
+    expect(decideReservation(usage({ settledCents: 999 }), 0).allowed).toBe(true);
   });
 
   it("blocks everything once the period is in overrun", () => {

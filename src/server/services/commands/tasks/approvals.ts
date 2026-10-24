@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { approvals, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
@@ -88,6 +88,122 @@ export async function requestApproval(
   return created;
 }
 
+export type ExpiredApproval = {
+  expired: boolean;
+  taskId: string | null;
+  /** True when the task was parked in `awaiting_approval` and went back to `planned`. */
+  taskRewound: boolean;
+};
+
+/**
+ * Hand a spent approval back to the task it was made for.
+ *
+ * `decideRun` denies a task whose latest approval is `approved` **and already
+ * consumed** with "Approval has already been consumed." — the branch exists so a
+ * second run cannot ride on one human yes. Every rewind path therefore has to
+ * decide what happens to the consumed approval, and leaving it consumed creates a
+ * button that always fails: the task is `planned` (so the Run button is enabled)
+ * but the policy denies every attempt, and `awaitApproval` is never reached, so
+ * the user cannot even ask again.
+ *
+ * Reopening keeps the human decision with the task: a retry the user pressed is
+ * itself the yes, and the approval still gates whatever runs next.
+ *
+ * Shared on purpose. The recovery sweep and the failed/rejected retry path both
+ * rewind a task; when only one of them reopened the approval, the other one left
+ * exactly the trap described above.
+ */
+export async function reopenConsumedApprovalsTx(
+  tx: Tx,
+  taskId: string,
+): Promise<number> {
+  const reopened = await tx
+    .update(approvals)
+    .set({ consumedAt: null })
+    .where(
+      and(
+        eq(approvals.taskId, taskId),
+        eq(approvals.status, "approved"),
+        isNotNull(approvals.consumedAt),
+      ),
+    )
+    .returning({ id: approvals.id });
+  return reopened.length;
+}
+
+/**
+ * Expire one pending approval inside the caller's transaction.
+ *
+ * Two callers need exactly this: a human who opens an approval past its
+ * `expiresAt` (it must flip to `expired` right then), and the maintenance tick,
+ * which sweeps the approvals nobody ever came back to. Sharing one body keeps a
+ * single definition of what "expired" does to the task — a second copy would
+ * drift, and the drift decides whether a task is stuck in `awaiting_approval`
+ * forever.
+ *
+ * The update is conditional on `status = 'pending'`, so a sweep racing the
+ * user's click, or two sweeps racing each other, cannot expire the same row (and
+ * write two audit events) twice.
+ */
+export async function expireApprovalInTx(
+  tx: Tx,
+  input: { approvalId: string; userId?: string; now?: Date },
+): Promise<ExpiredApproval> {
+  const now = input.now ?? new Date();
+  const [expired] = await tx
+    .update(approvals)
+    .set({ status: "expired", decidedAt: now })
+    .where(
+      and(
+        eq(approvals.id, input.approvalId),
+        eq(approvals.status, "pending"),
+        input.userId ? eq(approvals.userId, input.userId) : undefined,
+      ),
+    )
+    .returning();
+  if (!expired) return { expired: false, taskId: null, taskRewound: false };
+
+  let taskRewound = false;
+  if (expired.taskId) {
+    const [task] = await tx
+      .select()
+      .from(tasks)
+      .where(
+        and(eq(tasks.id, expired.taskId), eq(tasks.userId, expired.userId)),
+      );
+    if (task?.status === "awaiting_approval") {
+      assertTransition("task", task.status, "planned");
+      const [updated] = await tx
+        .update(tasks)
+        .set({ status: "planned", updatedAt: now })
+        .where(
+          and(
+            eq(tasks.id, task.id),
+            eq(tasks.userId, expired.userId),
+            eq(tasks.status, "awaiting_approval"),
+          ),
+        )
+        .returning({ id: tasks.id });
+      taskRewound = Boolean(updated);
+    }
+  }
+
+  await logAuditTx(tx, {
+    userId: expired.userId,
+    actor: "system",
+    action: "approval.expire",
+    target: expired.id,
+    before: { status: "pending" },
+    after: {
+      status: "expired",
+      taskId: expired.taskId,
+      taskRewound,
+    },
+  });
+
+  return { expired: true, taskId: expired.taskId ?? null, taskRewound };
+}
+
 export async function decideApproval(
   approvalId: string,
   decision: "approve" | "reject",
@@ -106,52 +222,11 @@ export async function decideApproval(
     throw new ConflictError(`Approval is already ${approval.status}.`);
   }
   if (approval.expiresAt && approval.expiresAt.getTime() <= Date.now()) {
-    await db.transaction(async (tx) => {
-      const [expired] = await tx
-        .update(approvals)
-        .set({ status: "expired", decidedAt: new Date() })
-        .where(
-          and(
-            eq(approvals.id, approvalId),
-            eq(approvals.userId, userId),
-            eq(approvals.status, "pending"),
-          ),
-        )
-        .returning();
-      if (!expired) return;
-      if (approval.taskId) {
-        const [task] = await tx
-          .select()
-          .from(tasks)
-          .where(
-            and(
-              eq(tasks.id, approval.taskId),
-              eq(tasks.userId, userId),
-            ),
-          );
-        if (task?.status === "awaiting_approval") {
-          assertTransition("task", task.status, "planned");
-          await tx
-            .update(tasks)
-            .set({ status: "planned", updatedAt: new Date() })
-            .where(
-              and(
-                eq(tasks.id, task.id),
-                eq(tasks.userId, userId),
-                eq(tasks.status, "awaiting_approval"),
-              ),
-            );
-        }
-      }
-      await logAuditTx(tx, {
-        userId,
-        actor: "system",
-        action: "approval.expire",
-        target: approvalId,
-        before: { status: "pending" },
-        after: { status: "expired", taskId: approval.taskId },
-      });
-    });
+    // The same transaction body the maintenance sweep uses, so an approval
+    // expired here and one expired by cron leave identical rows behind.
+    await db.transaction((tx) =>
+      expireApprovalInTx(tx, { approvalId, userId }),
+    );
     throw new ConflictError(
       "Approval expired; the task was returned to planned.",
     );

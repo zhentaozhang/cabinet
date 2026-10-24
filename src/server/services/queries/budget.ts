@@ -1,7 +1,11 @@
 import { and, desc, eq, gt, gte, lt, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agentBudgetPeriods, agents, runs } from "@/lib/db/schema";
-import { periodLimitCents, type BudgetUsage } from "@/lib/domain/agent-budget";
+import {
+  effectiveLimitCents,
+  periodLimitCents,
+  type BudgetUsage,
+} from "@/lib/domain/agent-budget";
 import { addLocalDays, startOfLocalWeek } from "@/lib/domain/time";
 import { getPolicyConfig } from "@/lib/policy/config";
 import type { Tx } from "../shared/tx";
@@ -141,7 +145,13 @@ export async function loadWeeklyUsage(
       periodStart: period.periodStart,
       periodEnd: period.periodEnd,
       timezone: period.timezone,
-      limitCents: period.limitCents,
+      // A cap lowered after the bucket was opened applies immediately; a raised
+      // one waits for the next period. See `effectiveLimitCents`.
+      limitCents: effectiveLimitCents(
+        period.limitCents,
+        agent.budgetCents,
+        config.budget.weeklyLimitCents,
+      ),
       reservedCents: period.reservedCents,
       settledCents: period.settledCents,
       unknownCents: period.unknownCents,

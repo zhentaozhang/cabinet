@@ -13,6 +13,8 @@ import { db } from "@/lib/db";
 import {
   agentBudgetPeriods,
   agentBudgetReservations,
+  agents,
+  policyConfig,
   runs,
 } from "@/lib/db/schema";
 import { RUN_COST_CENTS } from "@/lib/db/seed";
@@ -283,6 +285,68 @@ describe("weekly budget ledger", () => {
 
     const again = await loadWeeklyUsage(AGENT_ID, TIMEZONE);
     expect(again.periodId).toBe(usage.periodId);
+  });
+
+  it("keeps accounting even when no per-run cap is configured", async () => {
+    // `maxRunCents: 0` used to skip `reserveBudget` entirely, so nothing was
+    // ever settled and every later admission saw an empty period.
+    const [cost] = await db
+      .select()
+      .from(policyConfig)
+      .where(eq(policyConfig.key, "cost"));
+    await db
+      .update(policyConfig)
+      .set({ valueJson: { ...(cost.valueJson as object), maxRunCents: 0 } })
+      .where(eq(policyConfig.key, "cost"));
+
+    harness.impl = async () => ({
+      status: "success",
+      ...liveCtx,
+      attemptId: "att_uncapped",
+      costSource: "actual",
+      draft: { title: "标题", content: "正文", tokensIn: 500, tokensOut: 500 },
+    });
+
+    await runTaskOnce();
+
+    const [reservation] = await reservationRows();
+    expect(reservation.amountCents).toBe(0);
+    expect(reservation.state).toBe("settled");
+    expect(reservation.settledCents).toBeCloseTo(0.8, 5);
+
+    const [period] = await periodRows();
+    expect(period.reservedCents).toBe(0);
+    // 1 000 tokens * 0.8c/1k measured, on top of the seeded ¥1.80.
+    expect(period.settledCents).toBeCloseTo(SEEDED_SETTLED_CENTS + 0.8, 5);
+  });
+
+  it("applies a lowered Agent cap in the week it was lowered", async () => {
+    await db
+      .update(agents)
+      .set({ budgetCents: 100 })
+      .where(eq(agents.id, AGENT_ID));
+
+    const usage = await loadWeeklyUsage(AGENT_ID, TIMEZONE);
+    expect(usage.limitCents).toBe(100);
+
+    // 100 - 180 already settled leaves nothing, so the next hold is refused
+    // instead of silently using the 1200 the bucket was opened with.
+    const denied = await reserveBudget({
+      userId: DEMO_USER_ID,
+      agentId: AGENT_ID,
+      taskId: TASK_ID,
+      timezone: TIMEZONE,
+      amountCents: 50,
+    });
+    expect(denied.allowed).toBe(false);
+    expect(denied.allowed === false && denied.reason).toContain("0c");
+
+    // Raising it back does not reopen the week: the stored snapshot is a floor.
+    await db
+      .update(agents)
+      .set({ budgetCents: 9000 })
+      .where(eq(agents.id, AGENT_ID));
+    expect((await loadWeeklyUsage(AGENT_ID, TIMEZONE)).limitCents).toBe(1200);
   });
 
   it("counts a live run once in the local week of its user", async () => {

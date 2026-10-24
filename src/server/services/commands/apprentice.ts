@@ -18,6 +18,7 @@ import { assertTransition } from "@/lib/domain/state";
 import {
   ConflictError,
   NotFoundError,
+  PolicyDenied,
   ValidationError,
 } from "@/lib/domain/errors";
 import {
@@ -29,6 +30,7 @@ import {
   type ApprenticeshipEvidence,
   type ObservationCandidate,
 } from "../queries/apprenticeship";
+import { evaluateGraduation } from "../queries/autonomy";
 import { draftFor } from "../shared/draft";
 import { auditTask } from "./tasks/audit";
 
@@ -604,4 +606,98 @@ export async function runApprenticeExam(userId: string) {
     requiredObservations: attempt.requiredObservations,
     ...result,
   };
+}
+
+export type GraduateResult = {
+  graduated: boolean;
+  reason: string;
+  samples: number;
+  passRate: number;
+};
+
+/**
+ * 转正：把 `practice_passed` 的学徒提升为可接单的正式 Agent。
+ *
+ * The practice exam only proves the drill was completed (the UI says so since
+ * the deterministic exam is a simulation), so graduation is judged on real
+ * evidence instead — audited work that counts as actual model execution, plus
+ * the trust/success floors. `evaluateGraduation` is the same authority the
+ * Review page could read, and the write-back is conditional on the stage we
+ * decided on, so two clicks can never graduate twice or resurrect a retired
+ * apprentice.
+ *
+ * Before this existed, `practice_passed` had exactly one legal exit (retired)
+ * and the `promoted` field on the exam result was hard-coded to false.
+ */
+export async function graduateApprentice(
+  userId: string,
+): Promise<GraduateResult> {
+  return db.transaction(async (tx) => {
+    const apprentice = await loadApprentice(userId, tx);
+    if (apprentice.lifecycleStage === "active") {
+      throw new ConflictError("学徒已经转正，无需重复操作。");
+    }
+
+    const decision = await evaluateGraduation(apprentice.id, userId, tx);
+    if (!decision.allowed) {
+      throw new PolicyDenied(`还不能转正：${decision.reason}`);
+    }
+
+    assertTransition("apprentice", apprentice.lifecycleStage, "active");
+
+    const [graduated] = await tx
+      .update(agents)
+      .set({ lifecycleStage: "active", status: "active", rejectStreak: 0 })
+      .where(
+        and(
+          eq(agents.id, apprentice.id),
+          eq(agents.lifecycleStage, "practice_passed"),
+        ),
+      )
+      .returning();
+    if (!graduated) {
+      throw new ConflictError("Apprentice state changed; retry.");
+    }
+
+    // v1 goes live only now. The practice pass deliberately left the skill as a
+    // draft; an on-duty Agent whose skill is still a draft would take work with
+    // no plan to run.
+    await tx
+      .update(skills)
+      .set({ status: "active", label: "v1" })
+      .where(
+        and(
+          eq(skills.agentId, apprentice.id),
+          inArray(skills.status, ["draft", "exam"]),
+        ),
+      );
+
+    await logAuditTx(tx, {
+      userId,
+      actor: "system",
+      action: "apprentice.graduated",
+      target: apprentice.id,
+      before: {
+        stage: apprentice.lifecycleStage,
+        status: apprentice.status,
+        autonomyLevel: apprentice.autonomyLevel,
+        trustScore: apprentice.trustScore,
+      },
+      after: {
+        stage: "active",
+        status: "active",
+        skill: "v1",
+        samples: decision.samples,
+        passRate: decision.passRate,
+        reason: decision.reason,
+      },
+    });
+
+    return {
+      graduated: true,
+      reason: decision.reason,
+      samples: decision.samples,
+      passRate: decision.passRate,
+    };
+  });
 }

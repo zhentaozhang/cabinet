@@ -30,6 +30,7 @@ export const API_ROUTES = {
   agent: (id: string) => `/api/agents/${id}`,
   autonomy: (id: string) => `/api/autonomy/${id}`,
   apprenticeExam: "/api/apprentice/exam",
+  apprenticeGraduate: "/api/apprentice/graduate",
   apprenticeObservations: "/api/apprentice/observations",
   checkin: "/api/checkin",
   brief: "/api/brief",

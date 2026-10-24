@@ -225,7 +225,7 @@ export function TaskActions({
       <ConfirmDialog
         open={confirmCancel}
         title="取消这个任务？"
-        description="取消只是停止后续动作：已经产出的产物、证据、审计记录和已花掉的钱都会保留，不会被删除。正在执行中的任务不能取消。"
+        description="取消只是停止后续动作：已经产出的产物、证据、审计记录和已花掉的钱都会保留，不会被删除。正在执行的任务也能取消：这一轮运行会被标记为失败，途中可能已发生的用量按未知记账。"
         confirmLabel="确认取消任务"
         busy={busy === "cancel"}
         onConfirm={cancel}

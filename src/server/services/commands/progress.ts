@@ -7,12 +7,33 @@ import type { LearningConfig } from "@/lib/domain/policy";
 
 export const LEARNING_TEMPLATES = ["learning", "learning_retest"] as const;
 
+/**
+ * The only goal domain the formula below can score.
+ *
+ * `goals.domain` is free text（seed 里有 learning / health / calendar / council），
+ * and this formula reads the user's *learning* history: learning-template tasks,
+ * weekly check-ins and the latest recall score. Applied to a fitness goal it
+ * writes a number that has nothing to do with that goal (the review measured a
+ * fake 18%–38%), so every other domain is left alone.
+ */
+export const LEARNING_GOAL_DOMAIN = "learning";
+
 export async function recalculateGoalProgress(
   tx: Tx,
   userId: string,
   goalId: string,
   config: LearningConfig,
 ): Promise<void> {
+  // Both callers below need the same answer, and two more call this directly:
+  // tasks/create.ts and tasks/audit.ts pass whichever goal the task belongs to.
+  // So the guard lives here — a caller-side filter alone would still let an
+  // audited health goal be overwritten with a learning score.
+  const [goal] = await tx
+    .select({ domain: goals.domain })
+    .from(goals)
+    .where(and(eq(goals.id, goalId), eq(goals.userId, userId)));
+  if (!goal || goal.domain !== LEARNING_GOAL_DOMAIN) return;
+
   const [user] = await tx
     .select({ timezone: users.timezone })
     .from(users)
@@ -75,7 +96,15 @@ export async function recalculateUserGoalProgress(
   const rows = await tx
     .select({ id: goals.id })
     .from(goals)
-    .where(and(eq(goals.userId, userId), eq(goals.status, "active")));
+    .where(
+      and(
+        eq(goals.userId, userId),
+        eq(goals.status, "active"),
+        // The callee re-checks this; filtering here only avoids re-reading the
+        // learning history once per non-learning goal.
+        eq(goals.domain, LEARNING_GOAL_DOMAIN),
+      ),
+    );
   for (const goal of rows) {
     await recalculateGoalProgress(tx, userId, goal.id, config);
   }

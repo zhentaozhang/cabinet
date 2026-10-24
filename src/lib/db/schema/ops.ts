@@ -19,7 +19,13 @@ export const idempotencyKeys = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [uniqueIndex("idempotency_user_key_idx").on(t.userId, t.key)],
+  (t) => [
+    uniqueIndex("idempotency_user_key_idx").on(t.userId, t.key),
+    // The expiry sweep (`pruneIdempotencyKeys`) deletes by `expires_at` alone;
+    // the unique index leads with `user_id`, so without this it was a seq scan
+    // on every tick.
+    index("idempotency_expires_idx").on(t.expiresAt),
+  ],
 );
 
 export const userActions = pgTable(
@@ -51,6 +57,9 @@ export const rateLimits = pgTable(
       t.action,
       t.windowStart,
     ),
+    // `pruneRateLimits` deletes by `window_start < cutoff` across all users;
+    // the unique index cannot serve that predicate from its leading column.
+    index("rate_limit_window_idx").on(t.windowStart),
   ],
 );
 
@@ -98,6 +107,8 @@ export const outbox = pgTable(
     uniqueIndex("outbox_user_dedupe_idx").on(t.userId, t.dedupeKey),
     index("outbox_due_idx").on(t.status, t.nextAttemptAt),
     index("outbox_user_created_idx").on(t.userId, t.createdAt),
+    // `archiveOldOutbox` deletes terminal rows by age across all users.
+    index("outbox_status_created_idx").on(t.status, t.createdAt),
   ],
 );
 

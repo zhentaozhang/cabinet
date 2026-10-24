@@ -82,15 +82,6 @@ async function auditTaskInner(taskId: string, userId: string) {
     .from(runs)
     .where(eq(runs.taskId, taskId))
     .orderBy(desc(runs.createdAt));
-  const [artifact] = await db
-    .select()
-    .from(artifacts)
-    .where(eq(artifacts.taskId, taskId))
-    .orderBy(desc(artifacts.createdAt))
-    .limit(1);
-
-  const userSubmitted = artifact?.submittedBy === "user";
-
   const result = await db.transaction(async (tx) => {
     const [locked] = await tx
       .update(tasks)
@@ -104,6 +95,19 @@ async function auditTaskInner(taskId: string, userId: string) {
       )
       .returning();
     if (!locked) throw new ConflictError("Task is not submitted for audit.");
+
+    // Read the artifact after the status lock, not before it. Submitting is
+    // only allowed from planned/assigned/submitted/rejected, so once the row is
+    // `auditing` no new artifact can appear — the content judged below is the
+    // content recorded in the report. Reading it before the lock left a window
+    // where a concurrent submission swapped the draft mid-audit.
+    const [artifact] = await tx
+      .select()
+      .from(artifacts)
+      .where(eq(artifacts.taskId, taskId))
+      .orderBy(desc(artifacts.createdAt))
+      .limit(1);
+    const userSubmitted = artifact?.submittedBy === "user";
 
     const runId = newId("run");
     await tx.insert(runs).values({
@@ -144,9 +148,7 @@ async function auditTaskInner(taskId: string, userId: string) {
     });
 
     let pass = Boolean(artifact);
-    let reason = pass
-      ? "产物存在，验收标准逐条对照通过。"
-      : "没有找到可验收的产物。";
+    let reason = "没有找到可验收的产物。";
     let acceptanceReport: AcceptanceResult[] | null = null;
 
     if (artifact && task.acceptanceChecklist?.length) {
@@ -181,18 +183,36 @@ async function auditTaskInner(taskId: string, userId: string) {
             .map((result) => result.reason)
             .join("；")}`;
     } else if (artifact) {
+      // No checklist: the criteria are prose, so nothing was compared line by
+      // line. This branch used to report "验收标准逐条对照通过" while comparing
+      // nothing at all, and the page showed that sentence to the user.
       const requiresRubric =
         task.acceptanceCriteria.includes("评分标准") ||
         task.acceptanceCriteria.toLowerCase().includes("rubric");
-      if (requiresRubric) {
-        const hasRubric =
-          artifact.content.includes("## 评分标准") ||
-          artifact.content.includes("| 维度 |");
-        if (!hasRubric) {
-          pass = false;
-          reason = "缺少评分标准（rubric），无法判断题目质量。请补充后重新提交。";
-        }
-      }
+      const hasRubric =
+        artifact.content.includes("## 评分标准") ||
+        artifact.content.includes("| 维度 |");
+      const missingRubric = requiresRubric && !hasRubric;
+
+      acceptanceReport = [
+        {
+          item: {
+            type: "manual",
+            note: task.acceptanceCriteria.trim() || task.title,
+            required: true,
+          },
+          passed: false,
+          undetermined: true,
+          reason:
+            "本任务没有验收清单，Auditor 只确认了产物存在；「逐条对照」没有发生，需要你人工判定",
+        },
+      ];
+      pass = artifact.content.trim().length > 0 && !missingRubric;
+      reason = missingRubric
+        ? "缺少评分标准（rubric），无法判断题目质量。请补充后重新提交。"
+        : pass
+          ? "产物已提交；任务没有验收清单，验收没有逐条对照，结论待你确认。"
+          : "产物是空的，没有可验收的内容。";
     }
 
     await addStep({
@@ -380,7 +400,13 @@ async function auditTaskInner(taskId: string, userId: string) {
         nextStatus === "accepted" ? "audit.accept" : "audit.reject",
       target: taskId,
       before: { status: "auditing" },
-      after: { status: nextStatus, reason },
+      after: {
+        status: nextStatus,
+        reason,
+        // Which draft was judged. Without it a report could never be tied back
+        // to the content it describes once a newer artifact exists.
+        artifactId: artifact?.id ?? null,
+      },
     });
 
     return { runId, nextStatus, reason, pausedInfo };

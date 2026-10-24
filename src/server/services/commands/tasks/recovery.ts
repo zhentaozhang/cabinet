@@ -2,7 +2,9 @@ import { and, eq, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { runJobs, runs, steps, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
+import { assertTransition } from "@/lib/domain/state";
 import { settleBudget } from "./execution";
+import { reopenConsumedApprovalsTx } from "./approvals";
 
 /** A run that has been `running` for longer than this is considered abandoned. */
 export const DEFAULT_STALE_RUN_MS = 15 * 60 * 1000;
@@ -86,10 +88,22 @@ export async function recoverStaleRuns(
       if (!failed) return null;
 
       // Rewind the task so it can be retried deliberately, never silently.
-      await tx
+      // Declared in the transition table instead of a bare UPDATE: this is the
+      // one rollback the task machine allows, and it must stay visible there.
+      assertTransition("task", "running", "planned");
+      const [rewound] = await tx
         .update(tasks)
         .set({ status: "planned", updatedAt: now })
-        .where(and(eq(tasks.id, run.taskId), eq(tasks.status, "running")));
+        .where(and(eq(tasks.id, run.taskId), eq(tasks.status, "running")))
+        .returning({ id: tasks.id });
+
+      // Reopen the approval this run consumed. Shared with the failed/rejected
+      // retry path (`run.ts` `resetForRetry`): both rewind a task, and a rewind
+      // that leaves the approval consumed produces a Run button that can only
+      // ever fail with "Approval has already been consumed."
+      const reopened = rewound
+        ? await reopenConsumedApprovalsTx(tx, run.taskId)
+        : 0;
 
       await tx
         .update(runJobs)
@@ -112,6 +126,7 @@ export async function recoverStaleRuns(
           status: "failed",
           settlement: settlement?.outcome ?? "no_hold",
           providerContacted: contacted,
+          approvalReopened: reopened > 0,
         },
       });
 

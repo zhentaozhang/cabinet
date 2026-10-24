@@ -59,7 +59,10 @@ const policyConfigSchema = z.object({
     perMinuteCents: z.number(),
     centsPer1kTokens: z.number(),
     maxOutputTokens: z.number().int().positive(),
-    maxRunCents: z.number().nonnegative(),
+    // `0` is a supported value: "no per-run cap". It no longer disables
+    // accounting — run.ts always writes a hold — but the schema still refuses
+    // fractional cents and negatives.
+    maxRunCents: z.number().int().nonnegative(),
   }),
   council: z.object({
     roleWeights: z.record(z.string(), z.number()),

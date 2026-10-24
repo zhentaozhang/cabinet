@@ -30,7 +30,14 @@ export const TRANSITIONS: Record<
     suggested: ["planned", "cancelled"],
     awaiting_approval: ["approved", "cancelled", "planned"],
     approved: ["running", "cancelled"],
-    running: ["submitted", "failed"],
+    // A run in flight is interruptible: the user may stop work that is going
+    // nowhere, and the cancel command closes the run and its job in the same
+    // transaction. Without this edge, a task whose worker died mid-run could
+    // never be closed at all.
+    // `planned` is the recovery rollback: a run whose process died rewinds its
+    // task through this table rather than with a bare UPDATE (see
+    // `recoverStaleRuns`), so the machine stays the single source of truth.
+    running: ["submitted", "failed", "cancelled", "planned"],
     submitted: ["auditing", "rejected"],
     auditing: ["accepted", "rejected"],
     // Cancelling a rejected task is giving up on it, which must be possible.
@@ -71,9 +78,11 @@ export const TRANSITIONS: Record<
     shadowing: ["drafting", "retired"],
     drafting: ["examining", "retired"],
     examining: ["active", "drafting", "practice_passed", "retired"],
-    // A practice pass is the end of the simulated track: only retirement is a
-    // legal next step, real promotion needs a separately designed evaluation.
-    practice_passed: ["retired"],
+    // A practice pass only ends the simulated track. Promotion is a separate
+    // decision made by `graduateApprentice`, which requires real audit
+    // evidence collected after the pass (decideGraduation), so the edge exists
+    // but no caller can take it on the practice result alone.
+    practice_passed: ["active", "retired"],
     active: ["retired"],
     retired: [],
   },

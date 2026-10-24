@@ -2,7 +2,12 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
 import { getPolicyConfig } from "@/lib/policy/config";
-import { decideUpgrade, type UpgradeDecision } from "@/lib/domain/policy";
+import {
+  decideGraduation,
+  decideUpgrade,
+  type GraduationDecision,
+  type UpgradeDecision,
+} from "@/lib/domain/policy";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
 import { loadAuditWindow } from "./audit-samples";
 
@@ -77,6 +82,65 @@ export async function evaluateAutonomyUpgrade(
     config,
   });
   return toUpgradeResult(targetLevel, decision);
+}
+
+export type GraduationResult = {
+  allowed: boolean;
+  code: GraduationDecision["code"];
+  reason: string;
+  samples: number;
+  passRate: number;
+};
+
+/**
+ * The single authority for "may this apprentice become a real Agent?".
+ *
+ * It reads the same audit window the Review page reads, so the 转正 button and
+ * the command path can never disagree about whether the evidence is there.
+ * Deliberately separate from `evaluateAutonomyUpgrade`: that one refuses any
+ * non-active lifecycle, which is exactly what graduation is trying to leave.
+ */
+export async function evaluateGraduation(
+  agentId: string,
+  userId: string,
+  tx?: Parameters<Parameters<typeof db.transaction>[0]>[0],
+): Promise<GraduationResult> {
+  const client = tx ?? db;
+  const [agent] = await client
+    .select()
+    .from(agents)
+    .where(and(eq(agents.id, agentId), eq(agents.userId, userId)));
+  if (!agent) throw new NotFoundError("Agent not found");
+
+  const config = await getPolicyConfig();
+  const window = await loadAuditWindow(
+    agent.id,
+    userId,
+    config.audit.passRateWindow,
+    tx,
+  );
+  const decision = decideGraduation({
+    actor: {
+      id: agent.id,
+      role: agent.role,
+      status: agent.status,
+      lifecycleStage: agent.lifecycleStage,
+      autonomyLevel: agent.autonomyLevel,
+      trustScore: agent.trustScore,
+      successCount: agent.successCount,
+    },
+    auditPassRate: window.passRate,
+    auditSamples: window.eligibleSamples.length,
+    config,
+  });
+
+  return {
+    allowed: decision.effect !== "deny",
+    code: decision.code,
+    reason: decision.reason,
+    samples: decision.samples,
+    passRate: decision.passRate,
+  };
 }
 
 /** Evaluate every on-duty Agent once, for the Review page. */

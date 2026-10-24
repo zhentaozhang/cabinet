@@ -49,4 +49,15 @@ describe("task actions", () => {
     expect(actions.run.allowed).toBe(false);
     expect(actions.audit.allowed).toBe(false);
   });
+
+  it("offers cancel while the task is running", () => {
+    // Refusing this used to be the only way to keep a live run from writing
+    // into a closed task. The run's write-back is now guarded by
+    // status = 'running', so the button can be offered — which is what makes an
+    // abandoned run (dead worker, inline mode) stoppable at all.
+    const actions = taskActions({ ...base, status: "running" });
+    expect(actions.cancel.allowed).toBe(true);
+    expect(actions.cancel.reason).toBe("");
+    expect(actions.run.allowed).toBe(false);
+  });
 });

@@ -37,6 +37,7 @@ import {
   AgentAdmin,
   AutonomyControl,
   ExamButton,
+  GraduateButton,
   ObservationRecorder,
   RevokeGrantButton,
 } from "@/components/actions";
@@ -290,7 +291,9 @@ export default async function AgentPage({
                 ) : null}
                 {agent.lifecycleStage === "practice_passed" ? (
                   <div className="rounded-md border border-violet/25 bg-violet/[0.05] px-3 py-2 text-label text-violet">
-                    练习通过：确定性考试只证明练习完成，转正需要单独设计的真实评估。
+                    练习通过：确定性考试只证明练习完成。转正改看真实证据——信任分、成功任务，
+                    以及真实运行被验收后的有效审计样本与通过率。
+                    <GraduateButton />
                   </div>
                 ) : null}
                 {apprenticeship ? (

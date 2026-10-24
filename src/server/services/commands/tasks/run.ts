@@ -7,7 +7,9 @@ import {
   approvals,
   artifacts,
   auditEvents,
+  profiles,
   runs,
+  skills as skillsTable,
   steps,
   tasks,
   users,
@@ -23,6 +25,7 @@ import { extractFirstUrl } from "@/lib/connectors/page";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { planTools, type ToolStepStatus } from "@/lib/domain/tool-plan";
+import { mergeTools, readRules } from "@/lib/domain/execution-context";
 import { decideRun } from "@/lib/domain/policy";
 import { usageCents } from "@/lib/domain/agent-budget";
 import { enqueueNotification, notices } from "../notify";
@@ -284,27 +287,30 @@ export async function runTask(taskId: string, userId: string) {
       if (!consumed) throw new ConflictError("Approval already consumed.");
     }
 
-    let hold: { reservationId: string; amountCents: number } | null = null;
-    if (config.cost.maxRunCents > 0) {
-      const reserved = await reserveBudget(
-        {
-          userId: task.userId,
-          agentId: agent.id,
-          taskId,
-          timezone,
-          amountCents: config.cost.maxRunCents,
-        },
-        tx,
-      );
-      if (!reserved.allowed) {
-        budgetDenial = reserved.reason;
-        throw new BudgetHoldDenied();
-      }
-      hold = {
-        reservationId: reserved.reservationId,
-        amountCents: reserved.amountCents,
-      };
+    // The hold is written even when no per-run cap is configured. Skipping it
+    // used to be silent and total: no reservation meant no settlement, so
+    // `settled_cents` stayed 0, every later admission read an empty period, and
+    // a workspace with `maxRunCents: 0` had no budget gate at all. A 0-cent hold
+    // keeps the accounting path alive; `decideReservation` still refuses it once
+    // the week has nothing left.
+    const reserved = await reserveBudget(
+      {
+        userId: task.userId,
+        agentId: agent.id,
+        taskId,
+        timezone,
+        amountCents: Math.max(0, config.cost.maxRunCents),
+      },
+      tx,
+    );
+    if (!reserved.allowed) {
+      budgetDenial = reserved.reason;
+      throw new BudgetHoldDenied();
     }
+    const hold = {
+      reservationId: reserved.reservationId,
+      amountCents: reserved.amountCents,
+    };
 
     await tx.insert(runs).values({
       id: runId,
@@ -317,12 +323,10 @@ export async function runTask(taskId: string, userId: string) {
       replayKey: `replay_${taskId}_${prior.length + 1}`,
     });
 
-    if (hold) {
-      await tx
-        .update(agentBudgetReservations)
-        .set({ runId })
-        .where(eq(agentBudgetReservations.id, hold.reservationId));
-    }
+    await tx
+      .update(agentBudgetReservations)
+      .set({ runId })
+      .where(eq(agentBudgetReservations.id, hold.reservationId));
 
     return hold;
   });
@@ -375,6 +379,32 @@ export async function runTask(taskId: string, userId: string) {
       },
     );
 
+    /**
+     * Capabilities the executor is allowed to lean on. Only `active` skills
+     * count: a skill still in draft/exam has not been proven, and a passing
+     * exam used to mean nothing because nothing read this table.
+     */
+    const activeSkills = await db
+      .select({
+        name: skillsTable.name,
+        steps: skillsTable.steps,
+        tools: skillsTable.tools,
+      })
+      .from(skillsTable)
+      .where(
+        and(
+          eq(skillsTable.agentId, agent.id),
+          eq(skillsTable.status, "active"),
+        ),
+      )
+      .orderBy(skillsTable.createdAt);
+
+    const [profile] = await db
+      .select({ preferences: profiles.preferences })
+      .from(profiles)
+      .where(eq(profiles.userId, task.userId));
+    const rules = readRules(profile?.preferences);
+
     await addStep({
       type: "context",
       input: { task: task.title, agent: agent.name },
@@ -385,6 +415,10 @@ export async function runTask(taskId: string, userId: string) {
           content: m.content,
           scores: m.scores,
         })),
+        // Recorded so a draft can be traced back to the procedure and the
+        // user's rules that shaped it.
+        skills: activeSkills.map((skill) => skill.name),
+        rules,
         goal: task.goalId,
       },
       ti: 220,
@@ -407,7 +441,12 @@ export async function runTask(taskId: string, userId: string) {
     // role ternary here made `agent_grants` decorative and gave Coach a
     // research tool it was never granted.
     const toolPlan = planTools({
-      tools: agent.tools,
+      // A passed skill may bring its own tool; the grant check below still
+      // decides whether it may actually run.
+      tools: mergeTools(
+        agent.tools,
+        activeSkills.flatMap((skill) => skill.tools),
+      ),
       grants: grants.map((grant) => ({
         resource: grant.resource,
         scope: grant.scope,
@@ -550,6 +589,11 @@ export async function runTask(taskId: string, userId: string) {
       taskDescription: task.description,
       acceptanceCriteria: task.acceptanceCriteria,
       memories: agentMemories.map((m) => m.content),
+      skills: activeSkills.map((skill) => ({
+        name: skill.name,
+        steps: skill.steps,
+      })),
+      rules,
       evidence: [...(search?.evidence ?? []), ...(page?.evidence ?? [])].map(
         (item) => ({
           id: item.id,

@@ -38,6 +38,9 @@ export function POST(request: Request) {
           deferred: report.deferred,
           waiting: report.waiting,
           claimed: report.claimed,
+          // The lease was taken over mid-flight: the UI reports it instead of
+          // pretending this pass did nothing (contract: deliveryRunSchema).
+          lost: report.lost,
         },
       };
     },

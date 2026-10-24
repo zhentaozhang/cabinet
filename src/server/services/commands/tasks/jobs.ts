@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { runJobs } from "@/lib/db/schema";
@@ -17,6 +17,15 @@ export type ClaimedJob = {
 /** How long a claimed job may run before another worker may take it over. */
 export const DEFAULT_LEASE_MS = 10 * 60 * 1000;
 
+/**
+ * Claims a job may accumulate before it stops being offered.
+ *
+ * A job that kills its worker every time it runs would otherwise be claimed,
+ * die, be reclaimed the moment the lease lapses and repeat forever, with no
+ * outcome ever written down. The cap turns that loop into a recorded failure.
+ */
+export const MAX_CLAIM_ATTEMPTS = 5;
+
 /** Lease in ms, overridable so a slow deployment can widen it without a build. */
 export function leaseMs(): number {
   const minutes = Number(process.env.RUN_LEASE_MINUTES ?? "");
@@ -25,20 +34,37 @@ export function leaseMs(): number {
     : DEFAULT_LEASE_MS;
 }
 
-function leaseMsFromEnv(): number {
-  const minutes = Number(process.env.RUN_LEASE_MINUTES ?? "");
-  return Number.isFinite(minutes) && minutes > 0
-    ? Math.trunc(minutes * 60_000)
-    : DEFAULT_LEASE_MS;
-}
+/** Statuses a job only leaves: unfinished, and still holding its task's slot. */
+const ACTIVE_JOB = or(eq(runJobs.status, "queued"), eq(runJobs.status, "running"));
 
-const CLAIMABLE = or(
-  eq(runJobs.status, "queued"),
-  and(eq(runJobs.status, "running"), lte(runJobs.leaseUntil, new Date())),
+/**
+ * No worker holds the row right now: it was never claimed, or its lease ran out.
+ *
+ * The comparison must be the database's `now()`, not a JS `Date`. This
+ * predicate is built once at module load, so a captured `Date` freezes at
+ * process start and a lease that expires afterwards would stay unclaimable
+ * until the next restart — exactly the crashed worker this has to recover.
+ * `now()` is the transaction start time, so both where-clauses in
+ * `claimRunJob` compare against the same instant.
+ */
+const LEASE_LAPSED = or(
+  isNull(runJobs.leaseUntil),
+  lte(runJobs.leaseUntil, sql`now()`),
 );
 
-/** Statuses a job only leaves; a live job blocks a second one for its task. */
-const ACTIVE_JOB = or(eq(runJobs.status, "queued"), eq(runJobs.status, "running"));
+/** What a worker may take: unfinished, claimable again, attempts not used up. */
+const CLAIMABLE = and(
+  ACTIVE_JOB,
+  lt(runJobs.attempts, MAX_CLAIM_ATTEMPTS),
+  LEASE_LAPSED,
+);
+
+/** What a job has become once it burned through every attempt. */
+const EXHAUSTED = and(
+  ACTIVE_JOB,
+  gte(runJobs.attempts, MAX_CLAIM_ATTEMPTS),
+  LEASE_LAPSED,
+);
 
 /**
  * The predicate of `run_jobs_active_task_idx`, repeated verbatim.
@@ -118,6 +144,11 @@ export async function enqueueRun(input: {
 /**
  * Claim the oldest runnable job with a lease.
  *
+ * `now` is write-only: it says when the lease starts, never which rows are
+ * claimable (that is the database's clock, see `CLAIMABLE`). Tests use it to
+ * write a lease that has already run out, so the following claim exercises the
+ * takeover a crashed worker leaves behind.
+ *
  * `skipLocked` means concurrent workers never wait on each other: each one takes
  * a different row, and a worker that died simply leaves a lease that expires.
  */
@@ -125,7 +156,7 @@ export async function claimRunJob(
   options: { leaseMs?: number; now?: Date } = {},
 ): Promise<ClaimedJob | null> {
   const now = options.now ?? new Date();
-  const lease = options.leaseMs ?? leaseMsFromEnv();
+  const lease = options.leaseMs ?? leaseMs();
 
   return db.transaction(async (tx) => {
     const [candidate] = await tx
@@ -157,6 +188,35 @@ export async function claimRunJob(
     if (!claimed) return null;
     return { ...claimed, claimToken };
   });
+}
+
+/**
+ * Fail every job that spent its whole attempt budget.
+ *
+ * Claiming already skips them, so this is what keeps them from being invisible:
+ * a job reclaimed on each expiry would otherwise cycle forever, and a `queued`
+ * row that somehow reached the cap would never move at all. Both are terminal
+ * situations nothing else reports, so they end as `failed` with the reason
+ * written to `lastError`.
+ *
+ * A row whose holder still has a live lease is left alone: that worker is
+ * running right now, and its own write-back decides the outcome.
+ */
+export async function failExhaustedJobs(
+  options: { now?: Date } = {},
+): Promise<{ failed: number }> {
+  const failed = await db
+    .update(runJobs)
+    .set({
+      status: "failed",
+      lastError: `超过最大尝试次数（${MAX_CLAIM_ATTEMPTS}），作业不再重试。`,
+      claimToken: null,
+      leaseUntil: null,
+      finishedAt: options.now ?? new Date(),
+    })
+    .where(EXHAUSTED)
+    .returning({ id: runJobs.id });
+  return { failed: failed.length };
 }
 
 /**
