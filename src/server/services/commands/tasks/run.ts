@@ -60,33 +60,7 @@ export async function runTask(taskId: string, userId: string) {
   const demoMode = process.env.DEMO_MODE === "true";
 
   // A failed/rejected run can be retried through the normal state machine.
-  if (retrying) {
-    assertTransition("task", task.status, "planned");
-    const [reset] = await db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(tasks)
-        .set({ status: "planned", updatedAt: new Date() })
-        .where(
-          and(
-            eq(tasks.id, taskId),
-            eq(tasks.userId, userId),
-            eq(tasks.status, task.status),
-          ),
-        )
-        .returning();
-      if (!updated) throw new ConflictError("Task state changed; retry.");
-      await logAuditTx(tx, {
-        userId,
-        actor: "user",
-        action: "task.retry",
-        target: taskId,
-        before: { status: task.status },
-        after: { status: "planned" },
-      });
-      return [updated] as const;
-    });
-    task = reset;
-  }
+  if (retrying) task = await resetForRetry(taskId, userId, task);
 
   const [agent] = await db
     .select()
@@ -173,117 +147,17 @@ export async function runTask(taskId: string, userId: string) {
     .where(eq(runs.taskId, taskId));
 
   if (decision.effect === "suggest") {
-    return db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(tasks)
-        .set({ status: "suggested", updatedAt: new Date() })
-        .where(
-          and(
-            eq(tasks.id, taskId),
-            inArray(tasks.status, ["planned", "assigned"]),
-          ),
-        )
-        .returning();
-      if (!updated) throw new ConflictError("Task cannot be suggested now.");
-
-      const runId = newId("run");
-      const draft = draftFor(agent.role, task.title, prior.length, false);
-      const artifactId = newId("art");
-      await tx.insert(runs).values({
-        id: runId,
-        taskId,
-        agentId: agent.id,
-        status: "succeeded",
-        mode: demoMode ? "demo" : "rule",
-        sourceType: demoMode ? "demo_fixture" : "rule_generated",
-        startedAt: new Date(),
-        endedAt: new Date(),
-        replayKey: `suggest_${taskId}_${prior.length + 1}`,
-      });
-      await tx.insert(artifacts).values({
-        id: artifactId,
-        runId,
-        taskId,
-        type: "markdown",
-        title: draft.title,
-        content: draft.content,
-        sourceType: demoMode ? "demo_fixture" : "rule_generated",
-      });
-      await tx.insert(steps).values({
-        id: newId("stp"),
-        runId,
-        idx: 1,
-        type: "suggest",
-        input: { task: task.title, policy: decision.reason },
-        output: { artifactId },
-        tokensIn: 120,
-        tokensOut: 240,
-        latencyMs: 80,
-      });
-      await logAuditTx(tx, {
-        userId: task.userId,
-        actor: `agent:${agent.id}`,
-        action: "task.suggest",
-        target: taskId,
-        before: { status: task.status },
-        after: { status: "suggested", runId, reason: decision.reason },
-      });
-      return { runId, artifactId, suggested: true, reason: decision.reason };
+    return suggestInsteadOfRunning({
+      task,
+      agent,
+      priorRunCount: prior.length,
+      demoMode,
+      reason: decision.reason,
     });
   }
 
   if (decision.effect === "require_approval") {
-    return db.transaction(async (tx) => {
-      const approvalRecord = await requestApproval(
-        {
-          userId: task.userId,
-          taskId,
-          title: task.title,
-          resource: task.resource,
-          dueAt: task.dueAt,
-          action: task.actionType,
-          reason: decision.reason,
-          estimatedCostCents: task.estimatedCostCents,
-        },
-        tx,
-      );
-
-      let status = task.status;
-      if (status === "planned") {
-        assertTransition("task", status, "assigned");
-        const [assigned] = await tx
-          .update(tasks)
-          .set({ status: "assigned", updatedAt: new Date() })
-          .where(and(eq(tasks.id, taskId), eq(tasks.status, "planned")))
-          .returning();
-        if (!assigned) throw new ConflictError("Task state changed; retry.");
-        status = "assigned";
-      }
-      if (status !== "awaiting_approval") {
-        assertTransition("task", status, "awaiting_approval");
-        const [updated] = await tx
-          .update(tasks)
-          .set({ status: "awaiting_approval", updatedAt: new Date() })
-          .where(and(eq(tasks.id, taskId), eq(tasks.status, status)))
-          .returning();
-        if (!updated) throw new ConflictError("Task state changed; retry.");
-      }
-
-      await logAuditTx(tx, {
-        userId: task.userId,
-        actor: `agent:${agent.id}`,
-        action: "approval.request",
-        target: taskId,
-        before: { status: task.status },
-        after: { status: "awaiting_approval", approvalId: approvalRecord.id },
-      });
-
-      return {
-        requiresApproval: true,
-        approvalId: approvalRecord.id,
-        reason: decision.reason,
-      };
-    });
+    return awaitApproval({ task, agent, reason: decision.reason });
   }
 
   // Reserve the per-run ceiling BEFORE any provider request. The hold is always
@@ -875,4 +749,186 @@ export async function runTask(taskId: string, userId: string) {
     });
     throw error;
   }
+}
+
+/** Rows as the commands layer sees them; the tables own the shape. */
+type TaskRow = typeof tasks.$inferSelect;
+type AgentRow = typeof agents.$inferSelect;
+
+/**
+ * Retry path: a failed or rejected task re-enters the normal state machine at
+ * planned.
+ *
+ * The UPDATE is guarded by the status that was just read, so a concurrent run
+ * that got there first loses it and the caller sees a ConflictError instead of
+ * two runs on one task.
+ */
+async function resetForRetry(taskId: string, userId: string, task: TaskRow) {
+  assertTransition("task", task.status, "planned");
+  const [reset] = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(tasks)
+      .set({ status: "planned", updatedAt: new Date() })
+      .where(
+        and(
+          eq(tasks.id, taskId),
+          eq(tasks.userId, userId),
+          eq(tasks.status, task.status),
+        ),
+      )
+      .returning();
+    if (!updated) throw new ConflictError("Task state changed; retry.");
+    await logAuditTx(tx, {
+      userId,
+      actor: "user",
+      action: "task.retry",
+      target: taskId,
+      before: { status: task.status },
+      after: { status: "planned" },
+    });
+    return [updated] as const;
+  });
+  return reset;
+}
+
+/**
+ * The suggest effect: the policy lets the Agent propose but not act.
+ *
+ * The run is still recorded as succeeded with a rule-generated draft, so the
+ * ledger and the trace say what actually happened. Nothing was executed, and
+ * the task never leaves planned/assigned for running.
+ */
+async function suggestInsteadOfRunning(input: {
+  task: TaskRow;
+  agent: AgentRow;
+  priorRunCount: number;
+  demoMode: boolean;
+  reason: string;
+}) {
+  const { task, agent, reason, priorRunCount, demoMode } = input;
+  const taskId = task.id;
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(tasks)
+      .set({ status: "suggested", updatedAt: new Date() })
+      .where(
+        and(
+          eq(tasks.id, taskId),
+          inArray(tasks.status, ["planned", "assigned"]),
+        ),
+      )
+      .returning();
+    if (!updated) throw new ConflictError("Task cannot be suggested now.");
+
+    const runId = newId("run");
+    const draft = draftFor(agent.role, task.title, priorRunCount, false);
+    const artifactId = newId("art");
+    await tx.insert(runs).values({
+      id: runId,
+      taskId,
+      agentId: agent.id,
+      status: "succeeded",
+      mode: demoMode ? "demo" : "rule",
+      sourceType: demoMode ? "demo_fixture" : "rule_generated",
+      startedAt: new Date(),
+      endedAt: new Date(),
+      replayKey: `suggest_${taskId}_${priorRunCount + 1}`,
+    });
+    await tx.insert(artifacts).values({
+      id: artifactId,
+      runId,
+      taskId,
+      type: "markdown",
+      title: draft.title,
+      content: draft.content,
+      sourceType: demoMode ? "demo_fixture" : "rule_generated",
+    });
+    await tx.insert(steps).values({
+      id: newId("stp"),
+      runId,
+      idx: 1,
+      type: "suggest",
+      input: { task: task.title, policy: reason },
+      output: { artifactId },
+      tokensIn: 120,
+      tokensOut: 240,
+      latencyMs: 80,
+    });
+    await logAuditTx(tx, {
+      userId: task.userId,
+      actor: `agent:${agent.id}`,
+      action: "task.suggest",
+      target: taskId,
+      before: { status: task.status },
+      after: { status: "suggested", runId, reason },
+    });
+    return { runId, artifactId, suggested: true, reason };
+  });
+}
+
+/**
+ * The require_approval effect: park the task until a human decides.
+ *
+ * planned -> assigned -> awaiting_approval walks the legal state machine one
+ * transition at a time instead of writing the final status directly, so the
+ * audit trail has the same shape as a real execution.
+ */
+async function awaitApproval(input: {
+  task: TaskRow;
+  agent: AgentRow;
+  reason: string;
+}) {
+  const { task, agent, reason } = input;
+  const taskId = task.id;
+  return db.transaction(async (tx) => {
+    const approvalRecord = await requestApproval(
+      {
+        userId: task.userId,
+        taskId,
+        title: task.title,
+        resource: task.resource,
+        dueAt: task.dueAt,
+        action: task.actionType,
+        reason,
+        estimatedCostCents: task.estimatedCostCents,
+      },
+      tx,
+    );
+
+    let status = task.status;
+    if (status === "planned") {
+      assertTransition("task", status, "assigned");
+      const [assigned] = await tx
+        .update(tasks)
+        .set({ status: "assigned", updatedAt: new Date() })
+        .where(and(eq(tasks.id, taskId), eq(tasks.status, "planned")))
+        .returning();
+      if (!assigned) throw new ConflictError("Task state changed; retry.");
+      status = "assigned";
+    }
+    if (status !== "awaiting_approval") {
+      assertTransition("task", status, "awaiting_approval");
+      const [updated] = await tx
+        .update(tasks)
+        .set({ status: "awaiting_approval", updatedAt: new Date() })
+        .where(and(eq(tasks.id, taskId), eq(tasks.status, status)))
+        .returning();
+      if (!updated) throw new ConflictError("Task state changed; retry.");
+    }
+
+    await logAuditTx(tx, {
+      userId: task.userId,
+      actor: `agent:${agent.id}`,
+      action: "approval.request",
+      target: taskId,
+      before: { status: task.status },
+      after: { status: "awaiting_approval", approvalId: approvalRecord.id },
+    });
+
+    return {
+      requiresApproval: true,
+      approvalId: approvalRecord.id,
+      reason,
+    };
+  });
 }
