@@ -28,8 +28,22 @@
 | `/api/today` | 12.9 KB | — |
 | `/api/review` | 24.9 KB | — |
 
-客户端 JS chunk 总计：**900 KB**（清理 zod 之前是 1012 KB，其中 ~400 KB 是
-React/Next 运行时，不可压缩）。
+客户端 JS chunk 总计：**787.8 KB 原始 / 252.1 KB gzip**（27 个 chunk，2026-10-24 实测；
+此前记的 "900 KB" 是原始体积且把框架算在内，容易读成"有 500 KB 可砍"）。
+
+按 chunk 归因（`.next/static/chunks`，签名字符串扫描）：
+
+| chunk | 原始 | gzip | 内容 |
+|---|---|---|---|
+| `0_w3i2uxyrzts.js` | 224.4 KB | 70.1 KB | react-dom |
+| `236zkh-4dlmrw.js` | 164.4 KB | 45.1 KB | Next/Turbopack 客户端运行时 |
+| `0cz1d0mv5g_q7.js` | 110.0 KB | 38.5 KB | 打包器 polyfill/prelude |
+| `23ekinmh2-68k.js` | 57.6 KB | 15.4 KB | 应用代码 |
+| `0wm5y38ehdhzc.js` | 27.8 KB | 10.1 KB | lucide 图标 |
+
+三个最大的 chunk（499 KB 原始 / 153 KB gzip）全是**框架**，应用自身代码约 135 KB gzip。
+`react-markdown` / `remark-gfm` 不在任何客户端 chunk 里（markdown 只在服务端渲染），
+所以"首屏 JS 偏大"不是这个项目的真问题，砍它的收益在 10 KB 量级。
 
 ## 为什么缓存不划算
 

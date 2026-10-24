@@ -223,8 +223,8 @@ app/api/**（44 个 route handler）
   → Postgres（Drizzle）
 ```
 
-- 页面和组件不能 import `server/`、`lib/db`、`engine`；ESLint + `tests/unit/boundary.test.ts` 强制。
-- `src/lib` 也不能 import `@/server/*`。唯一豁免是 `src/lib/engine.ts`（@deprecated 垫片），它在边界测试里按文件名列出，加第二个豁免是一次关于边界放在哪里的决定。
+- 页面和组件不能 import `server/`、`lib/db`；ESLint + `tests/unit/boundary.test.ts` 强制。
+- `src/lib` 也不能 import `@/server/*`，**没有豁免**。曾经的唯一例外 `src/lib/engine.ts`（@deprecated 垫片）已删除，调用方直接指向 `@/server/services/engine`；留一个具名豁免等于让「再加一条」成为破坏边界最省事的方式。
 - `server/services/engine.ts` 只是 re-export barrel，业务在 `queries/` 和 `commands/`。
 - 运行在请求内同步完成；唯一的后台动作是邮件投递（`outbox` 表 + `pnpm notify:deliver`，由部署层 cron 触发，不是进程内定时器）。
 - 没有使用 LangGraph / CrewAI；状态机和审计是应用代码。

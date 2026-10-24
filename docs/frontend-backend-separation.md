@@ -35,8 +35,8 @@ src/
 
 | 守卫 | 位置 | 作用 |
 |---|---|---|
-| ESLint `no-restricted-imports` | `eslint.config.mjs` | 页面/组件 import `@/server/*`、`@/lib/db`、`@/lib/engine`、`drizzle-orm` 直接报错 |
-| 架构测试 | `tests/unit/boundary.test.ts` | CI 里再断言一遍；另加「contracts 只能依赖 zod」「server 不许反向 import UI」「每个 route 都有 handler」 |
+| ESLint `no-restricted-imports` | `eslint.config.mjs` | 页面/组件 import `@/server/*`、`@/lib/db`、`@/lib/auth`、`drizzle-orm` 直接报错 |
+| 架构测试 | `tests/unit/boundary.test.ts` | CI 里再断言一遍；另加「contracts 只能依赖 zod」「server 不许反向 import UI」「`src/lib` 不许 import `@/server/*`（零豁免）」「每个 route 都有 handler」 |
 
 改架构时先跑 `pnpm lint && pnpm test`，规则会告诉你有没有越界。
 

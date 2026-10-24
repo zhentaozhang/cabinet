@@ -10,14 +10,14 @@
 
 | 项 | 值 |
 |---|---|
-| 文件 | **388**（其中 `src/lib/db/schema/` 10 个域模块） |
-| 节点 | **3,953** |
+| 文件 | **387**（其中 `src/lib/db/schema/` 10 个域模块） |
+| 节点 | **3,952** |
 | 边 | **8,697** |
-| DB 体积 | 7.50 MB |
+| DB 体积 | 7.52 MB |
 | 幽灵文件（索引里有、磁盘上没有） | **0** |
-| 语言 | typescript 304 · tsx 69 · yaml 4 · python 1 · javascript 1 |
+| 语言 | typescript 303 · tsx 69 · yaml 4 · python 1 · javascript 1 |
 
-仓库规模：`src` 35,365 行，`tests` 97 个 `.test.ts` / 852 个测试，`src/app` 44 个 `route.ts` + 13 个 `page.tsx`，数据库 35 张表。
+仓库规模：`src` 35,349 行，`tests` 97 个 `.test.ts` / 852 个测试，`src/app` 44 个 `route.ts` + 13 个 `page.tsx`，数据库 35 张表。
 
 ---
 
@@ -27,12 +27,13 @@
 
 | # | 问题 | 处理 |
 |---|---|---|
-| 1 | 边界规则漏掉 `src/lib` | `tests/unit/boundary.test.ts` 新增 "the shared layer never imports the server"，`LIB_TO_SERVER_ALLOWED` 只放 `lib/engine.ts`，先跑红再跑绿 |
+| 1 | 边界规则漏掉 `src/lib` | `tests/unit/boundary.test.ts` 新增 "the shared layer never imports the server"，先跑红再跑绿；随后把唯一的豁免也删了（见 #7），规则现在是**零例外** |
 | 2 | `src/lib/auth/session.ts` 是零引用真孤儿 | 删除（`src/lib/auth/context.ts:11` 早已内联同样逻辑） |
 | 3 | 分析器把 `import type` 当运行时边 | 新增 `is_type_only()`，拆 `deps` / `type_deps`；环检测只看 `deps`。**假环 policy.ts ↔ standing-grants.ts 归零** |
 | 4 | `src/lib/db/schema.ts` 1,128 行单体 | 拆成 10 个域模块 + 25 行 barrel，`drizzle-kit generate` 报 "No schema changes" 证明零语义漂移 |
 | 5 | `runTask` 827 行单函数 | 抽出 `resetForRetry` / `suggestInsteadOfRunning` / `awaitApproval`，主函数降到 701 行 |
 | 6 | 文档口径失真 | README 的 33 张表 / 34 个 route / 792 个测试，以及 separation 文档的 18 个 route，全部改真值 |
+| 7 | `src/lib/engine.ts` 是 `lib → server` 的唯一越界点 | 20 个集成测试改为 import `@/server/services/engine`，删文件、删白名单、删 eslint 里的死 pattern。`lib → server` 现在是 **0 条边** |
 
 **当前状况：循环依赖 0、真孤儿 0。**
 
@@ -60,7 +61,7 @@
 - `contracts` 出度为 0（只依赖 zod），是真正的叶子层。
 - `components` / `app/pages` 对 `server` **0 条边** —— 前端只经 `@/lib/api/*` 走 HTTP。
 - `server` 不反向引用 UI（0 条）；`app/api` 是唯一入口，44 个 route 全部声明了 handler。
-- 唯一 `lib → server` 边仍是 `src/lib/engine.ts:16` 的 `export * from "@/server/services/engine"`。它是 @deprecated 垫片，现在**被边界测试按文件名钉死**，再往里加一条就得改那份白名单。
+- `lib → server` **0 条边**。2026-10-24 之前还有 1 条（`src/lib/engine.ts` 的 @deprecated 垫片），现在已删除；边界测试同步去掉了白名单，越界就必须改规则本身。
 
 ---
 
@@ -98,7 +99,7 @@
 
 ### 5.1 `codegraph_status` 返回缓存值
 
-重建索引之后，MCP 的 `codegraph_status` 仍报 379 files / 3,899 nodes / 8,398 edges，而 DB 实测是 **388 / 3,953 / 8,697**。判断"索引新不新"要看脚本直读的结果，或者看分析器有没有打 `### Index is stale` 警告。
+重建索引之后，MCP 的 `codegraph_status` 仍报 379 files / 3,899 nodes / 8,398 edges，而 DB 实测是 **387 / 3,952 / 8,697**。判断"索引新不新"要看脚本直读的结果，或者看分析器有没有打 `### Index is stale` 警告。
 
 ### 5.2 索引不会自动刷新
 
@@ -116,7 +117,7 @@
 
 ## 6. 还没做的（按性价比排序）
 
-1. **删 `src/lib/engine.ts`**：仍有 18 个模块 import 它。现在它被边界测试钉死，迁移成本可度量 —— 把 18 个 import 改成 `@/server/services/engine`，删文件，删白名单条目。集成测试是主要阻力。
+1. ~~首屏 JS 偏大~~ **已测量，不是问题**：787.8 KB 原始 / **252.1 KB gzip**，其中 499 KB 原始（153 KB gzip）是 Next/Turbopack + React 运行时，应用代码约 135 KB gzip，markdown 依赖不进客户端。详见 `docs/caching-decision.md`。继续砍它的收益在 10 KB 量级。
 2. **`db` 句柄收口**：104 个模块直接 `import { db }`。按域提供 repository 会让事务边界看得见，但这是个大迁移。
 3. **`seedDemo` 1,611 行**：它是 demo 数据字面量，拆开只是分装。真正的改进是让 CI 用 SQL fixture，那是另一个议题。
 4. **页面巨型组件**（`TaskPage` 1,105 行、`TodayPage` 773 行、`QuickCreate` 829 行）：需要先有组件级视觉回归测试，否则改动风险高于收益。

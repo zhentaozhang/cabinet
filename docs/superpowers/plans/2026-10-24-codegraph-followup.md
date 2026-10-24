@@ -60,6 +60,10 @@ ops       idempotency_keys, user_actions, rate_limits, outbox, run_jobs  refs: u
 
 ## Task 1: 让边界规则覆盖 `src/lib`
 
+> **已后续收敛（同日）**：这条豁免最终也被删了 —— 20 个集成测试改为指向 `@/server/services/engine`，
+> `src/lib/engine.ts` 删除，`LIB_TO_SERVER_ALLOWED` 从测试里移除，规则现在是零例外。
+> 下面的步骤保留为当时的执行记录，不再代表当前代码。
+
 **Files:**
 - Modify: `tests/unit/boundary.test.ts`
 
