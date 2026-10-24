@@ -7,6 +7,16 @@ con = sqlite3.connect(os.path.join(ROOT, ".codegraph/codegraph.db"))
 os.chdir(ROOT)
 
 FILES = {r[0] for r in con.execute("SELECT path FROM files")}
+# The index only refreshes from disk while a watcher is running, so a file
+# deleted since the last index still sits in the DB and would be reported as an
+# orphan. Drop those, but say so: a stale index quietly changes the numbers.
+GHOSTS = sorted(f for f in FILES if not os.path.exists(f))
+if GHOSTS:
+    print(f"### Index is stale: {len(GHOSTS)} indexed file(s) no longer on disk "
+          f"(re-run `codegraph init .` after deleting .codegraph/)")
+    for g in GHOSTS[:5]: print(f"- {g}")
+    print()
+FILES = {f for f in FILES if os.path.exists(f)}
 SRC = sorted(f for f in FILES if f.endswith((".ts", ".tsx")))
 
 def resolve(spec, importer):
@@ -23,23 +33,45 @@ def resolve(spec, importer):
         return base
     return None
 
-IMPORT_RE = re.compile(r'^\s*(?:import|export)\b[^;]*?from\s+["\']([^"\']+)["\']', re.M)
+IMPORT_RE = re.compile(r'^\s*(?:import|export)\s+([^;]*?)\s*from\s+["\']([^"\']+)["\']', re.M)
 SIDE_RE = re.compile(r'^\s*import\s+["\']([^"\']+)["\']', re.M)
 
-deps, kinds = collections.defaultdict(dict), collections.Counter()
+def is_type_only(clause):
+    """TypeScript erases type-only imports, so they are not runtime edges.
+
+    `import type { X } from "./y"` and `import { type X, type Y } from "./y"`
+    leave nothing behind in the emitted JavaScript; counting them as edges
+    invents cycles that the running program does not have (the one this script
+    used to report, policy.ts <-> standing-grants.ts, was exactly that)."""
+    c = clause.strip()
+    if c.startswith("type "):
+        return True
+    if c.startswith("{") and c.endswith("}"):
+        names = [n.strip() for n in c[1:-1].split(",") if n.strip()]
+        return bool(names) and all(n.startswith("type ") for n in names)
+    return False
+
+# deps: edges that survive compilation. type_deps: erased. Cycles and the layer
+# matrix use deps only; orphan detection uses both, because a module that is
+# only ever imported for its types is still depended on.
+deps, type_deps = collections.defaultdict(dict), collections.defaultdict(dict)
+kinds = collections.Counter()
 ext = collections.Counter()
 for f in SRC:
     try:
         text = open(f, encoding="utf-8").read()
     except OSError:
         continue
-    specs = set(IMPORT_RE.findall(text)) | set(SIDE_RE.findall(text))
-    for s in specs:
+    edges = {(spec, True) for clause, spec in IMPORT_RE.findall(text) if is_type_only(clause)}
+    edges |= {(spec, False) for clause, spec in IMPORT_RE.findall(text) if not is_type_only(clause)}
+    edges |= {(spec, False) for spec in SIDE_RE.findall(text)}
+    for s, erased in edges:
         t = resolve(s, f)
         if t:
             if t != f:
-                deps[f][t] = deps[f].get(t, 0) + 1
-            kinds["internal"] += 1
+                bucket = type_deps if erased else deps
+                bucket[f][t] = bucket[f].get(t, 0) + 1
+            kinds["type-only" if erased else "internal"] += 1
         elif not s.startswith(("@/", ".")):
             ext[s.split("/")[0] if not s.startswith("@") else "/".join(s.split("/")[:2])] += 1
 
@@ -85,9 +117,13 @@ for f in barrels:
     inner = len(deps.get(f, ()))
     print(f"- {f}: re-exports {inner} module(s), imported by {fan_in.get(f,0)} file(s)")
 
-# real orphans = zero fan-in after barrel expansion
+# real orphans = zero fan-in after barrel expansion, counting type-only
+# importers too (a module imported only for its types is still in use).
+fan_in_any = collections.Counter()
+for f, ts in list(deps.items()) + list(type_deps.items()):
+    for t in ts: fan_in_any[t] += 1
 ENTRY = re.compile(r'/(page|layout|route|error|loading|not-found)\.tsx?$|\.config\.|proxy\.ts$')
-orphans = [f for f in SRC if not fan_in.get(f) and not ENTRY.search(f)
+orphans = [f for f in SRC if not fan_in_any.get(f) and not ENTRY.search(f)
            and not f.startswith(("tests/", "scripts/"))]
 print(f"\n### True orphans (zero importers incl. barrels): {len(orphans)}")
 for f in orphans: print(f"- {f}")
