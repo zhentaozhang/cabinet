@@ -36,9 +36,11 @@ jobs:
       TZ: UTC
     steps:
       - uses: actions/checkout@v4
+      # No `version` input: pnpm/action-setup@v4 reads `packageManager` from
+      # package.json. Passing both makes the action abort with "Multiple
+      # versions of pnpm specified" before a single project step runs — which
+      # is what happened on the first run this workflow ever had.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
