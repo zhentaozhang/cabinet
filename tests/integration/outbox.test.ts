@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { approvals, outbox, users } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { notifyKindLabel } from "@/contracts";
-import { auditTask, createTask, runTask } from "@/lib/engine";
+import { auditTask, createTask, runTask } from "@/server/services/engine";
 import {
   deliverOutbox,
   decideDelivery,

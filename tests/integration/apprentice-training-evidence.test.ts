@@ -16,7 +16,7 @@ import {
   loadApprenticeshipEvidence,
   recordApprenticeObservation,
   runApprenticeExam,
-} from "@/lib/engine";
+} from "@/server/services/engine";
 import { APPRENTICE_SKILL } from "@/contracts/templates";
 import { ConflictError, ValidationError } from "@/lib/domain/errors";
 import { resetDb } from "../helpers/db";

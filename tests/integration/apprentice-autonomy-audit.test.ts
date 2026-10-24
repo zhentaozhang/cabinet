@@ -17,7 +17,7 @@ import {
   runApprenticeExam,
   setAutonomy,
   updateAgent,
-} from "@/lib/engine";
+} from "@/server/services/engine";
 import { verifyAuditChain } from "@/lib/audit";
 import {
   ConflictError,

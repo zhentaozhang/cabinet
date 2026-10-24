@@ -9,7 +9,7 @@ import {
   runs,
   tasks,
 } from "@/lib/db/schema";
-import { runTask } from "@/lib/engine";
+import { runTask } from "@/server/services/engine";
 import { resetDb } from "../helpers/db";
 
 const TASK_ID = "tsk_race_claim";

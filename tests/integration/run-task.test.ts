@@ -7,7 +7,7 @@ import {
   auditTask,
   decideApproval,
   runTask,
-} from "@/lib/engine";
+} from "@/server/services/engine";
 import { ConflictError, PolicyDenied } from "@/lib/domain/errors";
 import { resetDb } from "../helpers/db";
 

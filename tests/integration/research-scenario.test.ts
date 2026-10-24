@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agentGrants, artifacts, evidence, tasks } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
-import { createTask, runTask } from "@/lib/engine";
+import { createTask, runTask } from "@/server/services/engine";
 import { auditTask } from "@/server/services/commands/tasks/audit";
 import { resetDb } from "../helpers/db";
 

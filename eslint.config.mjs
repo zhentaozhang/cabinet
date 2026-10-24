@@ -21,7 +21,7 @@ const eslintConfig = defineConfig([
         {
           patterns: [
             {
-              group: ["@/server/*", "@/lib/engine", "@/lib/db", "@/lib/db/*", "@/lib/auth", "@/lib/auth/*", "drizzle-orm", "drizzle-orm/*"],
+              group: ["@/server/*", "@/lib/db", "@/lib/db/*", "@/lib/auth", "@/lib/auth/*", "drizzle-orm", "drizzle-orm/*"],
               message:
                 "UI must not import server modules. Call the HTTP API via @/lib/api/server or @/lib/api/browser.",
             },

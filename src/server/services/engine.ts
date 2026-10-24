@@ -2,8 +2,9 @@
  * Compatibility barrel.
  *
  * Business logic lives in `queries/` and `commands/`. This file only re-exports
- * them so existing imports from `@/lib/engine` and `@/server/services/engine`
- * keep working while callers migrate to direct imports.
+ * them so callers can name one entry point while they migrate to direct
+ * imports. The old `@/lib/engine` alias is gone: it was the last violation of
+ * the `src/lib` → `src/server` boundary.
  */
 export * from "./queries/workspace";
 export * from "./queries/metrics";

@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agentGrants, agents, evidence, runs, steps, tasks } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
-import { runTask } from "@/lib/engine";
+import { runTask } from "@/server/services/engine";
 import { getWeeklyMetrics } from "@/server/services/queries/metrics";
 import { resetDb } from "../helpers/db";
 

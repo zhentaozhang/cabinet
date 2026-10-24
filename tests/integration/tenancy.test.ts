@@ -19,7 +19,7 @@ import {
   runTask,
   setAutonomy,
   updateAgent,
-} from "@/lib/engine";
+} from "@/server/services/engine";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { NotFoundError, ValidationError } from "@/lib/domain/errors";
 import { resetDb } from "../helpers/db";

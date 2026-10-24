@@ -9,7 +9,7 @@ vi.mock("@/lib/llm", () => ({
 
 import { db } from "@/lib/db";
 import { artifacts, runs, tasks } from "@/lib/db/schema";
-import { runTask } from "@/lib/engine";
+import { runTask } from "@/server/services/engine";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { resetDb } from "../helpers/db";
 

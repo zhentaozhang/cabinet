@@ -10,7 +10,7 @@ import {
   promoteSuggestion,
   runTask,
   updateAgent,
-} from "@/lib/engine";
+} from "@/server/services/engine";
 import { ConflictError, ValidationError } from "@/lib/domain/errors";
 import { resetDb } from "../helpers/db";
 

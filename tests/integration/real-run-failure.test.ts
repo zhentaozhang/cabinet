@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { artifacts, runs, tasks } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
-import { runTask } from "@/lib/engine";
+import { runTask } from "@/server/services/engine";
 import { resetDb } from "../helpers/db";
 
 const originalDemoMode = process.env.DEMO_MODE;

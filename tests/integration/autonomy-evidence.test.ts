@@ -8,7 +8,7 @@ import {
   evaluateAutonomyUpgrade,
   setAutonomy,
   updateAgent,
-} from "@/lib/engine";
+} from "@/server/services/engine";
 import { PolicyDenied } from "@/lib/domain/errors";
 import { loadReview } from "@/server/readmodels/review";
 import { resetDb } from "../helpers/db";

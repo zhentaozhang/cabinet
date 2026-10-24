@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { memories, steps, users } from "@/lib/db/schema";
 import { retrieveMemories } from "@/lib/memory/retrieval";
-import { runTask } from "@/lib/engine";
+import { runTask } from "@/server/services/engine";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { resetDb } from "../helpers/db";
 

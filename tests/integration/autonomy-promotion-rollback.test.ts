@@ -31,7 +31,7 @@ const { agents, artifacts, auditEvents, runs, tasks } = await import(
   "@/lib/db/schema"
 );
 const { DEMO_USER_ID } = await import("@/lib/demo");
-const { setAutonomy } = await import("@/lib/engine");
+const { setAutonomy } = await import("@/server/services/engine");
 const { resetDb } = await import("../helpers/db");
 
 async function seedEligibleAudit(taskId: string, agentId: string, auditorId: string) {

@@ -23,7 +23,7 @@ vi.mock("@/lib/llm", async (importOriginal) => {
   };
 });
 
-const { runTask } = await import("@/lib/engine");
+const { runTask } = await import("@/server/services/engine");
 
 const HTML =
   "<html><head><title>RAG 说明</title></head><body>" +

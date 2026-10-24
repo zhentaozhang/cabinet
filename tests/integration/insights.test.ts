@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { memories, tasks } from "@/lib/db/schema";
-import { applyInsight } from "@/lib/engine";
+import { applyInsight } from "@/server/services/engine";
 import { ConflictError } from "@/lib/domain/errors";
 import { verifyAuditChain } from "@/lib/audit";
 import { retrieveMemories } from "@/lib/memory/retrieval";

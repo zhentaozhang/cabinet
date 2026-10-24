@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agentGrants, auditEvents, tasks } from "@/lib/db/schema";
-import { decideApproval, runTask } from "@/lib/engine";
+import { decideApproval, runTask } from "@/server/services/engine";
 import { PolicyDenied, ValidationError } from "@/lib/domain/errors";
 import { revokeGrant } from "@/server/services/commands/tasks/grants";
 import { resetDb } from "../helpers/db";
