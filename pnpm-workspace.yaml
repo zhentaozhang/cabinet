@@ -1,3 +1,8 @@
 allowBuilds:
+  # esbuild installs its own binary from a postinstall hook; pnpm 11 refuses the
+  # whole install with ERR_PNPM_IGNORED_BUILDS when a package that needs one is
+  # not listed here. These keys are the only thing pnpm reads (pnpm 11 ignores
+  # package.json's pnpm.onlyBuiltDependencies).
+  esbuild: true
   sharp: false
   unrs-resolver: false
