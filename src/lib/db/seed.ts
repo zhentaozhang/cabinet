@@ -83,7 +83,33 @@ function day(offset: number): string {
   return localDateKey(at(offset, 12), DEMO_TIMEZONE);
 }
 
+/**
+ * 重建整个演示工作区。
+ *
+ * 这个函数只做一件事：按顺序点名各段数据，让「种子数据长什么样」变成一张可读的目录。
+ * 任何一段的顺序都不能随便调——后面的段引用前面的 id，FK 会立刻发现。
+ */
 export async function seedDemo(): Promise<void> {
+  await wipeDemoTables();
+
+  const now = new Date();
+  const weekStart = startOfLocalWeek(now, DEMO_TIMEZONE);
+
+  await seedAccount();
+  await seedPolicyAndAgents(weekStart);
+  await seedGoalsAndTasks();
+  await seedRuns();
+  await seedBudgetPeriods(weekStart);
+  await seedRunDetails();
+  await seedMemoryLayer(now);
+  await seedGovernance();
+  await seedCouncil();
+  await seedSamples();
+  await markDemoFixtures();
+}
+
+/** 先把 demo 用到的表清空。单一入口保证重复 seed 不会累积出两份历史。 */
+async function wipeDemoTables(): Promise<void> {
   await db.execute(sql`
     TRUNCATE TABLE
       agent_budget_reservations, agent_budget_periods,
@@ -95,10 +121,10 @@ export async function seedDemo(): Promise<void> {
       verifications, users
     CASCADE
   `);
+}
 
-  const now = new Date();
-  const weekStart = startOfLocalWeek(now, DEMO_TIMEZONE);
-
+/** 一个用户、一个登录方式、一份画像。演示口令固定，方便本地反复登录。 */
+async function seedAccount(): Promise<void> {
   const demoPasswordHash = await hashPassword("cabinet-demo");
 
   await db.insert(users).values({
@@ -140,7 +166,10 @@ export async function seedDemo(): Promise<void> {
     },
     managementBudgetMin: 3,
   });
+}
 
+/** 策略配置、Agent 模板、五个 Agent 与它们的授权。预算周期起点跟着本周走，否则演示数据会漂到上一周。 */
+async function seedPolicyAndAgents(weekStart: Date): Promise<void> {
   await db.insert(policyConfig).values(
     (
       [
@@ -411,7 +440,10 @@ export async function seedDemo(): Promise<void> {
       config: { binding: true },
     },
   ]);
+}
 
+/** 目标与任务。任务是这条链的主角：状态、风险、审批阈值都取自真实取值，不是占位符。 */
+async function seedGoalsAndTasks(): Promise<void> {
   await db.insert(goals).values([
     {
       id: "goal_rag",
@@ -656,7 +688,10 @@ export async function seedDemo(): Promise<void> {
   for (const { id, ...fields } of taskPolicies) {
     await db.update(tasks).set(fields).where(eq(tasks.id, id));
   }
+}
 
+/** 已经跑过的运行。step 明细放在 seedRunDetails，因为预算周期要插在两者之间。 */
+async function seedRuns(): Promise<void> {
   await db.insert(runs).values([
     {
       id: "run_plan",
@@ -698,15 +733,19 @@ export async function seedDemo(): Promise<void> {
       runLabel: "replay_quiz_v1",
     },
   ]);
+}
 
-  /**
-   * The weekly ledger is the accounting authority for "this week's spend", so
-   * the seeded runs need a matching period row per Agent or the demo would
-   * report ¥0.00 while showing paid runs. `limitCents` mirrors `agents.budget_cents`
-   * (all three are below the policy weekly ceiling, so the per-Agent cap wins)
-   * and nothing is in flight, so `reserved_cents` stays 0 while every finished
-   * run is settled — the sums never exceed the Agent's limit.
-   */
+/**
+ * 本周预算周期。它是每周花费的权威账本，`runs.cost_cents` 只是遥测。
+ *
+ * The weekly ledger is the accounting authority for "this week's spend", so the
+ * seeded runs need a matching period row per Agent or the demo would report
+ * ¥0.00 while showing paid runs. `limitCents` mirrors `agents.budget_cents`
+ * (all three are below the policy weekly ceiling, so the per-Agent cap wins)
+ * and nothing is in flight, so `reserved_cents` stays 0 while every finished
+ * run is settled — the sums never exceed the Agent's limit.
+ */
+async function seedBudgetPeriods(weekStart: Date): Promise<void> {
   const weekPeriodEnd = addLocalDays(weekStart, 7, DEMO_TIMEZONE);
   await db.insert(agentBudgetPeriods).values([
     {
@@ -746,7 +785,10 @@ export async function seedDemo(): Promise<void> {
       unknownCents: 0,
     },
   ]);
+}
 
+/** 运行的步骤与产物。页面上看到的执行记录就是这些行，不是重新执行出来的。 */
+async function seedRunDetails(): Promise<void> {
   await db.insert(steps).values([
     {
       id: "stp_plan_1",
@@ -980,7 +1022,10 @@ export async function seedDemo(): Promise<void> {
 > 备注：本版本尚未附评分标准。`,
     },
   ]);
+}
 
+/** 记忆、洞察、周复盘。复盘的 metrics 是生成当时的快照，和实时重算的数字不一致是有意的。 */
+async function seedMemoryLayer(now: Date): Promise<void> {
   await db.insert(memories).values([
     {
       id: "mem_evening",
@@ -1246,7 +1291,10 @@ export async function seedDemo(): Promise<void> {
       createdAt: at(0, 8, 30),
     },
   ]);
+}
 
+/** 审批、审计链、技能。审计事件按顺序算出 prev/hash，链式校验才有东西可验。 */
+async function seedGovernance(): Promise<void> {
   await db.insert(approvals).values([
     {
       id: "appr_booking",
@@ -1407,7 +1455,10 @@ export async function seedDemo(): Promise<void> {
       eval: { status: "not_started", required: 5, passed: 0 },
     },
   ]);
+}
 
+/** 内阁：会议、各方立场、以及一条被验证的反对意见。 */
+async function seedCouncil(): Promise<void> {
   await db.insert(councils).values([
     {
       id: "ccl_course",
@@ -1635,7 +1686,10 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       createdAt: at(-9, 10),
     },
   ]);
+}
 
+/** 用户行为样本与打卡。有这些行管理时间才是测得而不是估算——只在跑了 seed 的工作区成立。 */
+async function seedSamples(): Promise<void> {
   await db.insert(userActions).values([
     {
       id: "ua_seed_1",
@@ -1678,7 +1732,10 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       createdAt: at(-1, 22, 0),
     },
   ]);
+}
 
+/** 统一标记来源。demo 行不该被当成真实历史，导出与页面都靠这个字段区分。 */
+async function markDemoFixtures(): Promise<void> {
   // Demo rows are explicit fixtures, never real user history.
   await db.execute(sql`
     UPDATE runs SET source_type = 'demo_fixture'

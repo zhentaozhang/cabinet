@@ -140,7 +140,7 @@ const CLAIMABLE = or(eq(runJobs.status,"queued"),
 ### 运维 / 交付
 
 **P1-13　`/api/demo/reset` 是全库 TRUNCATE，守卫只有一道环境变量**
-`src/app/api/demo/reset/route.ts:6-9`：`NODE_ENV === "production" || DEMO_RESET_ENABLED !== "true"` 才 404；`src/lib/db/seed.ts:87-97` 执行 `TRUNCATE TABLE ... users CASCADE`（31 张表，含 `users`/`accounts`/`audit_events`）。鉴权是 fail-closed 的（`src/lib/auth/mode.ts:3-8`），但**开发/预发环境**（`NODE_ENV=development` + `AUTH_REQUIRED` 未设）匿名请求即 `DEMO_USER_ID`（`src/lib/auth/context.ts:33-38`）⇒ 任何能访问该实例的人一键清空整库（随后用 demo 数据重播）。
+`src/app/api/demo/reset/route.ts:6-9`：`NODE_ENV === "production" || DEMO_RESET_ENABLED !== "true"` 才 404；`src/lib/db/seed.ts:112-125`（`wipeDemoTables`）执行 `TRUNCATE TABLE ... users CASCADE`（31 张表，含 `users`/`accounts`/`audit_events`）。鉴权是 fail-closed 的（`src/lib/auth/mode.ts:3-8`），但**开发/预发环境**（`NODE_ENV=development` + `AUTH_REQUIRED` 未设）匿名请求即 `DEMO_USER_ID`（`src/lib/auth/context.ts:33-38`）⇒ 任何能访问该实例的人一键清空整库（随后用 demo 数据重播）。
 修法：双闸（`DEMO_MODE==="true"` 且 `DEMO_RESET_ENABLED==="true"`）；`seedDemo` 改成 `seedDemo(userId)` 只删该用户的行。
 
 **P1-14　`rate_limits` 无任何回收路径**
@@ -164,11 +164,11 @@ const CLAIMABLE = or(eq(runJobs.status,"queued"),
 |---|---|---|
 | 1 | `runs.replayKey` 只写不读，且无唯一约束（"可重放"语义未落地） | 写：`run.ts:317`、`run.ts:835`、`audit.ts:117`、`apprentice.ts:304`；读：仅 DTO `contracts/dto/entities.ts:226` |
 | 2 | `runs.providerAttemptId` 注释自称 "unique across retries"，实际只是普通 index，也无去重计费用途 | `schema/runs.ts:25,37`；只读作"是否接触过供应商" |
-| 3 | `tasks.quality_gate` 只写不读，audit 用字符串匹配 "评分标准/rubric" 代替它 | `schema/tasks.ts:34`（仅 `seed.ts:626` 写）、`audit.ts:183-196` |
+| 3 | `tasks.quality_gate` 只写不读，audit 用字符串匹配 "评分标准/rubric" 代替它 | `schema/tasks.ts:34`（仅 `seed.ts:626` 写）、`audit.ts:183-196`。**已闭环：第 14 节 D 批删列** |
 | 4 | 长期授权"不限次"被静默改成 20 次 | `grants.ts:34-36` 把显式 `null` 归一为 `null`，`:49` `maxRuns ?? 20` 又变回 20；`run.ts:222-223` 按 null=不限次读 |
 | 5 | "测试连接"绕过检索预算与 `retrieval_calls` 账本（真实扣费不入账，预算耗尽仍可无限探测） | `readmodels/connectors.ts:96` 直连 `searchWithFallback`；预算闸只在 `run.ts:432-437` |
 | 6 | 检索花销与 agent 预算两本账：`retrieval_calls` 是 user 级，不计入 `agent_budget_periods` | `connectors/ledger.ts:19-45` vs `queries/metrics.ts:99-100` |
-| 7 | `user_actions` 只读不写 ⇒ metrics 的 "measured" 分支只可能由 seed 触发 | 唯一写入 `seed.ts:1640`；读 `queries/metrics.ts:128-135` |
+| 7 | `user_actions` 只读不写 ⇒ metrics 的 "measured" 分支只可能由 seed 触发 | 唯一写入 `seed.ts:1693`（`seedSamples`）；读 `queries/metrics.ts:128-135` |
 | 8 | `reviews.metrics` 数字快照无人读（页面数字全走实时计算），且 upsert 覆盖 `createdAt` | 写 `commands/reviews.ts:102,121`；页面 `src/app/review/page.tsx:97` 用 `data.weeklyMetrics`，只消费 `weekly.narrative/period/createdAt/decisions` |
 | 9 | demo 产物由标题子串 + 历史运行次数决定（机制硬编码进运行时判断） | `shared/draft.ts`：`taskTitle.includes("评估") \|\| includes("练习")`、`v${priorRuns+1}`、`hasRejection` 决定是否附评分标准 |
 | 10 | 审计链检测不到"尾部截断"（删除最后 N 行仍 `ok:true`） | `lib/audit.ts:96-130` 按 seq 升序、prevHash 单向后指，无外部锚点；追加侧并发是安全的（`:48-50` advisory xact lock） |
@@ -427,7 +427,7 @@ tick 里有三个清扫函数按时间删除旧行，而 0027 之前的索引一
 |---|---|---|---|
 | 1 | `jobs.ts` 里 `leaseMs` 与 `leaseMsFromEnv` 两份重复实现 | 现在只有一份 `leaseMs()`（`src/server/services/commands/tasks/jobs.ts:30-35`，读 `RUN_LEASE_MINUTES`，回退 `DEFAULT_LEASE_MS`）；`CLAIMABLE` 也已改用 `sql`now()`` 而不是模块顶层的 `new Date()`（:53-59） | 计划作废，不删 |
 | 2 | `/api/notifications/run` 返回体缺 `lost` | 已返回 `lost: report.lost`（`src/app/api/notifications/run/route.ts`，注释指向 `deliveryRunSchema`） | 计划作废 |
-| 3 | `user_actions` 只被读、没有写入方 | 有写入方：`src/lib/db/seed.ts:1640` 的 demo 种子（`ua_seed_1/2/3`），`tests/integration/metrics-samples.test.ts:128` 也直接插。`git grep 'insert(userActions)'` 只命中这两处 | **不删表**。真实性质是「demo-only producer」：不跑 seed 的工作区里管理时间会静默退回估算。这条留在文档里，不靠删代码解决 |
+| 3 | `user_actions` 只被读、没有写入方 | 有写入方：`src/lib/db/seed.ts:1693`（`seedSamples`）的 demo 种子（`ua_seed_1/2/3`），`tests/integration/metrics-samples.test.ts:128` 也直接插。`git grep 'insert(userActions)'` 只命中这两处 | **不删表**。真实性质是「demo-only producer」：不跑 seed 的工作区里管理时间会静默退回估算。这条留在文档里，不靠删代码解决 |
 | 4 | `reviews.metrics` 是死列 | 有数据、无读方：`src/server/services/queries/review.ts:46-51` 整行取出、:138 返回页面，页面只读 `decisions/narrative/period/createdAt`。但它冻结的是**生成当时**的数字（`weeklyMetrics` 是实时重算的） | 保留，定位为「有意义的快照，暂无读方」 |
 | 5 | `artifacts` 该加 (taskId, runId) 唯一索引 | 约束不到真正的重复：`src/server/services/commands/tasks/submit.ts:33-44` 用户提交时写 `runId: null`，重复提交本来就该多插一行（版本历史语义） | 不建。「一次运行一个产物」是当前实现的副产品，不是要固化的不变量 |
 | 6 | `outbox` 失败行没有终态（12.3 第 4 行） | 有终态：`MAX_ATTEMPTS` 耗尽后写 `status: "failed"`（`src/server/services/commands/delivery.ts:350-372`），而认领只取 `pending`/`sending`（:144-145），所以 `failed` 不会再被重试。`archiveOldOutbox` 只删 `sent`/`skipped` 是**刻意**的（`src/server/jobs/maintenance.ts:150-152` 注释：失败行是「地址为什么不再可用」的记录），且有读方：`src/app/api/metrics/route.ts:42` 按状态分组、`src/server/services/queries/delivery.ts:31` 给设置页列表 | 12.3 该行作废；失败行不再是缺口 |
@@ -441,8 +441,9 @@ tick 里有三个清扫函数按时间删除旧行，而 0027 之前的索引一
 | A 契约收口 | 5 条路由进常量表，组件不再拼字符串 | `src/contracts/routes.ts`（`taskSubmit`/`taskDone`/`learningNextTask`/`reviewsWeekly`/`shell`）；调用点 `src/components/actions/task-actions.tsx:116,536`、`utility-buttons.tsx:75`、`learning-actions.tsx:18`、`src/lib/api/pages.ts:162` |
 | B 学习链最后一跳 | 打卡提交后自动接续下一道学习题 | `src/server/services/commands/checkins.ts` 在**事务提交之后**调 `ensureNextLearningTask`，且只吞 `ValidationError`（没有学习目标的用户不该因为打卡失败）；测试 `tests/integration/learning-loop.test.ts` 加「无目标也能打卡」用例 |
 | D 假语义清理 | 删掉零读方的 `tasks.quality_gate`；`runs.replay_key` 更名 `run_label`（注释本来就写「它是一次尝试的编号，不是回放句柄」） | `src/lib/db/schema/tasks.ts`、`src/lib/db/schema/runs.ts:28`、`src/lib/db/seed.ts`、`src/contracts/dto/entities.ts`、`src/app/tasks/[id]/page.tsx`；迁移 `drizzle/0029_drop_quality_gate.sql`、`drizzle/0030_rename_replay_key.sql`（手写 `ALTER TABLE ... RENAME COLUMN` + 对齐快照，因此不丢数据；`drizzle-kit generate` 再跑一次输出 `No schema changes`） |
+| F 种子可读性 | `seedDemo`（原 1696 行单函数）按域拆成 12 个 `async function`，`seedDemo` 只剩调用链；插入顺序、字段值一字未改（diff 只有函数边界与注释） | `src/lib/db/seed.ts`：`wipeDemoTables` / `seedAccount` / `seedPolicyAndAgents(weekStart)` / `seedGoalsAndTasks` / `seedRuns` / `seedBudgetPeriods(weekStart)` / `seedRunDetails` / `seedMemoryLayer(now)` / `seedGovernance` / `seedCouncil` / `seedSamples` / `markDemoFixtures` |
 | E 文档对齐 | 三篇「描述永不发生场景」的文档加适用范围横幅；新增读码路径 | `docs/deployment.md`、`docs/run-durability.md`、`docs/frontend-backend-separation.md`；新增 `docs/reading-order.md`（10 步，每步配可跑的测试文件） |
 
-验证：`tsc --noEmit` 与 `eslint --max-warnings=0` 均 exit 0；隔离库 `cabinet_rename`（`drizzle-kit migrate` 全量迁移）上跑 `setup`/`apprentice-graduation`/`apprentice-autonomy-audit`/`metrics-samples`/`learning-loop` 共 **26 passed**。
+验证：`tsc --noEmit` 与 `eslint --max-warnings=0` 均 exit 0；隔离库 `cabinet_rename`（`drizzle-kit migrate` 全量迁移）上跑 `setup`/`apprentice-graduation`/`apprentice-autonomy-audit`/`metrics-samples`/`learning-loop` 共 **26 passed**。F 批单独验证：隔离库 `cabinet_seed` 上全量 **104 files / 908 tests passed**，随后 `bash scripts/verify.sh` 整体 exit 0（含 `next build`）。
 
-**仍未做（明确保留）**：`seedDemo` 按域拆分（1696 行单函数，纯重构、风险集中在种子数据回归）；`/api/auth/*`、`/api/health`、`/api/metrics` 三条运维入口不进 `routes.ts`（它们不是页面调用的契约）。
+**仍未做（明确保留）**：`/api/auth/*`、`/api/health`、`/api/metrics` 三条运维入口不进 `routes.ts`（它们不是页面调用的契约）。
