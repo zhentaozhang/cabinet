@@ -81,6 +81,27 @@ describe("layer boundaries", () => {
     expect(violations).toEqual([]);
   });
 
+  /**
+   * `src/lib` was the one shared layer these assertions did not cover, and the
+   * single violation lived exactly there: `src/lib/engine.ts:13` re-exports the
+   * server implementation behind a @deprecated shim, still imported by 18
+   * modules. Pin that one file as the exemption rather than leaving the whole
+   * layer unguarded — any new `@/server` import from `src/lib` fails here.
+   */
+  const LIB_TO_SERVER_ALLOWED = new Set<string>(["lib/engine.ts"]);
+
+  test("the shared layer never imports the server", () => {
+    const violations = walk(join(SRC, "lib"))
+      .filter((file) => !LIB_TO_SERVER_ALLOWED.has(rel(file)))
+      .flatMap((file) =>
+        importsOf(file)
+          .filter((spec) => spec.startsWith("@/server/"))
+          .map((spec) => `${rel(file)} → ${spec}`),
+      );
+
+    expect(violations).toEqual([]);
+  });
+
   test("route handlers are the only backend entry point", () => {
     const routes = walk(join(SRC, "app/api"));
     expect(routes.length).toBeGreaterThan(10);

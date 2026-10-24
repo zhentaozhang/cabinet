@@ -9,5 +9,9 @@
  *
  * Integration tests still import from here during the migration; the shim
  * disappears once they are pointed at the API.
+ *
+ * This is the only `src/lib` module allowed to import `@/server` — it is listed
+ * by name in `tests/unit/boundary.test.ts` (`LIB_TO_SERVER_ALLOWED`). Adding a
+ * second entry is a decision about where the boundary sits, not a formality.
  */
 export * from "@/server/services/engine";
