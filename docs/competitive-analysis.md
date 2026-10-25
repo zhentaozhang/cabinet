@@ -47,6 +47,10 @@ Cabinet 的位置不在「Agent 框架」，而在 **「Agent 的治理层」**�
 - MCP 只做 Streamable HTTP，**不做 stdio**；没有 OAuth；`mcp_servers` 仍无 UI/API 写入入口。
 - manifest 只证明**这个文件没被改过**，不证明**运行没被漏记**；`auditHead` 没有外部锚定（没有第三方时间戳/公证）。
 - 验收契约仍是确定性清单 + `manual`，**没有模型判定**；导出的是规则，判定结果在 manifest 里。
+- MCP 的参数目前恒为 `{query}`，且要求 server 必须回 `mcp-session-id`、每次调用重新握手：
+  对真实第三方工具还不够用（`docs/mcp.md` 的能力边界表已逐条写明）。
+- 验收判定有第三种 `undetermined`：没有人判过的行不会被写成 `fail`，读 `verdict` 的消费方
+  不会把「没判定」读成「不合格」（`docs/manifest.md`）。
 
 ---
 
