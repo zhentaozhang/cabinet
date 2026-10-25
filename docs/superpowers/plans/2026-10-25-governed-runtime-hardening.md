@@ -204,29 +204,54 @@ eslint 干净。
 ### Task 3.1 Merkle + 校验
 **Files:** `src/lib/domain/manifest.ts`；测试 `tests/unit/manifest.test.ts`
 
-- [ ] 失败测试：`merkleRoot([])` → `null`；`merkleRoot([h])` → `h`（原样）；`merkleRoot([a,b])` → `sha256(min+max)`。
-- [ ] 失败测试：n=3 时第 3 个直接晋级（手算期望值写进断言）。
-- [ ] 失败测试：改任一叶 → root 变（3 组样本）。
-- [ ] 失败测试：`verifyManifest` 对篡改的 `auditHead.seq`/`hash` 返回 `ok:false`，`mismatches[0].path="auditHead"`。
-- [ ] 绿。
+- [x] 失败测试：`merkleRoot([])` → `null`；`merkleRoot([h])` → `h`（原样）；`merkleRoot([a,b])` → `sha256(min+max)`。
+- [x] 失败测试：n=3 时第 3 个直接晋级（手算期望值写进断言）。
+- [x] 失败测试：改任一叶 → root 变（3 组样本）。
+- [x] 失败测试：`verifyManifest` 对篡改的 `auditHead.seq`/`hash` 返回 `ok:false`，`mismatches[0].path="auditHead"`。
+- [x] 绿。
 
 ### Task 3.2 构建 + CLI
 **Files:** 同文件 + `scripts/verify-manifest.ts`；测试 `tests/integration/manifest.test.ts`
 
-- [ ] 失败测试：`buildManifest(runId)` 的 `merkleRoot` 等于对同批 step 手算值；含 artifacts/evidence/acceptance/approvals 四组。
-- [ ] 失败测试：改 manifest 里某 step 的 `outputHash` 一位 → `ok:false`，path 指向该 step。
-- [ ] 失败测试：CLI 对篡改文件 exit 1、原文件 exit 0（`tsx` 跑，断言退出码）。
-- [ ] 绿。
+- [x] 失败测试：`buildManifest(runId)` 的 `merkleRoot` 等于对同批 step 手算值；含 artifacts/evidence/acceptance/approvals 四组。
+- [x] 失败测试：改 manifest 里某 step 的 `outputHash` 一位 → `ok:false`，path 指向该 step。
+- [x] 失败测试：CLI 对篡改文件 exit 1、原文件 exit 0（`tsx` 跑，断言退出码）。
+- [x] 绿。
 
 ### Task 3.3 导出端点
 **Files:** `src/app/api/tasks/[id]/manifest/route.ts`；测试 `tests/integration/manifest-route.test.ts`
 
-- [ ] 失败测试：未登录 401；他人 run 404（不泄漏存在性）；本人 200 + JSON + `content-disposition` 含 runId。
-- [ ] 失败测试：响应体不含 prompt 哨兵字符串。
-- [ ] 先读 `node_modules/next/dist/docs/` 的 Route Handler 指南（Next 16）。
-- [ ] 绿。
+- [x] 失败测试：未登录 401；他人 run 404（不泄漏存在性）；本人 200 + JSON + `content-disposition` 含 runId。
+- [x] 失败测试：响应体不含 prompt 哨兵字符串。
+- [x] 先读 `node_modules/next/dist/docs/` 的 Route Handler 指南（Next 16）。
+- [x] 绿。
 
 ---
+
+
+### 落地记录（2026-10-25）
+
+实现与计划的偏离，逐条说明原因：
+
+1. **`ManifestStep` 多了 `inputHash`**。计划只列了 `outputHash`，但 `steps.input` 同样可被改写，
+   只锁输出等于让输入可替换；输入里是 prompt 和原文，所以存哈希而不是值。
+2. **`auditHead` 允许 `null`**。计划写死 `{seq, hash}`；该用户还没有审计事件时没有任何真实锚点，
+   用 `seq: 0` 顶替会让校验方必须怀疑一个本来就空的锚点。`null` 在 `verifyManifest` 里进 `unchecked`，
+   **不算通过**。
+3. **`approvals` 里没有 `approverId`**。`approvals` 表（`src/lib/db/schema/tasks.ts:63-85`）没有这一列，
+   审批人只存在于审计链的 `actor`。实现按表结构落 `{id, action, status, decidedAt}`，并在 `docs/manifest.md` 写明。
+4. **没给 `chain` 时 `auditHead` 是 `unchecked` 而不是失败**。离线只验 manifest 自身是合法用法；
+   但 `unchecked` 永远不会被当成通过（`AGENTS.md` 第 2 条）。
+5. **路由默认跳过含 `audit` step 的运行**，并支持 `?run=<runId>` 指定。审计本身也是一次运行，
+   「最新一次运行」通常是审计，导出它会描述检查者而不是被检查的活。
+6. **响应体是 manifest 本体**，不是 `{ok, data}` 包装：它是下载物，带 `content-disposition`；
+   错误仍走 `toErrorResponse`（401/404 与其它路由一致）。
+7. **`promptVersion` 是手 bump 的整数常量** `PROMPT_TEMPLATE_VERSION`（`src/lib/llm.ts`），
+   不是函数源码哈希：打包会改写源码文本，dev 与 prod 会得出不同版本号。
+8. **新增 `docs/manifest.md` 与 README 一条链接**（计划未列），记录字段、Merkle 规则、CLI 与「能证明什么/不能证明什么」。
+
+验证：`tests/unit/manifest.test.ts` 16 例、`tests/integration/manifest.test.ts` 5 例（含真实 `tsx` 子进程跑 CLI 断言退出码）、
+`tests/integration/manifest-route.test.ts` 5 例；`bash scripts/verify.sh` 全过。
 
 ## Phase 4 — ★4：验收契约导出
 

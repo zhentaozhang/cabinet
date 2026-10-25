@@ -254,6 +254,16 @@ export function composeEvidenceBlock(evidence: EvidenceForPrompt[]): string {
     .join("\n");
 }
 
+/**
+ * Bumped by hand whenever `composeSystemPrompt` or `composeUserPrompt` change.
+ *
+ * Not a hash of the function source: bundling, minification and the dev overlay
+ * all rewrite `Function.prototype.toString()`, so the same prompt would get a
+ * different version in dev than in production — and a manifest whose prompt
+ * version differs by build is a manifest nobody can compare.
+ */
+export const PROMPT_TEMPLATE_VERSION = 1;
+
 export function composeSystemPrompt(input: PromptInput): string {
   const evidence = input.evidence ?? [];
   return [
