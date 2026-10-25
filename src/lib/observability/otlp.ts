@@ -132,33 +132,48 @@ export function createOtlpSink(options: {
   let stopped = false;
   let dropped = 0;
 
-  async function flush(): Promise<void> {
-    if (flushing) return flushing;
-    const batch = queue;
-    queue = [];
-    if (batch.length === 0) return;
-    flushing = (async () => {
-      try {
-        const response = await doFetch(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(toOtlpPayload(batch)),
-        });
-        if (!response.ok) {
-          logEvent("warn", "otlp.export.failed", {
-            status: response.status,
-            spans: batch.length,
-          });
-        }
-      } catch (error) {
+  /** Send one batch. Never rejects: telemetry must not fail its caller. */
+  async function send(batch: FinishedSpan[]): Promise<void> {
+    try {
+      const response = await doFetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(toOtlpPayload(batch)),
+      });
+      if (!response.ok) {
         logEvent("warn", "otlp.export.failed", {
+          status: response.status,
           spans: batch.length,
-          message: error instanceof Error ? error.message : String(error),
         });
-      } finally {
-        flushing = null;
       }
-    })();
+    } catch (error) {
+      logEvent("warn", "otlp.export.failed", {
+        spans: batch.length,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Drain the queue, one batch at a time.
+   *
+   * Concurrent calls are chained rather than short-circuited: the second caller
+   * is usually a shutdown, and returning the first caller's promise would leave
+   * whatever it queued behind (5f332e7f 建议 5). Each link re-checks the queue,
+   * so spans arriving mid-flight are sent by the next pass, not dropped.
+   */
+  function flush(): Promise<void> {
+    const pass = async (): Promise<void> => {
+      while (queue.length > 0) {
+        const batch = queue;
+        queue = [];
+        await send(batch);
+      }
+    };
+    const next = flushing ? flushing.then(pass) : pass();
+    flushing = next.finally(() => {
+      if (flushing === next) flushing = null;
+    });
     return flushing;
   }
 

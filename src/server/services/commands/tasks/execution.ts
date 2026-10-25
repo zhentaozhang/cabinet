@@ -223,6 +223,11 @@ export async function settleBudget(
     .where(eq(agentBudgetPeriods.id, reservation.periodId))
     .for("update");
 
+  // No affected-row assertion here, deliberately: `agent_budget_reservations.period_id`
+  // is a foreign key to this row and the SELECT above already took a row lock,
+  // so the row cannot disappear between the read and the write. AGENTS.md 第 1 条
+  // asks for a checked rowcount where a concurrent writer can change the target
+  // (a task status); here a zero would mean the database lost a foreign key.
   await tx
     .update(agentBudgetPeriods)
     .set({
@@ -240,7 +245,9 @@ export async function settleBudget(
       settledCents: settlement.settledCents,
       providerAttemptId: input.providerAttemptId ?? null,
       reason: input.reason ?? null,
-      settledAt: new Date(),
+      // Database clock, not the process clock: a worker with a skewed clock
+      // must not be able to make a settlement look older than its reservation.
+      settledAt: sql`now()`,
     })
     .where(eq(agentBudgetReservations.id, reservation.id));
 

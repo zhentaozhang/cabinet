@@ -18,6 +18,9 @@ Cabinet 的答案是：工具在 `agents.tools` 里声明，权限在 `agent_gra
 | 能力协商 | 只声明空 capabilities | 客户端不实现 sampling / roots / elicitation |
 | 认证 | 无（无 OAuth，无 mTLS） | 受信任内网或自带网关时可用；公网 server 需要先加认证 |
 | 工具发现 | `tools/list` | 已实现，但 run 里**不用它**来放宽权限：声明即权限（见下） |
+| 会话 | server **必须**回 `mcp-session-id` | 规范里会话是可选的，本客户端把它当必需：没回就 `invalid_response` |
+| 参数 | 恒为 `{ query: "<任务标题+描述>" }` | 没有按工具的入参 schema 组装参数，也没有让模型选参数；对入参不是 `query` 的第三方工具基本不可用 |
+| 连接 | 每次调用新建一个 client | 一次 run 里 N 次调用 = N 次 `initialize` 握手，且不发 `DELETE` 结束会话（服务端要靠过期回收） |
 
 ## 配置一个 server
 
@@ -66,8 +69,15 @@ VALUES ('grt_gh', 'ag_coach', 'mcp:github', 'read', '{}');
 2. **计划** — `planTools` 用 `mcp:<name>` 和 server 行的 `scope` 作为 spec，查 grant；不通过 → `unauthorized`
 3. **预扣** — `reserveBudget` 写一条 `agent_budget_reservations`；被拒 → `budget_exceeded`，调用不发生
 4. **调用** — `createMcpClient({url}).callTool(...)`，超时由客户端负责（默认 8s）
-5. **结算** — 成功 `known_usage`（本期 0 分）、超时/网络错误 `unknown_usage`、其余 `not_contacted`
-6. **留痕** — 一条 `steps` 行：`tool`、`output.status`、`provider: mcp:<name>`、`latencyMs`
+5. **结算** — 成功 → `settled`；抛错、超时、网络错误、429、不可解析的应答 → `unknown_usage`（请求可能已经离开）；
+   只有 401/403 或缺配置 → `released`（路上没花别人的钱）
+6. **留痕** — 一条 `steps` 行：`tool`、`output.status`、`output.attempted`、`latencyMs`，
+   真正发出请求时才有 `output.provider = mcp:<name>`
+
+第 6 步的 `attempted` 是给崩溃恢复用的显式证据：早先它按「有没有 provider 字段」判断是否接触过
+供应商，而那条字段在`unauthorized`/`budget_exceeded`/计划拒绝的步骤上也被写上了，于是
+「没有发出请求」会被记成「可能已经花掉了钱」。现在拒绝路径写 `attempted: false` 且不带 provider，
+判定集中在 `src/lib/domain/contact.ts`（`stepMadeRequest`，显式标志优先，缺省才回落到 status）。
 
 为什么预算预扣在调用之前：预扣放在后面，模型/工具就能用「先花掉再申请」绕过额度。
 为什么失败也要结算：一条不结算的预扣会永久占用额度，这正是 ledger 存在的原因。
@@ -76,6 +86,12 @@ VALUES ('grt_gh', 'ag_coach', 'mcp:github', 'read', '{}');
 `releaseStaleHolds`：把 `run_id IS NULL`（= 每次工具调用各自的预扣）且超过 15 分钟仍在
 `reserved` 的行按 `not_contacted` 释放。run 级别的预扣不归它管——那个由
 `recoverStaleRuns` 按 run 状态处理，而还在跑的 run 必须保住自己的额度。
+
+这条兜底有一个**已知的宽松点**，写在这里而不是藏起来：每次工具调用的预扣不带 `run_id`
+（它是 per-call 的，不是 per-run 的），所以它对应的 step 还没写下来时，崩溃后的 run 里没有
+`attempted` 证据，恢复逻辑只能当「没发出请求」，那笔额度就被免费放行。当前
+`MCP_TOOL_COST_CENTS` 是 0，所以此刻不产生账务差异；一旦给远端写调用定价，正确的做法是
+调用前先落一条 in-flight 标记，或把这类 hold 记成 `unknown_usage` 而不是 `released`。
 
 ## 失败枚举
 
@@ -115,6 +131,8 @@ VALUES ('grt_gh', 'ag_coach', 'mcp:github', 'read', '{}');
 - 没有对真实的第三方 server 跑过（测试用进程内假 server，覆盖握手/会话/SSE/超时/错误码）。
 - 会话过期靠 HTTP 404 判定并重试一次；不同 server 对「过期」的表达不一致，遇到别的码会退化成 `invalid_response`。
 - `mcp_servers` 没有 UI，也没有「测试连接」按钮；配置错误的直接表现是 run 里一条 `not_connected` step。
+- 参数恒为 `{query}`、必须回 session id、每次调用重新握手这三条都只在进程内假 server 上验过；
+  真实第三方 server 大概率需要先补参数组装（见「能力边界」）。
 
 ## 测试
 

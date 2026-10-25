@@ -118,6 +118,39 @@ describe("otlp exporter", () => {
     exporter.stop();
   });
 
+  it("drains spans queued while a flush is in flight", async () => {
+    // 5f332e7f 建议 5: a second flush() used to return the in-flight promise and
+    // leave the newly queued spans behind, so a shutting-down process lost the
+    // last batch — exactly the spans that describe the shutdown.
+    const calls: Call[] = [];
+    let release = () => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fakeFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      await blocked;
+      return new Response("", { status: 200 });
+    }) as unknown as typeof fetch;
+    const exporter = createOtlpSink({ endpoint: "http://collector:4318", fetchImpl: fakeFetch });
+
+    exporter.sink(span({ spanId: "1".repeat(16) }));
+    const first = exporter.flush();
+    exporter.sink(span({ spanId: "2".repeat(16) }));
+    const second = exporter.flush();
+    release();
+    await Promise.all([first, second]);
+
+    const ids = calls.flatMap((call) =>
+      JSON.parse(String(call.init.body)).resourceSpans[0].scopeSpans[0].spans.map(
+        (wire: { spanId: string }) => wire.spanId,
+      ),
+    );
+    expect(ids).toEqual(["1".repeat(16), "2".repeat(16)]);
+    expect(exporter.pending()).toBe(0);
+    exporter.stop();
+  });
+
   it("drops the oldest spans instead of growing without bound", async () => {
     const { calls, fakeFetch } = recorder();
     const exporter = createOtlpSink({

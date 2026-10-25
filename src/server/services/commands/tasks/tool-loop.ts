@@ -5,9 +5,8 @@ import { mcpServers } from "@/lib/db/schema";
 import type { Grant } from "@/lib/domain/policy";
 import {
   planTools,
-  type ToolRejection,
+  REJECTION_STATUS,
   type ToolSpec,
-  type ToolStepStatus,
 } from "@/lib/domain/tool-plan";
 import { createMcpClient } from "@/lib/mcp/client";
 import { logEvent } from "@/lib/observability/log";
@@ -33,12 +32,6 @@ export const MCP_TOOL_COST_CENTS = 0;
 
 /** A step stores a preview, not a transcript; the full body stays upstream. */
 const CONTENT_PREVIEW_CHARS = 2000;
-
-const REJECTION_STATUS: Record<ToolRejection, ToolStepStatus> = {
-  missing_grant: "unauthorized",
-  needs_action: "unauthorized",
-  unknown_tool: "not_connected",
-};
 
 export type ToolStepRecord = {
   type: string;
@@ -129,6 +122,7 @@ export async function runMcpToolLoop(
           status: "not_connected",
           tool,
           provider: null,
+          attempted: false,
           reason:
             'No MCP server named "' + serverName + '" is configured.',
         },
@@ -159,10 +153,13 @@ export async function runMcpToolLoop(
         type: "tool",
         tool,
         input: {},
+        // No request is sent on this path, so it must not claim a provider and
+        // must not look "possibly charged" to the recovery pass (5f332e7f 阻断 3).
         output: {
           status: REJECTION_STATUS[rejection],
           tool,
-          provider,
+          server: server.name,
+          attempted: false,
           reason: plan.reason,
         },
       });
@@ -223,7 +220,10 @@ export async function runMcpToolLoop(
       output: {
         status: result.status,
         tool,
-        provider,
+        // Only a step that really called out names a provider; run.ts's built-in
+        // path has always followed that rule.
+        provider: result.attempted ? provider : null,
+        attempted: result.attempted,
         remoteTool,
         reason: result.reason,
         content:

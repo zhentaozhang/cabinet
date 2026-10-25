@@ -47,6 +47,19 @@ describe("json-rpc responses", () => {
     }
   });
 
+  it("refuses a reply addressed to a different request", () => {
+    // 5f332e7f 建议 2: without this check any envelope that happens to parse is
+    // accepted as the answer, including a retry of an earlier request.
+    const stale = '{"jsonrpc":"2.0","id":6,"result":{"content":[]}}';
+    const parsed = parseJsonRpcResponse(stale, 7);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.message).toContain("id");
+    expect(parseJsonRpcResponse(stale, 6)).toEqual({
+      ok: true,
+      result: { content: [] },
+    });
+  });
+
   it("reports unparseable bodies instead of throwing", () => {
     expect(parseJsonRpcResponse("<html>502</html>").ok).toBe(false);
     expect(parseJsonRpcResponse("null").ok).toBe(false);

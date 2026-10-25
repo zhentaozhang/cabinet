@@ -112,6 +112,20 @@ export function planTools(input: {
   };
 }
 
+/**
+ * The step status a rejection is recorded under.
+ *
+ * One table for the whole system: the planner, the built-in tool step in
+ * `run.ts` and the MCP loop all name the same rejection the same way. They used
+ * to disagree — `unknown_tool` was `unauthorized` in one place and
+ * `not_connected` in the other — so the same event read as two different facts.
+ */
+export const REJECTION_STATUS: Record<ToolRejection, ToolStepStatus> = {
+  missing_grant: "unauthorized",
+  needs_action: "unauthorized",
+  unknown_tool: "not_connected",
+};
+
 /** Terminal states a tool step may report. `ok` is reserved for a real call. */
 export type ToolStepStatus =
   | "ok"

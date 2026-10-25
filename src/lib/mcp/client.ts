@@ -166,7 +166,10 @@ export function createMcpClient(options: McpClientOptions): McpClient {
           // Keep looking: one unparseable event should not hide the answer.
         }
       }
-      return messages[messages.length - 1]!;
+      // Nothing matched this request's id: the reply belongs to another call,
+      // and guessing "the last message" is how a stale result gets recorded as
+      // a fresh one. The caller turns null into invalid_response.
+      return null;
     }
     return response.text.trim() === "" ? null : response.text;
   }
@@ -200,7 +203,7 @@ export function createMcpClient(options: McpClientOptions): McpClient {
             retryable: false,
           });
         }
-        const parsed = parseJsonRpcResponse(message);
+        const parsed = parseJsonRpcResponse(message, id);
         if (!parsed.ok) {
           return failed(Date.now() - started, {
             code: "invalid_response",
@@ -251,7 +254,8 @@ export function createMcpClient(options: McpClientOptions): McpClient {
       const failure = statusError(response);
       if (failure) return { ok: false, latencyMs: Date.now() - started, error: failure };
       const message = pickMessage(response, id);
-      const parsed = message === null ? { ok: false as const } : parseJsonRpcResponse(message);
+      const parsed =
+        message === null ? { ok: false as const } : parseJsonRpcResponse(message, id);
       if (!parsed.ok) {
         return failed(Date.now() - started, {
           code: "invalid_response",

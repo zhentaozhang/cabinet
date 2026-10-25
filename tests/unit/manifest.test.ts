@@ -157,13 +157,34 @@ describe("verifyManifest", () => {
     expect(result.mismatches[0]).toMatchObject({ path: "version", expected: String(MANIFEST_VERSION), actual: "99" });
   });
 
-  it("rejects an acceptance verdict outside pass|fail", () => {
+  it("rejects an acceptance verdict outside pass|fail|undetermined", () => {
     const bad = manifest({
       acceptance: [{ item: {}, verdict: "maybe" as never, undetermined: false }],
     });
     const result = verifyManifest(bad);
     expect(result.ok).toBe(false);
     expect(result.mismatches.map((entry) => entry.path)).toContain("acceptance[0].verdict");
+  });
+
+  it("has a verdict for an item nobody judged, instead of calling it a failure", () => {
+    // 5f332e7f 建议 10: an item the evaluator never decides used to be written
+    // as verdict "fail", so a consumer that only reads `verdict` reported
+    // "not evaluated" as "did not pass".
+    const doc = manifest({
+      acceptance: [{ item: { type: "manual" }, verdict: "undetermined", undetermined: true }],
+    });
+    const result = verifyManifest(doc);
+    expect(result.mismatches).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a row whose verdict and undetermined flag disagree", () => {
+    const doc = manifest({
+      acceptance: [{ item: { type: "manual" }, verdict: "pass", undetermined: true }],
+    });
+    const result = verifyManifest(doc);
+    expect(result.ok).toBe(false);
+    expect(result.mismatches.map((entry) => entry.path)).toContain("acceptance[0].undetermined");
   });
 
   it("rejects a document that is not an object", () => {

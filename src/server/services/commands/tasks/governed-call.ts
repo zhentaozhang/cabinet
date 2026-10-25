@@ -1,3 +1,4 @@
+import { maybeContacted } from "@/lib/domain/contact";
 import { hasGrant, type Grant } from "@/lib/domain/policy";
 import type { ToolStepStatus } from "@/lib/domain/tool-plan";
 import type { ConnectorErrorCode } from "@/lib/connectors/types";
@@ -35,6 +36,12 @@ export type GovernedCallResult = {
   reason: string;
   latencyMs: number;
   content: string | null;
+  /**
+   * Whether `call` was invoked at all. A refused call reports false even though
+   * its status (`unauthorized`, `budget_exceeded`) is written into the run, and
+   * the recovery pass reads exactly this flag instead of guessing from labels.
+   */
+  attempted: boolean;
 };
 
 /** Connector failures are recorded with the vocabulary a step already has. */
@@ -58,6 +65,7 @@ export async function governedCall(
       reason: `No grant allows ${input.scope} on ${input.resource}.`,
       latencyMs: 0,
       content: null,
+      attempted: false,
     };
   }
 
@@ -69,6 +77,7 @@ export async function governedCall(
       reason: admission.reason,
       latencyMs: 0,
       content: null,
+      attempted: false,
     };
   }
   const reservationId = admission.reservationId;
@@ -77,12 +86,16 @@ export async function governedCall(
   try {
     outcome = await input.call(input.args);
   } catch (error) {
-    await input.settle(reservationId, "released");
+    // The throw may have happened before or after the request left the socket,
+    // and this layer cannot tell. "No cost" would be a guess about someone
+    // else's ledger, so the hold is closed as unknown usage.
+    await input.settle(reservationId, "unknown_usage");
     return {
       status: "not_connected",
       reason: error instanceof Error ? error.message : "Tool call failed.",
       latencyMs: 0,
       content: null,
+      attempted: true,
     };
   }
 
@@ -93,18 +106,23 @@ export async function governedCall(
       reason: `${input.tool} returned ${outcome.value.length} characters.`,
       latencyMs: outcome.latencyMs,
       content: outcome.value,
+      attempted: true,
     };
   }
 
-  // A timeout or a dropped connection may still have cost the provider
-  // something; anything the server itself refused did not.
-  const maybeCharged =
-    outcome.error.code === "timeout" || outcome.error.code === "network_error";
-  await input.settle(reservationId, maybeCharged ? "unknown_usage" : "released");
+  // A timeout, a dropped connection, an unparseable reply or a 429 all mean the
+  // request reached someone; only the server's own refusal (401) proves nothing
+  // was spent. The recovery pass uses the same predicate (src/lib/domain/contact.ts),
+  // so a crash and a clean failure cannot disagree about the same event.
+  await input.settle(
+    reservationId,
+    maybeContacted(outcome.error.code) ? "unknown_usage" : "released",
+  );
   return {
     status: MCP_STATUS_MAP[outcome.error.code],
     reason: outcome.error.message,
     latencyMs: outcome.latencyMs,
     content: null,
+    attempted: true,
   };
 }

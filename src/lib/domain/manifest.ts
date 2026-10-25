@@ -27,11 +27,19 @@ export type ManifestStep = {
 
 export type ManifestArtifact = { id: string; sha256: string };
 export type ManifestEvidence = { id: string; contentHash: string };
+/**
+ * `"undetermined"` is not a weaker "fail": it means the evaluator never decided
+ * (a manual rule, a claims table nobody read, evidence that was not retrieved).
+ * Writing those as "fail" made a consumer that only reads `verdict` report
+ * "nobody checked" as "did not pass" (5f332e7f 建议 10).
+ */
+export type ManifestVerdict = "pass" | "fail" | "undetermined";
 export type ManifestAcceptance = {
   item: Record<string, unknown>;
-  verdict: "pass" | "fail";
+  verdict: ManifestVerdict;
   undetermined: boolean;
 };
+const VERDICTS: readonly unknown[] = ["pass", "fail", "undetermined"];
 export type ManifestApproval = {
   id: string;
   action: string;
@@ -251,8 +259,16 @@ export function verifyManifest(
     doc.acceptance.forEach((raw, index) => {
       const entry = asRecord(raw);
       const verdict = entry?.verdict;
-      if (verdict !== "pass" && verdict !== "fail") {
-        fail("acceptance[" + index + "].verdict", "pass|fail", verdict);
+      if (!VERDICTS.includes(verdict)) {
+        fail("acceptance[" + index + "].verdict", "pass|fail|undetermined", verdict);
+      } else if ((verdict === "undetermined") !== (entry?.undetermined === true)) {
+        // The flag and the verdict say the same thing twice; letting them
+        // disagree would give two readers two answers about one row.
+        fail(
+          "acceptance[" + index + "].undetermined",
+          String(verdict === "undetermined"),
+          entry?.undetermined,
+        );
       }
     });
   }

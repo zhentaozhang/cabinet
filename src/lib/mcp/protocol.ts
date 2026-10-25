@@ -55,7 +55,10 @@ export type ParsedResponse =
  * "the server said nothing usable", because the caller records that as
  * `invalid_response` rather than crashing a run.
  */
-export function parseJsonRpcResponse(text: string): ParsedResponse {
+export function parseJsonRpcResponse(
+  text: string,
+  expectedId?: JsonRpcId,
+): ParsedResponse {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -66,9 +69,22 @@ export function parseJsonRpcResponse(text: string): ParsedResponse {
     return { ok: false, error: { code: 0, message: "Response was not an object." } };
   }
   const envelope = parsed as {
+    id?: unknown;
     result?: unknown;
     error?: { code?: unknown; message?: unknown };
   };
+  // A reply is only an answer to *this* request. Without this check any body
+  // that happens to parse — a retried earlier call, a broadcast, another
+  // client's response — is accepted as the result (5f332e7f 建议 2).
+  if (expectedId !== undefined && envelope.id !== expectedId) {
+    return {
+      ok: false,
+      error: {
+        code: 0,
+        message: "Response id did not match the request id.",
+      },
+    };
+  }
   if (envelope.error) {
     return {
       ok: false,

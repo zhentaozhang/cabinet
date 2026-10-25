@@ -41,10 +41,14 @@ function readChecklist(output: unknown): ManifestAcceptance[] {
       typeof row.item === "object" && row.item !== null
         ? (row.item as Record<string, unknown>)
         : {};
+    // An audit row can say "nobody decided this" (AGENTS.md 第 2 条). That is a
+    // third verdict, not a failure: recording it as "fail" tells a reader the
+    // work was judged and rejected (5f332e7f 建议 10).
+    const undetermined = row.undetermined === true;
     report.push({
       item,
-      verdict: row.passed === true ? "pass" : "fail",
-      undetermined: row.undetermined === true,
+      verdict: undetermined ? "undetermined" : row.passed === true ? "pass" : "fail",
+      undetermined,
     });
   }
   return report;

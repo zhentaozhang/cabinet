@@ -22,23 +22,29 @@
 
 7 种类型都会被翻译成一句人能读懂的话 + 一份机器能读的 `spec`：
 
-| 类型 | `statement` | `spec` |
-| --- | --- | --- |
-| `section` | 必须包含小节 «X» | `{ section }` |
-| `min_words` | 正文至少 N 字（汉字按 1 字计） | `{ minWords }` |
-| `min_sources` | 至少引用 N 个链接（只计数，不验证可达性） | `{ minSources }` |
-| `min_evidence` | 至少 N 条检索证据，且 `[cite:evd_…]` 指向真实证据行 | `{ minEvidence, citation }` |
-| `contains` | 正文必须包含 «X» | `{ contains }` |
-| `claims_table` | 断言表至少 N 行可核对的断言 | `{ claimsTableRows }` |
-| `manual` | 人工判定：<note> | `null` |
+| 类型 | `statement` | `spec` | `undetermined` |
+| --- | --- | --- | --- |
+| `section` | 必须包含小节 «X» | `{ section }` | false |
+| `min_words` | 正文至少 N 字（汉字按 1 字计） | `{ minWords }` | false |
+| `min_sources` | 至少引用 N 个链接（只计数，不验证可达性） | `{ minSources }` | false |
+| `min_evidence` | 至少 N 条检索证据，且 `[cite:evd_…]` 指向真实证据行；人工提交的产物没有证据库 | `{ minEvidence, citation }` | **true** |
+| `contains` | 正文必须包含 «X» | `{ contains }` | false |
+| `claims_table` | 断言表至少 N 行；格式系统查，内容人查 | `{ claimsTableRows }` | **true** |
+| `manual` | 人工判定：<note> | `null` | **true** |
 
 两个刻意的选择：
 
 1. **`spec` 不是原始 item**。原始 item 六种类型用 `value`、`manual` 用 `note`，
    键名是实现细节；导出面向的是外部读者，键名要能自己解释自己。
-2. **`manual` 的 `undetermined` 恒为 true**，且 `spec` 为 `null`。
-   本仓库不能判定它——所以导出的文件里不能有任何东西读起来像「已经判过了」
-   （`AGENTS.md` 第 2 条）。
+2. **`undetermined` 只在三种类型上为 true：`manual`、`claims_table`、`min_evidence`。**
+   判据是求值器 `src/lib/domain/acceptance.ts` 的真实行为，不是类型的名字：
+   - `manual` 恒为 `{ passed: false, undetermined: true }`（:167-172）；
+   - `claims_table` 格式合格时也恒为 undetermined（:142-147，「每行是否被原文支持需你逐行核对」）；
+   - `min_evidence` 在人工提交的产物上 undetermined（:99-106），只有平台自己跑过检索、
+     能拿到 `evidenceIds` 时才会判。
+
+   第一版把这两个标成 false，外部复核方读到的就是「本仓库会判定它」——而它永远不会。
+   这正是 `AGENTS.md` 第 2 条禁止的那种标签。
 
 ## 没有清单的任务
 
@@ -57,6 +63,18 @@ curl -s 'localhost:3000/api/tasks/tsk_read/acceptance?format=markdown'
 
 Markdown 版本会把「需人工判定」标在正文里，并在末尾单独统计条数：
 签署的人不需要打开 JSON 才知道哪几项没人验过。
+
+## 边界：这份契约不能证明什么
+
+- 它证明的是**规则被逐条写出**，不证明**产物满足了规则**。判定发生在运行时
+  （`evaluateAcceptance`），结果进 manifest 的 `acceptance[]`。
+- `min_sources` 只数链接个数：不可达的链接、与结论无关的链接都算数。
+- `claims_table` 只查格式（有表、行数够、每行引用能解析到真实证据 id）：
+  「这句话有没有被原文支持」不判定。
+- `min_evidence` 在人工提交的产物上不判定：没有检索证据可数，标 undetermined。
+- `undetermined: true` 的条目**永远不会被算作通过**，导出和渲染都会把它标出来；
+  但它也不会被算作失败——它是一条等待人签字的空位。
+- 导出与某次运行无关：同一个任务导出两次逐字节相同，换一次运行也不变。
 
 ## 与 manifest 的分工
 

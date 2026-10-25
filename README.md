@@ -217,7 +217,7 @@ DEMO_MODE=false
 RSC 页面 / 客户端组件
   → @/contracts + @/lib/api
   → HTTP（同源；可配 API_BASE_URL）
-app/api/**（route handler；当前 45 个，`find src/app -name route.ts | wc -l`）
+app/api/**（route handler；当前 47 个，`find src/app -name route.ts | wc -l`）
   → server/readmodels · server/services（queries / commands）
   → domain（纯函数：policy / state / acceptance）
   → Postgres（Drizzle）

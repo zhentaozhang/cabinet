@@ -67,13 +67,18 @@ function specOf(item: AcceptanceItem): {
         undetermined: false,
       };
     case "min_evidence":
+      // Countable only when the platform ran the retrieval: for a manually
+      // submitted artifact the evaluator returns undetermined
+      // (src/lib/domain/acceptance.ts:99-106), so the export cannot promise a
+      // verdict on its own.
       return {
         statement:
           "至少 " +
           item.value +
-          " 条检索证据，且必须以 [cite:evd_…] 指向真实存在的证据行（编造的引用不算）",
+          " 条检索证据，且必须以 [cite:evd_…] 指向真实存在的证据行（编造的引用不算）；" +
+          "人工提交的产物没有检索证据，此项需人工复核",
         spec: { minEvidence: item.value, citation: "[cite:evd_…]" },
-        undetermined: false,
+        undetermined: true,
       };
     case "contains":
       return {
@@ -82,10 +87,16 @@ function specOf(item: AcceptanceItem): {
         undetermined: false,
       };
     case "claims_table":
+      // Only the shape is decided (rows present, every citation resolves);
+      // whether a quote supports its claim is never machine-judged
+      // (src/lib/domain/acceptance.ts:142-147).
       return {
-        statement: "必须包含断言表，且至少 " + item.value + " 行可核对的断言",
+        statement:
+          "必须包含断言表，且至少 " +
+          item.value +
+          " 行可核对的断言；格式由系统检查，每行是否被原文支持需人工逐行核对",
         spec: { claimsTableRows: item.value },
-        undetermined: false,
+        undetermined: true,
       };
     case "manual":
       return {

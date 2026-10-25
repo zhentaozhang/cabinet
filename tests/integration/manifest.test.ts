@@ -78,6 +78,39 @@ describe("buildManifest", () => {
     expect(result.checks).toEqual(["structure", "digest", "merkle"]);
   });
 
+  it("carries a not-judged acceptance item as undetermined, not as a failure", async () => {
+    await runTask("tsk_read", DEMO_USER_ID);
+    const run = await latestRun("tsk_read");
+    // An audit is its own run; the manifest reads the newest audit step of the
+    // task. Seed exactly the row the auditor writes when criteria are prose.
+    await db.insert(steps).values({
+      id: "stp_undet",
+      runId: run.id,
+      idx: 99,
+      type: "audit",
+      input: {},
+      output: {
+        pass: true,
+        reason: "产物已提交；验收没有逐条对照，结论待你确认。",
+        checklist: [
+          {
+            item: { type: "manual", note: "45 分钟专注；3 行笔记", required: true },
+            passed: false,
+            undetermined: true,
+            reason: "需要你人工判定",
+          },
+        ],
+      },
+    });
+
+    const manifest = await buildManifest(run.id, DEMO_USER_ID);
+    if (!manifest) throw new Error("manifest missing");
+    expect(manifest.acceptance).toHaveLength(1);
+    expect(manifest.acceptance[0]!.verdict).toBe("undetermined");
+    expect(manifest.acceptance[0]!.undetermined).toBe(true);
+    expect(verifyManifest(manifest).ok).toBe(true);
+  });
+
   it("refuses a run that belongs to somebody else", async () => {
     await runTask("tsk_read", DEMO_USER_ID);
     const run = await latestRun("tsk_read");

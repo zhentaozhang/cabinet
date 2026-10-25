@@ -25,7 +25,7 @@ import { fetchAndPersist } from "@/server/services/connectors/page";
 import { extractFirstUrl } from "@/lib/connectors/page";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
-import { planTools, type ToolStepStatus } from "@/lib/domain/tool-plan";
+import { planTools, REJECTION_STATUS, type ToolStepStatus } from "@/lib/domain/tool-plan";
 import { mergeTools, readRules } from "@/lib/domain/execution-context";
 import { decideRun } from "@/lib/domain/policy";
 import { usageCents } from "@/lib/domain/agent-budget";
@@ -38,7 +38,7 @@ import {
   ValidationError,
 } from "@/lib/domain/errors";
 import { draftFor } from "../../shared/draft";
-import { runMcpToolLoop } from "./tool-loop";
+import { declaredMcpTools, MCP_TOOL_PREFIX, runMcpToolLoop } from "./tool-loop";
 import {
   loadLatestApproval,
   loadWeeklyUsage,
@@ -472,13 +472,20 @@ async function executeRun(taskId: string, userId: string) {
     // The tool comes from the agent's declared list, filtered by grants — a
     // role ternary here made `agent_grants` decorative and gave Coach a
     // research tool it was never granted.
+    const declaredTools = mergeTools(
+      agent.tools,
+      activeSkills.flatMap((skill) => skill.tools),
+    );
+    // MCP tools are planned one by one inside the loop below, where each one
+    // learns its own resource from its server row. Feeding them to this
+    // planner would only produce an `unknown_tool` rejection for a tool that
+    // is about to run successfully (5f332e7f 阻断 1).
+    const builtinTools = declaredTools.filter((tool) => !tool.startsWith(MCP_TOOL_PREFIX));
+    const mcpTools = declaredMcpTools(declaredTools);
     const toolPlan = planTools({
       // A passed skill may bring its own tool; the grant check below still
       // decides whether it may actually run.
-      tools: mergeTools(
-        agent.tools,
-        activeSkills.flatMap((skill) => skill.tools),
-      ),
+      tools: builtinTools,
       grants: grants.map((grant) => ({
         resource: grant.resource,
         scope: grant.scope,
@@ -494,7 +501,10 @@ async function executeRun(taskId: string, userId: string) {
     let toolQuery: string | null = null;
 
     if (!toolPlan.planned) {
-      toolStatus = "unauthorized";
+      const rejection = toolPlan.considered[0]?.reason;
+      // Same vocabulary as the MCP loop: an unknown tool is "not connected",
+      // never "unauthorized", because no permission decision was made.
+      toolStatus = rejection ? REJECTION_STATUS[rejection] : "skipped";
       toolReason = toolPlan.reason;
     } else if (toolPlan.planned.tool === "web_search") {
       // A real external call. Its outcome is recorded as-is; a failure stays a
@@ -579,28 +589,33 @@ async function executeRun(taskId: string, userId: string) {
       toolReason = "No external connector is configured for this tool.";
     }
 
-    await addStep({
-      type: "tool",
-      tool: toolPlan.planned?.tool,
-      input: { query: toolQuery ?? task.title, actionType: task.actionType },
-      output: {
-        status: toolStatus,
-        tool: toolPlan.planned?.tool ?? null,
-        provider: search?.provider ?? page?.provider ?? null,
-        resource: toolPlan.planned?.resource ?? null,
-        reason: toolReason,
-        considered: toolPlan.considered,
-        hits: (search ?? page)?.hits.length ?? 0,
-        evidence: ((search ?? page)?.evidence ?? []).map((item) => ({
-          id: item.id,
-          url: item.url,
-          title: item.title,
-          publisher: item.publisher,
-        })),
-        latencyMs: (search ?? page)?.latencyMs ?? null,
-      },
-      latency: Math.max(1, Math.round(performance.now() - toolStartedAt)),
-    });
+    // An MCP-only Agent gets no built-in step at all: the planner saw no
+    // built-in tool, and writing "unauthorized" here would contradict the loop
+    // that calls the same tool right after this comment.
+    if (builtinTools.length > 0 || mcpTools.length === 0) {
+      await addStep({
+        type: "tool",
+        tool: toolPlan.planned?.tool,
+        input: { query: toolQuery ?? task.title, actionType: task.actionType },
+        output: {
+          status: toolStatus,
+          tool: toolPlan.planned?.tool ?? null,
+          provider: search?.provider ?? page?.provider ?? null,
+          resource: toolPlan.planned?.resource ?? null,
+          reason: toolReason,
+          considered: toolPlan.considered,
+          hits: (search ?? page)?.hits.length ?? 0,
+          evidence: ((search ?? page)?.evidence ?? []).map((item) => ({
+            id: item.id,
+            url: item.url,
+            title: item.title,
+            publisher: item.publisher,
+          })),
+          latencyMs: (search ?? page)?.latencyMs ?? null,
+        },
+        latency: Math.max(1, Math.round(performance.now() - toolStartedAt)),
+      });
+    }
 
     // MCP tools an Agent declared run after the built-in planner, through the
     // same grant → hold → call → settle gate. Nothing is called unless the

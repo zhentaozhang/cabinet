@@ -2,6 +2,7 @@ import { and, eq, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { runJobs, runs, steps, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
+import { stepMadeRequest } from "@/lib/domain/contact";
 import { assertTransition } from "@/lib/domain/state";
 import { settleBudget } from "./execution";
 import { reopenConsumedApprovalsTx } from "./approvals";
@@ -59,12 +60,13 @@ export async function recoverStaleRuns(
         .select({ type: steps.type, tool: steps.tool, output: steps.output })
         .from(steps)
         .where(eq(steps.runId, run.id));
-      const contacted = runSteps.some((step) => {
-        const output = (step.output ?? {}) as Record<string, unknown>;
-        if (output.provider) return true;
-        const status = String(output.status ?? "");
-        return ["ok", "timeout", "invalid_response", "rate_limited"].includes(status);
-      });
+      // Decided by an explicit "attempted" flag, falling back to the status
+      // only for rows written before that flag existed. A "provider" label is
+      // not evidence: MCP steps used to carry one even when the plan refused
+      // them, which made an uncalled tool look like a charged one (5f332e7f 阻断 3).
+      const contacted = runSteps.some((step) =>
+        stepMadeRequest((step.output ?? {}) as Record<string, unknown>),
+      );
 
       const settlement = await settleBudget(tx, {
         runId: run.id,

@@ -20,7 +20,8 @@
               "inputHash": "…64 hex…", "outputHash": "…64 hex…" }],
   "artifacts": [{ "id": "art_…", "sha256": "…" }],
   "evidence": [{ "id": "evd_…", "contentHash": "…" }],
-  "acceptance": [{ "item": { "type": "min_words" }, "verdict": "pass", "undetermined": false }],
+  "acceptance": [{ "item": { "type": "min_words" }, "verdict": "pass", "undetermined": false },
+                 { "item": { "type": "manual" }, "verdict": "undetermined", "undetermined": true }],
   "acceptanceRunId": "run_…",
   "approvals": [{ "id": "apr_…", "action": "send_email", "status": "approved", "decidedAt": "…" }],
   "auditHead": { "seq": 412, "hash": "…64 hex…" },
@@ -58,6 +59,17 @@ manifest 是要发给外部审计方的文件，带正文等于把工作区一�
 单靠 manifest 验不出来**——digest 保护的是「文件没有被随手改动」，不是「这份文件来自我方」。
 后者需要 `auditHead` 对上审计链，再往上需要外部锚定（见「已知未做的」）。
 
+## 验收判定有三种，不是两种
+
+`verdict` = `pass` / `fail` / `undetermined`。第三种不是「弱一点的 fail」：
+它表示**没有人判过**（人工规则、需要逐行读原文的 claims table、人工提交的产物没有检索证据）。
+第一版把这些行写成 `verdict: "fail"`，于是只读 `verdict` 的消费方会把「没判定」读成「不合格」，
+而 `AGENTS.md` 第 2 条要的正好相反：没做的事要显示成没做。审查用这一条抓到了
+（`src/lib/domain/acceptance.ts:142-147`、`:99-106` 的求值器行为是判据）。
+
+`undetermined` 布尔字段与 `verdict` 表意重复，是为了兼容只读布尔的老消费方；
+两者必须一致，`structure` 检查会拒绝互相矛盾的条目。
+
 ## Merkle 规则（写死，避免「自己实现自己验」）
 
 | 叶子数 | 根 |
@@ -78,8 +90,8 @@ manifest 是要发给外部审计方的文件，带正文等于把工作区一�
 
 | 检查 | 能证明 | 什么时候跳过 |
 | --- | --- | --- |
-| `structure` | 版本、id 非空、哈希是 64 位小写 hex、`verdict` 只用 pass/fail | 有结构问题时**不进 `checks`**：只读 `checks` 的调用方否则会把坏文件当成好的 |
-| `digest` | 重算整个文件的 digest，与文件里写的 `digest` 一致 | 有 mismatch 时**不进 `checks`** |
+| `structure` | 版本、id 非空、哈希是 64 位小写 hex、`verdict` 只用 pass/fail/undetermined 且与 `undetermined` 标志一致 | 有结构问题时**不进 `checks`**：只读 `checks` 的调用方否则会把坏文件当成好的 |
+| `digest` | 重算整个文件的 digest，与文件里写的 `digest` 一致 | **自身**不匹配时**不进 `checks`**（别的检查失败不影响这一行的出现，它验的是另一种篡改） |
 | `merkle` | 用 manifest 里现有的 step 重算，根一致 | 该 run 没有任何 step 时进 `unchecked`：没有叶子就没有证明，不能记成通过 |
 | `auditHead` | 该 user 审计链里存在 `seq` 且哈希一致 | 没给 `chain`，或 `auditHead` 为 `null` 时进 `unchecked` |
 

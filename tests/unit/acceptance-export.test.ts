@@ -65,6 +65,24 @@ describe("exportAcceptanceContract", () => {
     expect(manual.spec).toBeNull();
   });
 
+  it("never claims a verdict the evaluator does not give", () => {
+    // src/lib/domain/acceptance.ts returns { passed: false, undetermined: true }
+    // for a well-formed claims_table (:142-147) and for min_evidence when the
+    // artifact was submitted by a human (:99-106). The contract must say so, or
+    // an external reviewer reads "this platform decides it" when it never does.
+    const checks = Object.fromEntries(
+      exported().checks.map((check) => [check.type, check]),
+    );
+    expect(checks.claims_table.undetermined).toBe(true);
+    expect(checks.claims_table.statement).toContain("人工");
+    expect(checks.min_evidence.undetermined).toBe(true);
+    expect(checks.min_evidence.statement).toContain("人工");
+    // The four format-only rules are genuinely decided, so they stay false.
+    for (const type of ["section", "min_words", "min_sources", "contains"]) {
+      expect(checks[type].undetermined).toBe(false);
+    }
+  });
+
   it("exports an undetermined line instead of an empty checklist", () => {
     const contract = exported([]);
     expect(contract.checks).toHaveLength(1);
@@ -101,7 +119,10 @@ describe("renderAcceptanceContract", () => {
     const markdown = renderAcceptanceContract(exported());
     expect(markdown).toContain("# 验收契约：写一份竞品调研");
     expect(markdown).toContain("需人工判定");
-    expect(markdown).toContain("1 项需要人工判定");
+    // manual + claims_table + min_evidence: the three the evaluator never decides
+    // on its own. Four format-only rules stay out of the count.
+    expect(markdown).toContain("3 项需要人工判定");
+    expect(markdown).toContain("1. **必过** · section — 必须包含小节 «结论»");
     expect(markdown).toContain("必须包含小节 «结论»");
   });
 

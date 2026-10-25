@@ -9,7 +9,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
-import { agentGrants, mcpServers, runs, steps } from "@/lib/db/schema";
+import {
+  agentBudgetReservations,
+  agentGrants,
+  agents,
+  mcpServers,
+  runs,
+  steps,
+} from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { newId } from "@/lib/ids";
 import { recoverStaleRuns } from "@/server/services/commands/tasks/recovery";
@@ -142,6 +149,7 @@ describe("runMcpToolLoop", () => {
       status: "ok",
       tool: "mcp:fake:search",
       provider: "mcp:fake",
+      attempted: true,
       content: "found 3 things",
     });
   });
@@ -194,7 +202,8 @@ describe("runMcpToolLoop", () => {
     expect(calls).toEqual([]);
     expect(sink.records[0].output).toMatchObject({
       status: "unauthorized",
-      provider: "mcp:shop",
+      server: "shop",
+      attempted: false,
     });
   });
 
@@ -271,6 +280,80 @@ describe("runMcpToolLoop", () => {
     expect(sink.records[0].output.status).toBe("timeout");
   });
 
+  it("settles the per-call hold it opened, exactly once", async () => {
+    await addServer("fake", "mcp:fake");
+    await addGrant("mcp:fake");
+    const sink = collect();
+
+    await runMcpToolLoop({
+      userId: DEMO_USER_ID,
+      agentId: "ag_coach",
+      taskId: "tsk_read",
+      runId: "run_test_mcp",
+      timezone: "UTC",
+      tools: ["mcp:fake:search"],
+      grants: [{ resource: "mcp:fake", scope: "read" }],
+      actionType: "internal",
+      input: "RAG 检索",
+      step: sink.step,
+    });
+
+    // The loop is the only place a per-call hold is opened, so the ledger is
+    // the only proof that it was closed. A unit test with a mocked settle
+    // cannot show this (5f332e7f 建议 11).
+    const holds = await db
+      .select({ state: agentBudgetReservations.state, amount: agentBudgetReservations.amountCents })
+      .from(agentBudgetReservations);
+    expect(holds).toHaveLength(1);
+    expect(holds[0].state).toBe("settled");
+  });
+
+  it("never books an uncalled MCP tool as provider contact", async () => {
+    // No server row: the step says not_connected. Before 5f332e7f it also
+    // carried a provider label, and the recovery pass read that label as
+    // "maybe already charged".
+    const sink = collect();
+    await runMcpToolLoop({
+      userId: DEMO_USER_ID,
+      agentId: "ag_coach",
+      taskId: "tsk_read",
+      runId: "run_test_mcp",
+      timezone: "UTC",
+      tools: ["mcp:ghost:ping"],
+      grants: [{ resource: "mcp:ghost", scope: "read" }],
+      actionType: "internal",
+      input: "RAG 检索",
+      step: sink.step,
+    });
+
+    const holds = await db
+      .select({ id: agentBudgetReservations.id })
+      .from(agentBudgetReservations);
+    expect(holds).toHaveLength(0);
+    expect(sink.records[0].output.attempted).toBe(false);
+  });
+
+  it("runs an MCP-only Agent without inventing a rejected built-in step", async () => {
+    // 5f332e7f 阻断 1: the run-level planner saw "mcp:fake:search", called it
+    // unknown_tool, and wrote an "unauthorized" step seconds before the loop
+    // called the very same tool successfully.
+    await addServer("fake", "mcp:fake");
+    await addGrant("mcp:fake");
+    await db.update(agents).set({ tools: ["mcp:fake:search"] }).where(eq(agents.id, "ag_coach"));
+
+    await runTask("tsk_read", DEMO_USER_ID);
+
+    const rows = await db
+      .select({ tool: steps.tool, type: steps.type, output: steps.output })
+      .from(steps)
+      .innerJoin(runs, eq(steps.runId, runs.id))
+      .where(eq(runs.taskId, "tsk_read"));
+    const toolSteps = rows.filter((row) => row.type === "tool");
+    expect(toolSteps).toHaveLength(1);
+    expect(toolSteps[0].tool).toBe("mcp:fake:search");
+    expect((toolSteps[0].output as Record<string, unknown>).status).toBe("ok");
+  });
+
   it("leaves a run with no MCP tool untouched", async () => {
     await runTask("tsk_read", DEMO_USER_ID);
 
@@ -286,6 +369,42 @@ describe("runMcpToolLoop", () => {
 });
 
 describe("recovery with MCP steps", () => {
+  it("does not read a provider label as proof of a call", async () => {
+    const runId = newId("run");
+    await db.insert(runs).values({
+      id: runId,
+      taskId: "tsk_read",
+      agentId: "ag_coach",
+      status: "running",
+      mode: "demo",
+      sourceType: "system_event",
+      startedAt: new Date(Date.now() - 10 * 60_000),
+      runLabel: "recovery_mcp_rejected",
+    });
+    await db.insert(steps).values({
+      id: newId("stp"),
+      runId,
+      idx: 1,
+      type: "tool",
+      tool: "mcp:shop:search",
+      input: {},
+      // A rejected call: the label is present, no request was sent.
+      output: { status: "unauthorized", provider: "mcp:shop", attempted: false },
+      tokensIn: 0,
+      tokensOut: 0,
+      latencyMs: 0,
+    });
+
+    await recoverStaleRuns({ olderThanMs: 0 });
+
+    const [row] = await db
+      .select({ status: runs.status, error: runs.error })
+      .from(runs)
+      .where(eq(runs.id, runId));
+    expect(row.status).toBe("failed");
+    expect(String(row.error)).toContain("没有发出外部请求");
+  });
+
   it("treats a recorded MCP call as provider contact", async () => {
     const runId = newId("run");
     await db.insert(runs).values({

@@ -26,6 +26,7 @@ describe("governedCall", () => {
     const base = deps({ grants: [{ resource: "mcp:gitlab", scope: "read" }] });
     const result = await governedCall(base);
     expect(result.status).toBe("unauthorized");
+    expect(result.attempted).toBe(false);
     expect(base.call).not.toHaveBeenCalled();
     expect(base.admit).not.toHaveBeenCalled();
   });
@@ -36,6 +37,7 @@ describe("governedCall", () => {
     });
     const result = await governedCall(base);
     expect(result.status).toBe("budget_exceeded");
+    expect(result.attempted).toBe(false);
     expect(result.reason).toContain("预算");
     expect(base.call).not.toHaveBeenCalled();
   });
@@ -44,6 +46,7 @@ describe("governedCall", () => {
     const base = deps();
     const result = await governedCall(base);
     expect(result.status).toBe("ok");
+    expect(result.attempted).toBe(true);
     expect(result.content).toBe("issue created");
     expect(base.admit).toHaveBeenCalledWith(0);
     expect(base.settle).toHaveBeenCalledWith("brs_1", "settled");
@@ -52,7 +55,9 @@ describe("governedCall", () => {
     );
   });
 
-  it("releases the hold when the call throws, so nothing is charged", async () => {
+  it("closes the hold as unknown usage when the call throws", async () => {
+    // A throw can happen after the request left the socket, and this layer
+    // cannot tell. Releasing the hold would book that as free (5f332e7f 建议 1).
     const base = deps({
       call: vi.fn(async () => {
         throw new Error("socket hang up");
@@ -60,7 +65,8 @@ describe("governedCall", () => {
     });
     const result = await governedCall(base);
     expect(result.status).toBe("not_connected");
-    expect(base.settle).toHaveBeenCalledWith("brs_1", "released");
+    expect(result.attempted).toBe(true);
+    expect(base.settle).toHaveBeenCalledWith("brs_1", "unknown_usage");
   });
 
   it("charges an unknown amount when the server timed out mid-call", async () => {
@@ -75,6 +81,24 @@ describe("governedCall", () => {
     expect(result.status).toBe("timeout");
     expect(result.reason).toBe("too slow");
     expect(base.settle).toHaveBeenCalledWith("brs_1", "unknown_usage");
+  });
+
+  it("charges unknown usage for a 429 or an unparseable reply", async () => {
+    // recovery.ts counts both statuses as "contacted"; settling them as
+    // "released" made the same event cost 0 or "unknown" depending on whether
+    // the process survived (5f332e7f 建议 1).
+    for (const code of ["rate_limited", "invalid_response"] as const) {
+      const base = deps({
+        call: vi.fn(async () => ({
+          ok: false as const,
+          latencyMs: 30,
+          error: { code, message: code, retryable: true },
+        })),
+      });
+      const result = await governedCall(base);
+      expect(result.attempted).toBe(true);
+      expect(base.settle).toHaveBeenCalledWith("brs_1", "unknown_usage");
+    }
   });
 
   it("maps every connector error onto a recorded step status", () => {
