@@ -26,6 +26,28 @@ Cabinet 的位置不在「Agent 框架」，而在 **「Agent 的治理层」**�
 2. **值得做的三块亮点**：① 任务级 MCP 治理（不是网关级）② 可离线验证的 run manifest（哈希链 → Merkle + 外部锚定）③ 自主度阶梯（学徒 → 信任 → 晋升）产品化。
 3. **最大风险**：短板不补，亮点就只是「一个很漂亮的管理台，管着一个不会做事的 Agent」。
 
+### 0.1 落地状态（2026-10-25）
+
+调研写完当天按「制定计划 → 执行 → 审查」补了其中四项。这份表现在是权威的进度表，
+后面章节保留的是**当时的诊断**，不是当前状态。
+
+| 条目 | 状态 | 证据 |
+| --- | --- | --- |
+| P0-1 执行面：工具循环 + MCP | **已补** | `a51698a`；`src/server/services/commands/tasks/tool-loop.ts`、`src/lib/mcp/`、`docs/mcp.md`。顺序是授权 → 预扣 → 调用 → 结算 → 留痕，任一步失败都落一条可读 step |
+| P0-3 可观测：trace | **已补** | `ef2625b`；`src/lib/observability/tracing.ts`、`otlp.ts`、`src/instrumentation.ts`、`docs/observability.md`。零依赖 OTLP/JSON 导出，未配 endpoint 时零开销 |
+| ★2 可离线验证的 run manifest | **已做** | `982e907`；`src/lib/domain/manifest.ts`、`scripts/verify-manifest.ts`、`docs/manifest.md` |
+| ★4 验收契约导出 | **已做** | `06a03a1`；`src/lib/domain/acceptance-export.ts`、`GET /api/tasks/[id]/acceptance`、`docs/acceptance-contract.md` |
+| P0-2 记忆：向量/混合检索 | 未做 | 本机 Postgres 的 `pg_available_extensions` 只有 `pg_trgm`，没有 `vector`；且不新增运行时依赖。仍只有词面 + 权重排序 |
+| P0-4 验收 judge / golden set | 未做 | 需要真实模型与标注集，本轮明确排除 |
+| P1-5 单供应商 / P1-6 RBAC / P1-7 外部执行器 | 未做 | 仍在路线图里 |
+| P2-8 CI 自动触发 | **未判定** | `docs/ci-status.md`：push 事件仍未触发过 workflow，等下一次真实 push 做实验；本地门禁用 `bash scripts/verify.sh` |
+
+边界也要写清楚，否则「已补」会被读成「已完备」：
+
+- MCP 只做 Streamable HTTP，**不做 stdio**；没有 OAuth；`mcp_servers` 仍无 UI/API 写入入口。
+- manifest 只证明**这个文件没被改过**，不证明**运行没被漏记**；`auditHead` 没有外部锚定（没有第三方时间戳/公证）。
+- 验收契约仍是确定性清单 + `manual`，**没有模型判定**；导出的是规则，判定结果在 manifest 里。
+
 ---
 
 ## 1. 方法
