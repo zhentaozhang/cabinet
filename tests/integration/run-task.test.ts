@@ -68,9 +68,8 @@ describe("runtime policy enforcement", () => {
     // so the policy sees "no approval" and the task parks in awaiting_approval
     // again, instead of the task inheriting a yes it already spent.
     await decideApproval("appr_booking", "approve", "test", DEMO_USER_ID);
-    await expect(runTask("tsk_booking", DEMO_USER_ID)).resolves.toHaveProperty(
-      "runId",
-    );
+    const firstRun = await runTask("tsk_booking", DEMO_USER_ID);
+    if (!("runId" in firstRun)) throw new Error("expected a run");
 
     await db
       .update(tasks)
@@ -89,9 +88,7 @@ describe("runtime policy enforcement", () => {
     expect(approval.consumedAt).not.toBeNull();
     // The run that spends the approval owns it: without this stamp a manifest
     // cannot say which run an approval authorised (46b0569 审查第 1 条).
-    const [first] = await db.select().from(runs).where(eq(runs.taskId, "tsk_booking"));
-    expect(approval.runId).toBe(first?.id ?? null);
-    expect(approval.runId).not.toBeNull();
+    expect(approval.runId).toBe(firstRun.runId);
   });
 
   it("rejects a repeated approval decision", async () => {

@@ -116,10 +116,13 @@ export async function governedCall(
   // others are charged as unknown usage.
   //
   // The step still records `attempted: true` for a 401: the refusal did cross
-  // the wire. If the process dies before the settlement above, the step was
-  // never written, so the recovery pass sees no evidence of contact and refunds
-  // the hold (src/server/services/commands/tasks/recovery.ts) — the coarse,
-  // in-the-refund direction. It never turns a 401 into a charge.
+  // the wire. If the process dies before the settlement above, this call never
+  // wrote a step, so nothing claims contact and the hold is refunded rather
+  // than charged — the coarse, in-the-refund direction. Two different sweeps
+  // do that, and the per-call hold is the slower one: it carries no run id, so
+  // `recoverStaleRuns` cannot see it; the maintenance tick's
+  // `releaseStaleHolds` releases it after 15 minutes (maintenance.ts), while
+  // the run-level hold is settled by the recovery pass itself.
   await input.settle(
     reservationId,
     maybeContacted(outcome.error.code) ? "unknown_usage" : "released",

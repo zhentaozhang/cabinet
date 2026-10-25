@@ -293,7 +293,8 @@ eslint 干净。
 | 1（87df0755） | 2 条必须修：manifest 完整性只覆盖 steps、`gen_ai.usage.*` 被字典杀掉 | 加 `digest`（v2）、属性按「键名分段」拒绝 → 665832e |
 | 2（5f332e7f） | 3 条阻断：MCP-only 写出矛盾 step、两类「永远要人判」标成确定、没发出的请求被记成「可能已调用」 | 分流 planner、`attempted` 标记 + `src/lib/domain/contact.ts`、三值 verdict → 4d0b0fc |
 | 3（9e03e7c2） | **无阻断**，8 条精度问题（跨 run 归属/排序 tie-break、flush 链释放、注释与文档不一致、本地工具标签、日志口径） | 全部修在 46b0569 |
-| 4（c4a0602f，只审 46b0569） | **无阻断**，4 条：审批只修了查询没修归属、governed-call 注释仍反、三处修复无测试、本地工具徽标只改一半 | 本轮 8f 尾随提交：消费处写 `runId`、注释重写、3 个测试 + 2 个 tie-break/flush 断言、徽标文案 |
+| 4（c4a0602f，只审 46b0569） | **无阻断**，4 条：审批只修了查询没修归属、governed-call 注释仍反、三处修复无测试、本地工具徽标只改一半 | a02963c：消费处写 `runId`、注释重写、3 个新测试（审批归属、预算拒绝不记 attempted、同秒 audit step 的 tie-break）、徽标文案 |
+| 5（1adb0359，对 a02963c） | **无阻断**，7 条：flush 释放测试无判别性、徽标文案覆盖不到 network_error、退款归属机制说错、常设授权未进文档边界、一处 `select` 无 `ORDER BY`、计划表指代不清、`reopenConsumedApprovalsTx` 的「共用调用方」是假的 | 1befff5（交还时一并清 `runId`）+ 本提交：`inFlight()` 探针让释放可断言、文案改「没有走通」、注释改指 `releaseStaleHolds`、`docs/manifest.md` 补常设授权边界、测试改用捕获的 `runId`、提交信息 amend |
 
 第三轮同时确认：分层未破（`src/lib` 无 `@/server` 引用）、零新增运行时依赖、条件写回 + `sql`now()`` 到位、
 `bash scripts/verify.sh` exit 0、全仓 118 文件 / 1032 用例通过。

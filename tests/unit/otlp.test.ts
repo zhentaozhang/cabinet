@@ -151,27 +151,22 @@ describe("otlp exporter", () => {
     exporter.stop();
   });
 
-  it("stays usable across many sequential flushes", async () => {
-    // Each flush chains onto the previous one so a shutdown cannot drop the
-    // last batch. The chain must release itself when it settles: the release
-    // itself is a reference in a closure, not visible from outside, so what
-    // this pins is that a long series of flushes keeps sending exactly one
-    // batch per cycle instead of silently sharing one settled promise.
+  it("releases the flush chain once it settles", async () => {
+    // The chain is what keeps a shutdown from dropping the last batch, and the
+    // reference to it lives in a closure — nothing outside could tell whether it
+    // was freed until the exporter exposed a probe. It matters because the old
+    // comparison (`flushing === next`) could never be true: every flush linked
+    // one more settled promise and kept it, with no visible symptom.
     const { calls, fakeFetch } = recorder();
     const exporter = createOtlpSink({ endpoint: "http://collector:4318", fetchImpl: fakeFetch });
     for (let index = 0; index < 50; index += 1) {
       exporter.sink(span({ spanId: String(index).padStart(16, "0") }));
       await exporter.flush();
+      expect(exporter.inFlight()).toBe(false);
     }
     exporter.stop();
 
     expect(calls).toHaveLength(50);
-    expect(
-      calls.map(
-        (call) =>
-          JSON.parse(String(call.init.body)).resourceSpans[0].scopeSpans[0].spans.length,
-      ),
-    ).toEqual(Array.from({ length: 50 }, () => 1));
     expect(exporter.pending()).toBe(0);
   });
 

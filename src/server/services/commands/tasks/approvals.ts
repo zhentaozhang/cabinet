@@ -106,12 +106,15 @@ export type ExpiredApproval = {
  * but the policy denies every attempt, and `awaitApproval` is never reached, so
  * the user cannot even ask again.
  *
- * Reopening keeps the human decision with the task: a retry the user pressed is
- * itself the yes, and the approval still gates whatever runs next.
+ * Reopening re-arms the original yes for the next attempt. The policy allows a
+ * task whose approval is `approved` and unconsumed (policy.ts:380-382), so
+ * clearing `consumedAt` lets the identical decision cover the retry that the
+ * crash interrupted — the human already said yes to this work.
  *
- * Shared on purpose. The recovery sweep and the failed/rejected retry path both
- * rewind a task; when only one of them reopened the approval, the other one left
- * exactly the trap described above.
+ * Only the recovery sweep reopens. A retry the user presses does the opposite
+ * on purpose: `runTask` drops the spent approval from the input so the policy
+ * asks again (run.ts:88-93), because a new attempt should need a new yes rather
+ * than inherit the one the failed attempt already used.
  */
 export async function reopenConsumedApprovalsTx(
   tx: Tx,

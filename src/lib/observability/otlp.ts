@@ -112,6 +112,13 @@ export type OtlpExporter = {
   pending: () => number;
   /** Spans discarded because the queue was full; a silent drop is a blind spot. */
   dropped: () => number;
+  /**
+   * Whether a flush chain is still held. Exposed because the release happens in
+   * a closure: without a probe, "the chain is freed once it settles" cannot be
+   * asserted, and a regression there leaks one promise per flush cycle with no
+   * visible symptom until memory runs out.
+   */
+  inFlight: () => boolean;
   stop: () => void;
 };
 
@@ -199,6 +206,7 @@ export function createOtlpSink(options: {
     flush,
     pending: () => queue.length,
     dropped: () => dropped,
+    inFlight: () => flushing !== null,
     stop() {
       stopped = true;
       clearInterval(timer);

@@ -99,10 +99,11 @@ export async function recoverStaleRuns(
         .where(and(eq(tasks.id, run.taskId), eq(tasks.status, "running")))
         .returning({ id: tasks.id });
 
-      // Reopen the approval this run consumed. Shared with the failed/rejected
-      // retry path (`run.ts` `resetForRetry`): both rewind a task, and a rewind
-      // that leaves the approval consumed produces a Run button that can only
-      // ever fail with "Approval has already been consumed."
+      // Reopen the approval this run consumed. A rewind that leaves the
+      // approval consumed produces a Run button that can only ever fail with
+      // "Approval has already been consumed." A *user* retry does not come
+      // through here: `runTask` drops the spent approval so the policy asks
+      // again (run.ts:88-93).
       const reopened = rewound
         ? await reopenConsumedApprovalsTx(tx, run.taskId)
         : 0;

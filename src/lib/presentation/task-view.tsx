@@ -109,7 +109,8 @@ export const TOOL_STATUS_MAP: Record<
   not_connected: {
     label: "未连接",
     tone: "neutral",
-    description: "这个工具在当前运行时没有接上执行端（本地执行器或外部连接器都不存在）",
+    description:
+      "这个工具在当前运行时没有走通（本地没有执行器、外部连接器未配置，或连接器本次请求没成功——看这一步的原因）",
   },
   skipped: {
     label: "未执行",
