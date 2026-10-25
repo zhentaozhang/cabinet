@@ -130,50 +130,65 @@ eslint 干净。
 ### Task 2.1 协议层
 **Files:** `src/lib/mcp/protocol.ts`；测试 `tests/unit/mcp-protocol.test.ts`
 
-- [ ] 失败测试：`jsonRpcRequest("tools/call",{name,arguments},7)` → `{jsonrpc:"2.0",id:7,method,params}`；`parseJsonRpcResponse` 同时处理 `result` 与 `error`。
-- [ ] 失败测试：SSE `event: message\ndata: {...}\n\n` 解析 1 条；`: ping` 忽略；多 event 按序。
-- [ ] 失败测试：`extractToolResult` 支持 `{content:[{type:"text",text}], isError}`；`isError:true` → `ok:false, code:"invalid_response"`。
-- [ ] 绿。
+- [x] 失败测试：`jsonRpcRequest("tools/call",{name,arguments},7)` → `{jsonrpc:"2.0",id:7,method,params}`；`parseJsonRpcResponse` 同时处理 `result` 与 `error`。
+- [x] 失败测试：SSE `event: message\ndata: {...}\n\n` 解析 1 条；`: ping` 忽略；多 event 按序。
+- [x] 失败测试：`extractToolResult` 支持 `{content:[{type:"text",text}], isError}`；`isError:true` → `ok:false, code:"invalid_response"`。
+- [x] 绿。
 
 ### Task 2.2 client
 **Files:** `src/lib/mcp/client.ts`、`src/lib/mcp/outcome.ts`；测试 `tests/integration/mcp-client.test.ts`（`node:http` 起进程内假 server，统一用 integration 路径，消除 v1 自相矛盾）
 
-- [ ] 失败测试：`initialize` 带 `protocolVersion/clientInfo`，收 `Mcp-Session-Id`；之后每个 POST 都带 session 头 **和** `MCP-Protocol-Version`。
-- [ ] 失败测试：`initialize` 后发 `notifications/initialized`（无 id、不期待响应）。
-- [ ] 失败测试：`listTools()` 返回 `[{name,description,inputSchema}]`。
-- [ ] 失败测试：`callTool` 超时（默认 15s，可注入）→ `{ok:false,error:{code:"timeout"}}`，不抛。
-- [ ] 失败测试：HTTP 401 → `unauthorized`；404 → 触发一次重新 initialize 后重试，仍失败则 `invalid_response`；500 → `network_error, retryable:true`。
-- [ ] 绿。
+- [x] 失败测试：`initialize` 带 `protocolVersion/clientInfo`，收 `Mcp-Session-Id`；之后每个 POST 都带 session 头 **和** `MCP-Protocol-Version`。
+- [x] 失败测试：`initialize` 后发 `notifications/initialized`（无 id、不期待响应）。
+- [x] 失败测试：`listTools()` 返回 `[{name,description,inputSchema}]`。
+- [x] 失败测试：`callTool` 超时（默认 15s，可注入）→ `{ok:false,error:{code:"timeout"}}`，不抛。
+- [x] 失败测试：HTTP 401 → `unauthorized`；404 → 触发一次重新 initialize 后重试，仍失败则 `invalid_response`；500 → `network_error, retryable:true`。
+- [x] 绿。
 
 ### Task 2.3 schema + 迁移
 **Files:** `src/lib/db/schema/ops.ts`（**不是** schema.ts 那个 barrel）+ `drizzle/`；测试 `tests/integration/schema-mcp.test.ts`
 
-- [ ] 失败测试：插入 `mcp_servers(user_id,name,url,resource,enabled)`；`(user_id,name)` 唯一冲突抛错；`enabled` 默认 true。
-- [ ] `drizzle-kit generate`（应生成 0031）→ 隔离库 migrate 通过。
-- [ ] 绿。
+- [x] 失败测试：插入 `mcp_servers(user_id,name,url,resource,enabled)`；`(user_id,name)` 唯一冲突抛错；`enabled` 默认 true。
+- [x] `drizzle-kit generate`（应生成 0031）→ 隔离库 migrate 通过。
+- [x] 绿。
 
 ### Task 2.4 governedCall
 **Files:** `src/server/services/commands/tasks/governed-call.ts`；测试 `tests/unit/governed-call.test.ts`
 
-- [ ] 失败测试：未授权 → `{ok:false,status:"unauthorized"}` 且 fetch 调用 0 次（spy 断言）。
-- [ ] 失败测试：`reserveBudget` 返回 `{allowed:false}` → `status:"budget_exceeded"`，不调用。
-- [ ] 失败测试：成功 → 结算金额 = 预留值（本期恒 0，但必须走同一对函数，否则以后加计费必漏账）。
-- [ ] 失败测试：调用抛错 → 释放预留，不产生负账。
-- [ ] 绿。
+- [x] 失败测试：未授权 → `{ok:false,status:"unauthorized"}` 且 fetch 调用 0 次（spy 断言）。
+- [x] 失败测试：`reserveBudget` 返回 `{allowed:false}` → `status:"budget_exceeded"`，不调用。
+- [x] 失败测试：成功 → 结算金额 = 预留值（本期恒 0，但必须走同一对函数，否则以后加计费必漏账）。
+- [x] 失败测试：调用抛错 → 释放预留，不产生负账。
+- [x] 绿。
 
 ### Task 2.5 工具循环接入 + 状态枚举
 **Files:** `src/server/services/commands/tasks/tool-loop.ts`、`run.ts:545-571`、`tool-plan.ts`（`extraSpecs` + 状态枚举）、`task-view.tsx`、`recovery.ts:62-67`；测试 `tests/integration/tool-loop.test.ts`
 
-- [ ] 失败测试（回归）：无 MCP server 时行为与改动前完全一致。
-- [ ] 失败测试：`planTools` 对 `extraSpecs` 里注册的工具返回 planned；未注册仍是 `unknown_tool`。
-- [ ] 失败测试：授权 MCP 工具 → 1 次调用、1 行 step、`status:"ok"`、`tool` 为 MCP 工具名。
-- [ ] 失败测试：`maxSteps=2` → 最多 2 次调用，第 3 次截断并写 `step_limit`。
-- [ ] 失败测试：MCP 超时 → step `timeout`，run 正常收尾。
-- [ ] 失败测试（recovery）：含 `ok`/`timeout`/`invalid_response`/`rate_limited` 之外，MCP 成功调用的 step 也必须被判定为"已接触供应商"（断言 `settleBudget` 收到 `unknown_usage` 而非 `not_contacted`）。
-- [ ] 绿。
+- [x] 失败测试（回归）：无 MCP server 时行为与改动前完全一致。
+- [x] 失败测试：`planTools` 对 `extraSpecs` 里注册的工具返回 planned；未注册仍是 `unknown_tool`。
+- [x] 失败测试：授权 MCP 工具 → 1 次调用、1 行 step、`status:"ok"`、`tool` 为 MCP 工具名。
+- [x] 失败测试：`maxSteps=2` → 最多 2 次调用，第 3 次截断并写 `step_limit`。
+- [x] 失败测试：MCP 超时 → step `timeout`，run 正常收尾。
+- [x] 失败测试（recovery）：含 `ok`/`timeout`/`invalid_response`/`rate_limited` 之外，MCP 成功调用的 step 也必须被判定为"已接触供应商"（断言 `settleBudget` 收到 `unknown_usage` 而非 `not_contacted`）。
+- [x] 绿。
 
 ### Task 2.6 文档
-- [ ] `docs/mcp.md`：能力边界（仅 Streamable HTTP）、授权模型（resource 显式配置、fail-closed）、预算语义（预扣/结算/释放）、失败枚举映射、为什么不做 stdio、未对真实第三方 server 验证。
+- [x] `docs/mcp.md`：能力边界（仅 Streamable HTTP）、授权模型（resource 显式配置、fail-closed）、预算语义（预扣/结算/释放）、失败枚举映射、为什么不做 stdio、未对真实第三方 server 验证。
+
+**落地记录（2026-10-25）**
+
+- `McpOutcome` 留在 `src/lib/mcp/client.ts`，没有单独建 `outcome.ts`：一个类型的文件不抵一次 import。
+- 默认客户端超时 8000ms（计划写 15s），与 `SEARCH_TIMEOUT_MS` 对齐；`runMcpToolLoop` 新增 `timeoutMs` 透传，测试用 150ms（否则一个超时用例要跑满 8 秒）。
+- `callTool` 的参数固定是 `{query}`：schema 驱动的参数生成要等有真实 server 再做，凭空的参数映射只是装饰。
+- `settleBudget` 的 `SettleInput` 新增 `reservationId`、`runId` 改为可选（二者至少一个，否则抛错）。原因：`agent_budget_reservations` 有 `WHERE run_id IS NOT NULL` 的部分唯一索引，一次 run 只能有一条带 runId 的预留；MCP 每次调用持有自己的 0 分预留，必须按 id 结算。
+- recovery **没有改代码**：MCP step 写 `provider: "mcp:<name>"`，成功的 status 是 `ok`，`recovery.ts:62-67` 的两条旧规则都已覆盖；用 `tests/integration/tool-loop.test.ts` 的一个用例固化（断言 run 以「可能已调用供应商」收尾）。
+- `tools/list` 实现了但 run 里不用：声明即权限。让上游返回的工具集决定本地下限，等于把策略交给外部服务。
+- 工具步上限默认 2，`RUN_MAX_TOOL_STEPS` 覆盖；超限写一条 `step_limit` step 并列出被跳过的工具名，不静默丢弃。
+- `mcp_servers` 只有表和迁移，没有 UI/API 写入入口（`docs/mcp.md` 里写明现状）。
+
+验证：`tsc --noEmit` 干净；eslint 干净（只剩 `.archify/` 里未跟踪产物的旧 warning）；
+`vitest run` **112 文件 / 964 用例全绿**（Phase 1 后基线 107/925，新增 5 个测试文件所在 39 例）；
+`bash scripts/verify.sh` 全过（fresh db migrate → typecheck → lint → vitest → next build）。
 
 ---
 

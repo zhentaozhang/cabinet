@@ -218,6 +218,13 @@
       "when": 1792835844227,
       "tag": "0030_rename_replay_key",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792905798885,
+      "tag": "0031_opposite_wilson_fisk",
+      "breakpoints": true
     }
   ]
 }

@@ -102,4 +102,46 @@ describe("planTools", () => {
     });
     expect(plan.planned?.tool).toBe("write_plan");
   });
+it("accepts a runtime spec for a tool the static registry does not know", () => {
+    const plan = planTools({
+      tools: ["mcp:github:search_issues"],
+      grants: [{ resource: "mcp:github", scope: "read" }],
+      actionType: "internal",
+      extraSpecs: {
+        "mcp:github:search_issues": {
+          resource: "mcp:github",
+          scope: "read",
+          kind: "read",
+        },
+      },
+    });
+    expect(plan.planned?.resource).toBe("mcp:github");
+  });
+
+  it("still rejects an MCP tool whose spec was never resolved", () => {
+    const plan = planTools({
+      tools: ["mcp:github:search_issues"],
+      grants: [{ resource: "mcp:github", scope: "read" }],
+      actionType: "internal",
+    });
+    expect(plan.planned).toBeNull();
+    expect(plan.considered[0]?.reason).toBe("unknown_tool");
+  });
+
+  it("applies the grant check to a runtime spec too", () => {
+    const plan = planTools({
+      tools: ["mcp:github:delete_repo"],
+      grants: [{ resource: "mcp:github", scope: "read" }],
+      actionType: "external_action",
+      extraSpecs: {
+        "mcp:github:delete_repo": {
+          resource: "mcp:github",
+          scope: "write",
+          kind: "write",
+        },
+      },
+    });
+    expect(plan.planned).toBeNull();
+    expect(plan.considered[0]?.reason).toBe("missing_grant");
+  });
 });

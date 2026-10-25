@@ -161,7 +161,13 @@ function eligibleStamp(now: Date): string {
 }
 
 export type SettleInput = {
-  runId: string;
+  /** The run whose hold is settled. Omit when `reservationId` names it. */
+  runId?: string | null;
+  /**
+   * Settle one specific hold by id. Per-tool calls hold their own reservation,
+   * so they cannot share the run-level one (that row is unique per run).
+   */
+  reservationId?: string | null;
   settlement:
     | { state: "not_contacted" }
     | { state: "known_usage"; estimatedCents: number }
@@ -179,10 +185,17 @@ export async function settleBudget(
   tx: Tx,
   input: SettleInput,
 ): Promise<{ outcome: string | null; settledCents: number; unknownCents: number } | null> {
+  const target = input.reservationId
+    ? eq(agentBudgetReservations.id, input.reservationId)
+    : input.runId
+      ? eq(agentBudgetReservations.runId, input.runId)
+      : null;
+  if (!target) throw new Error("settleBudget requires runId or reservationId.");
+
   const [reservation] = await tx
     .select()
     .from(agentBudgetReservations)
-    .where(eq(agentBudgetReservations.runId, input.runId))
+    .where(target)
     .for("update");
   if (!reservation || reservation.state !== "reserved") return null;
 

@@ -6,7 +6,7 @@ import { hasGrant, type Grant } from "./policy";
  * agent's role — a role ternary silently gave Coach a research tool and made
  * grants decorative.
  */
-type ToolSpec = {
+export type ToolSpec = {
   resource: string;
   scope: "read" | "write";
   /** `execute` tools change state outside Cabinet, so they need a real action. */
@@ -63,11 +63,20 @@ export function planTools(input: {
   tools: string[];
   grants: Grant[];
   actionType: string;
+  /**
+   * Specs discovered at runtime, e.g. one entry per tool on a configured MCP
+   * server. They can widen the registry but not open it: a tool named by
+   * neither `TOOL_SPECS` nor this map is still rejected as `unknown_tool`.
+   */
+  extraSpecs?: Record<string, ToolSpec>;
 }): ToolPlan {
   const considered: ConsideredTool[] = [];
+  const specs = input.extraSpecs
+    ? { ...TOOL_SPECS, ...input.extraSpecs }
+    : TOOL_SPECS;
 
   for (const tool of input.tools) {
-    const spec = TOOL_SPECS[tool];
+    const spec = specs[tool];
     if (!spec) {
       considered.push({ tool, accepted: false, reason: "unknown_tool" });
       continue;
@@ -112,4 +121,8 @@ export type ToolStepStatus =
   | "unauthorized"
   | "rate_limited"
   | "timeout"
-  | "invalid_response";
+  | "invalid_response"
+  /** The budget hold was refused, so the call was never made. */
+  | "budget_exceeded"
+  /** The run had already used its tool-step allowance. */
+  | "step_limit";

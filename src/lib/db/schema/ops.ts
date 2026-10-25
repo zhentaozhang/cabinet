@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { users } from "./core";
 import { tasks } from "./tasks";
 
@@ -163,3 +163,37 @@ export const runJobs = pgTable(
 );
 
 export type RunJobRow = typeof runJobs.$inferSelect;
+
+/**
+ * One MCP server the user has connected.
+ *
+ * `resource`/`scope` are stored, not derived from the tool list: a grant has to
+ * be checkable *before* the server is contacted, and a tool that appears on the
+ * server tomorrow must not widen what this Agent may reach.
+ */
+export const mcpServers = pgTable(
+  "mcp_servers",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The name an Agent references as `mcp:<name>:<tool>`. */
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    /** The grant resource this server's tools need, e.g. `mcp:github`. */
+    resource: text("resource").notNull(),
+    /** read | write — a write server's tools are `execute` tools. */
+    scope: text("scope").notNull().default("read"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("mcp_servers_user_name_idx").on(t.userId, t.name),
+    index("mcp_servers_user_idx").on(t.userId),
+  ],
+);
+
+export type McpServerRow = typeof mcpServers.$inferSelect;

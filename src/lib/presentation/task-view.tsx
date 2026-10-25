@@ -141,6 +141,16 @@ export const TOOL_STATUS_MAP: Record<
     tone: "danger",
     description: "返回数据无法解析或格式不符",
   },
+  budget_exceeded: {
+    label: "预算不足",
+    tone: "accent",
+    description: "预算预留被拒，工具调用没有发生",
+  },
+  step_limit: {
+    label: "超出步数",
+    tone: "accent",
+    description: "本次运行已用完工具调用额度，剩余工具未执行",
+  },
   network_error: {
     label: "网络错误",
     tone: "danger",

@@ -38,6 +38,7 @@ import {
   ValidationError,
 } from "@/lib/domain/errors";
 import { draftFor } from "../../shared/draft";
+import { runMcpToolLoop } from "./tool-loop";
 import {
   loadLatestApproval,
   loadWeeklyUsage,
@@ -599,6 +600,29 @@ async function executeRun(taskId: string, userId: string) {
         latencyMs: (search ?? page)?.latencyMs ?? null,
       },
       latency: Math.max(1, Math.round(performance.now() - toolStartedAt)),
+    });
+
+    // MCP tools an Agent declared run after the built-in planner, through the
+    // same grant → hold → call → settle gate. Nothing is called unless the
+    // workspace configured a server and the Agent declared one of its tools;
+    // in that case this is a no-op and the run is unchanged.
+    await runMcpToolLoop({
+      userId: task.userId,
+      agentId: agent.id,
+      taskId,
+      runId,
+      timezone,
+      tools: mergeTools(
+        agent.tools,
+        activeSkills.flatMap((skill) => skill.tools),
+      ),
+      grants: grants.map((grant) => ({
+        resource: grant.resource,
+        scope: grant.scope,
+      })),
+      actionType: task.actionType,
+      input: (task.title + " " + task.description).trim(),
+      step: addStep,
     });
 
     const [priorRejection] = await db
