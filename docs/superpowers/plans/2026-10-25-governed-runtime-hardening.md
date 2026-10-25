@@ -286,6 +286,17 @@ eslint 干净。
 2. 独立审查 subagent：只读 diff + 计划，核对"失败测试是否真的先红后绿"。
 3. 有 ❌ 就修并重跑；三轮不过则上报。
 
+## 审查结果（三轮，2026-10-25）
+
+| 轮次 | 结论 | 处理 |
+|---|---|---|
+| 1（87df0755） | 2 条必须修：manifest 完整性只覆盖 steps、`gen_ai.usage.*` 被字典杀掉 | 加 `digest`（v2）、属性按「键名分段」拒绝 → 665832e |
+| 2（5f332e7f） | 3 条阻断：MCP-only 写出矛盾 step、两类「永远要人判」标成确定、没发出的请求被记成「可能已调用」 | 分流 planner、`attempted` 标记 + `src/lib/domain/contact.ts`、三值 verdict → 4d0b0fc |
+| 3（9e03e7c2） | **无阻断**，8 条精度问题（跨 run 归属/排序 tie-break、flush 链释放、注释与文档不一致、本地工具标签、日志口径） | 全部修在本轮 follow-up 提交 |
+
+第三轮同时确认：分层未破（`src/lib` 无 `@/server` 引用）、零新增运行时依赖、条件写回 + `sql`now()`` 到位、
+`bash scripts/verify.sh` exit 0、全仓 118 文件 / 1029 用例通过。
+
 ## 已知风险
 - Next 16 破坏性变更：新增 route 前读 `node_modules/next/dist/docs/`。
 - 迁移验收必须用临时库（长驻库是 push 建的，migrate 会撞对象）。

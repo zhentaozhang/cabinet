@@ -81,6 +81,11 @@ manifest 是要发给外部审计方的文件，带正文等于把工作区一�
 不复制最后一个是刻意的：复制会让 `[a]` 和 `[a, a]` 得到同一个根，
 而「只有一步」和「同一步做了两遍」在审计里是两件完全不同的事。
 
+成对哈希按字典序排（所以 `[aa, bb]` 与 `[bb, aa]` 同根）：树根证明的是**有哪些叶、怎么配对**，
+不证明它们在数组里的先后。叶子本身含 `idx`（见下），所以把两步对调会改变各自的哈希；
+真正兜住「顺序」的是 `digest`——它覆盖整个文件，`steps` 数组的顺序也在里面。
+只拿 `merkleRoot` + 部分叶子复核时，请把顺序当成未判定，而不是当成已核对。
+
 叶子 = `sha256(canonicalJson({idx, type, tool, inputHash, outputHash}))`，
 `canonicalJson` 来自 `src/lib/ids.ts:13-30`（键排序、无空格），所以重新序列化不会改变根。
 
@@ -135,6 +140,13 @@ GET /api/tasks/tsk_read/manifest?run=run_x  # 指定某一次运行
   `actor` 字段。manifest 因此只写 `{id, action, status, decidedAt}`，
   「谁批的」要回审计链查。计划里写的 `approverId` 是设计口径，实现按表结构落了。
 - 没有签名：manifest 不自证来源，只自证完整。
+- **验收判定按任务取，不按 run 取**：审计本身是一次运行，它的 `audit` step 挂在审计那次 run 上，
+  所以 manifest 取的是「该任务最新一条 `audit` step」，用 `acceptanceRunId` 写明来自哪次 run。
+  「最新」按 `createdAt desc, id desc` 排——同一事务写下的行共享 `now()`，只按时间排会让同一份 run
+  两次导出得到不同 digest。要判定「这份验收是不是针对这一次 run」，看 `acceptanceRunId`，
+  manifest 不能替你判断，因为它没有这条边。
+- **审批只列属于这次 run 的**：`approvals.runId` 为空（今天所有审批都是这种，任务级）或等于本 run 的才进
+  `approvals`；其他 run 的审批不会出现在这份文件里。排序是 `createdAt asc, id asc`，同样为了可复现。
 
 ## 测试
 

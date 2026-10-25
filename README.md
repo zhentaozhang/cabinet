@@ -264,7 +264,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-2026-10-25 在当前分支实测：`find tests -name '*.test.ts' | wc -l` = 118 个测试文件，`vitest run` 报 1028 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。数字随提交变化，以命令输出为准，不要照抄。
+2026-10-25 在当前分支实测：`find tests -name '*.test.ts' | wc -l` = 118 个测试文件，`vitest run` 报 1029 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。数字随提交变化，以命令输出为准，不要照抄。
 
 ### GitHub Actions 现在需要手动触发
 

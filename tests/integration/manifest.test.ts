@@ -7,7 +7,7 @@ import { desc, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
-import { auditEvents, runs, steps } from "@/lib/db/schema";
+import { approvals, auditEvents, runs, steps } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { verifyManifest } from "@/lib/domain/manifest";
 import { buildManifest } from "@/server/services/commands/tasks/manifest";
@@ -108,6 +108,57 @@ describe("buildManifest", () => {
     expect(manifest.acceptance).toHaveLength(1);
     expect(manifest.acceptance[0]!.verdict).toBe("undetermined");
     expect(manifest.acceptance[0]!.undetermined).toBe(true);
+    expect(verifyManifest(manifest).ok).toBe(true);
+  });
+
+  it("lists only the approvals that belong to the run it describes", async () => {
+    await runTask("tsk_read", DEMO_USER_ID);
+    const run = await latestRun("tsk_read");
+
+    // runId carries no foreign key, so a stale value is exactly what a reviewer
+    // would see: an approval written for another run of the same task.
+    await db.insert(approvals).values([
+      {
+        id: "appr_task_level",
+        userId: DEMO_USER_ID,
+        taskId: "tsk_read",
+        runId: null,
+        action: "publish",
+        payload: {},
+        status: "approved",
+        decidedAt: new Date("2026-10-01T00:00:00Z"),
+        createdAt: new Date("2026-10-01T00:00:00Z"),
+      },
+      {
+        id: "appr_this_run",
+        userId: DEMO_USER_ID,
+        taskId: "tsk_read",
+        runId: run.id,
+        action: "publish",
+        payload: {},
+        status: "approved",
+        decidedAt: new Date("2026-10-02T00:00:00Z"),
+        createdAt: new Date("2026-10-02T00:00:00Z"),
+      },
+      {
+        id: "appr_other_run",
+        userId: DEMO_USER_ID,
+        taskId: "tsk_read",
+        runId: "run_somewhere_else",
+        action: "publish",
+        payload: {},
+        status: "approved",
+        decidedAt: new Date("2026-10-03T00:00:00Z"),
+        createdAt: new Date("2026-10-03T00:00:00Z"),
+      },
+    ]);
+
+    const manifest = await buildManifest(run.id, DEMO_USER_ID);
+    if (!manifest) throw new Error("manifest missing");
+    expect(manifest.approvals.map((entry) => entry.id)).toEqual([
+      "appr_task_level",
+      "appr_this_run",
+    ]);
     expect(verifyManifest(manifest).ok).toBe(true);
   });
 

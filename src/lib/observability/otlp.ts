@@ -170,11 +170,15 @@ export function createOtlpSink(options: {
         await send(batch);
       }
     };
-    const next = flushing ? flushing.then(pass) : pass();
-    flushing = next.finally(() => {
-      if (flushing === next) flushing = null;
+    const run = flushing ? flushing.then(pass) : pass();
+    // The reference cleared must be the finally-promise, not `run`: the old
+    // comparison could never be true, so the chain was never released and the
+    // next flush chained onto an already-settled promise forever.
+    const settled: Promise<void> = run.finally(() => {
+      if (flushing === settled) flushing = null;
     });
-    return flushing;
+    flushing = settled;
+    return settled;
   }
 
   const timer = setInterval(() => void flush(), options.flushIntervalMs ?? DEFAULT_FLUSH_MS);

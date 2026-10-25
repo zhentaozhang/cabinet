@@ -101,10 +101,19 @@ VALUES ('grt_gh', 'ag_coach', 'mcp:github', 'read', '{}');
 |---|---|---|
 | `not_configured` | `not_connected` | 没配 server |
 | `network_error` | `not_connected` | 连接失败、5xx |
-| `unauthorized` | `unauthorized` | 401/403，或缺 grant |
+| `unauthorized` | `unauthorized` | 401/403，或缺 grant（两者的证据不同，见下） |
 | `rate_limited` | `rate_limited` | 429 |
 | `timeout` | `timeout` | 408/504，或本地超时 |
 | `invalid_response` | `invalid_response` | 不是 JSON-RPC、无 text 内容、`isError: true` |
+
+`unauthorized` 这一个状态对应两种**证据不同**的情况，读 step 的人要能分清：
+
+| 情况 | step 里有什么 | 预扣 |
+|---|---|---|
+| 服务端拒绝（401/403，请求已发出） | `status: "unauthorized"`、`attempted: true`、`provider` 有值 | 结算为 `released`（认定没花钱） |
+| 缺 grant（本地拒绝，请求没发出） | 不写 `provider` 键、`attempted: false` | 根本没预扣 |
+
+所以「有没有 `attempted: true`」才是「有没有出门」的判据，`status` 不是。
 
 另有两个由治理层产生的状态：`budget_exceeded`（预扣被拒）、`step_limit`（本次 run 的
 工具调用额度用完）。两者都**没有发出网络请求**，页面上的文案也这么写。

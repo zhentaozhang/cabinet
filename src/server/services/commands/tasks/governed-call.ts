@@ -111,9 +111,13 @@ export async function governedCall(
   }
 
   // A timeout, a dropped connection, an unparseable reply or a 429 all mean the
-  // request reached someone; only the server's own refusal (401) proves nothing
-  // was spent. The recovery pass uses the same predicate (src/lib/domain/contact.ts),
-  // so a crash and a clean failure cannot disagree about the same event.
+  // request reached someone; only the server's own refusal (401/403) is taken
+  // as evidence that nothing was spent. That refusal still reports
+  // `attempted: true` below, because "which side of the wire it failed on" is
+  // the one thing a crash cannot reconstruct — the recovery pass reads the flag
+  // (src/lib/domain/contact.ts), so a 401 is released when the call returns
+  // normally and charged as unknown usage when the process dies mid-flight.
+  // The two can differ by one hold, and only on a 401.
   await input.settle(
     reservationId,
     maybeContacted(outcome.error.code) ? "unknown_usage" : "released",

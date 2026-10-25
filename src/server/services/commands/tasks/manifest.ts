@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -93,11 +93,22 @@ export async function buildManifest(
         .from(evidence)
         .where(eq(evidence.runId, runId))
         .orderBy(asc(evidence.createdAt)),
+      // Only approvals that belong to this run (or to the task with no run of
+      // their own — every approval written today is task-scoped) are listed.
+      // Without the filter a manifest for run A happily renders a decision
+      // taken for run B, and nothing in the document says so.
       db
         .select()
         .from(approvals)
-        .where(eq(approvals.taskId, run.taskId))
-        .orderBy(asc(approvals.createdAt)),
+        .where(
+          and(
+            eq(approvals.taskId, run.taskId),
+            or(isNull(approvals.runId), eq(approvals.runId, run.id)),
+          ),
+        )
+        // Two approvals can share a timestamp (now() is transaction time), so
+        // the id breaks the tie and the same run exports the same bytes twice.
+        .orderBy(asc(approvals.createdAt), asc(approvals.id)),
       db
         .select({ seq: auditEvents.seq, hash: auditEvents.hash })
         .from(auditEvents)
@@ -105,13 +116,16 @@ export async function buildManifest(
         .orderBy(desc(auditEvents.seq))
         .limit(1),
       // Verdicts live in the newest audit step of the task, not in the run
-      // being exported: an audit is its own run.
+      // being exported: an audit is its own run. "Newest" is by timestamp and
+      // then by id, because every row of one transaction shares its now() and
+      // an untied ORDER BY would let the same run export two different
+      // digests.
       db
         .select({ runId: steps.runId, output: steps.output })
         .from(steps)
         .innerJoin(runs, eq(runs.id, steps.runId))
         .where(and(eq(runs.taskId, run.taskId), eq(steps.type, "audit")))
-        .orderBy(desc(steps.createdAt))
+        .orderBy(desc(steps.createdAt), desc(steps.id))
         .limit(1),
     ]);
 

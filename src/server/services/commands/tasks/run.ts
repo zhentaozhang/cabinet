@@ -586,7 +586,12 @@ async function executeRun(taskId: string, userId: string) {
       }
     } else {
       toolStatus = "not_connected";
-      toolReason = "No external connector is configured for this tool.";
+      // Not every tool here needs a connector: read_notes, quiz, read_plan and
+      // friends are local, and this runtime simply has no executor for them.
+      // Calling that "no external connector configured" would blame a setting
+      // that does not exist.
+      toolReason =
+        "No executor is wired for this tool in this runtime; nothing was sent anywhere.";
     }
 
     // An MCP-only Agent gets no built-in step at all: the planner saw no

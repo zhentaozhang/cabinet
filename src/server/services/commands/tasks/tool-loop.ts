@@ -172,7 +172,6 @@ export async function runMcpToolLoop(
       ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
     });
     const args: Record<string, unknown> = { query: input.input };
-    attempted += 1;
 
     const result = await governedCall({
       tool,
@@ -211,6 +210,9 @@ export async function runMcpToolLoop(
       call: (callArgs) => client.callTool(remoteTool, callArgs),
     });
 
+    // Counted from the result, not before the call: a budget or grant refusal
+    // never reached the network and must not inflate "attempted" in the log.
+    if (result.attempted) attempted += 1;
     if (result.status === "ok") ok += 1;
     const content = result.content;
     await input.step({

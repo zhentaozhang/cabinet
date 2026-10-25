@@ -40,6 +40,8 @@
    判据是求值器 `src/lib/domain/acceptance.ts` 的真实行为，不是类型的名字：
    - `manual` 恒为 `{ passed: false, undetermined: true }`（:167-172）；
    - `claims_table` 格式合格时也恒为 undetermined（:142-147，「每行是否被原文支持需你逐行核对」）；
+     但**格式不合格**（行数不足、缺列）时求值器给的是确定 `fail`（:139-140），
+     导出侧没有原文可比，只能标 undetermined——所以「导出说 undetermined」不等于「系统从不判它」。
    - `min_evidence` 在人工提交的产物上 undetermined（:99-106），只有平台自己跑过检索、
      能拿到 `evidenceIds` 时才会判。
 
