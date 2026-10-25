@@ -17,6 +17,7 @@ import {
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { generateArtifact } from "@/lib/llm";
+import { currentSpan, startSpan, withSpan } from "@/lib/observability/tracing";
 import { recordRetrievalCall } from "@/server/services/connectors/ledger";
 import { searchAndPersist } from "@/server/services/connectors/search";
 import { retrievalBudgetState } from "@/server/services/connectors/ledger";
@@ -52,7 +53,20 @@ import { requestApproval } from "./approvals";
  */
 class BudgetHoldDenied extends Error {}
 
+/**
+ * Run one task inside a trace.
+ *
+ * The span is the only place a run's identity, agent and step count exist in
+ * one object: the database rows are per-stage, and the log lines are per-event.
+ */
 export async function runTask(taskId: string, userId: string) {
+  return withSpan(
+    { name: "run.execute", attributes: { "task.id": taskId } },
+    async () => executeRun(taskId, userId),
+  );
+}
+
+async function executeRun(taskId: string, userId: string) {
   const [found] = await db.select().from(tasks).where(eq(tasks.id, taskId));
   if (!found || found.userId !== userId) {
     throw new NotFoundError("Task not found");
@@ -72,6 +86,7 @@ export async function runTask(taskId: string, userId: string) {
   if (!agent || agent.userId !== userId) {
     throw new NotFoundError("Agent not found");
   }
+  currentSpan()?.setAttribute("agent.id", agent.id);
 
   const [user] = await db
     .select({ timezone: users.timezone })
@@ -168,6 +183,7 @@ export async function runTask(taskId: string, userId: string) {
   // fallback records "attempted, no provider contact" instead of vanishing. A
   // denial happens before the task leaves planned, so it never fails the task.
   const runId = newId("run");
+  currentSpan()?.setAttribute("run.id", runId);
   const startedAt = new Date();
   let budgetDenial: string | null = null;
   /**
@@ -352,18 +368,33 @@ export async function runTask(taskId: string, userId: string) {
     latency?: number;
   }) => {
     idx += 1;
-    await db.insert(steps).values({
-      id: newId("stp"),
-      runId,
-      idx,
-      type: input.type,
-      tool: input.tool ?? null,
-      input: input.input,
-      output: input.output,
-      tokensIn: input.ti ?? 0,
-      tokensOut: input.to ?? 0,
-      latencyMs: input.latency ?? 120,
+    // One child span per row: the step table answers "what happened", the trace
+    // answers "how long did each part take".
+    const stepSpan = startSpan({
+      name: input.type,
+      attributes: {
+        "step.idx": idx,
+        ...(input.tool ? { "step.tool": input.tool } : {}),
+        ...(input.latency === undefined ? {} : { "step.latency_ms": input.latency }),
+      },
     });
+    try {
+      await db.insert(steps).values({
+        id: newId("stp"),
+        runId,
+        idx,
+        type: input.type,
+        tool: input.tool ?? null,
+        input: input.input,
+        output: input.output,
+        tokensIn: input.ti ?? 0,
+        tokensOut: input.to ?? 0,
+        latencyMs: input.latency ?? 120,
+      });
+    } finally {
+      stepSpan.end();
+    }
+    currentSpan()?.setAttribute("run.steps", idx);
   };
 
   try {

@@ -74,31 +74,45 @@
 ### Task 1.1 span 核心
 **Files:** `src/lib/observability/tracing.ts`；测试 `tests/unit/tracing.test.ts`
 
-- [ ] 失败测试：无 env 时 `startSpan({name:"run"})` 返回 `traceId`(32 hex)/`spanId`(16 hex)/`sampled=false`；`end()` 后 `endTimeUnixNano >= startTimeUnixNano`。
-- [ ] 失败测试：`withSpan` 内开的子 span `parentSpanId === 父 spanId`，`traceId` 继承。
-- [ ] 失败测试：attrs 含 `apiKey`/`authorization`/`prompt` → 该键被丢弃，其余保留。
-- [ ] 失败测试：`fn` 抛错 → span `status.code=2` 且 `status.message` 是错误消息，**异常继续往外抛**。
-- [ ] 实现 → `vitest run tests/unit/tracing.test.ts` 绿。
+- [x] 失败测试：无 env 时 `startSpan({name:"run"})` 返回 `traceId`(32 hex)/`spanId`(16 hex)/`sampled=false`；`end()` 后 `endTimeUnixNano >= startTimeUnixNano`。
+- [x] 失败测试：`withSpan` 内开的子 span `parentSpanId === 父 spanId`，`traceId` 继承。
+- [x] 失败测试：attrs 含 `apiKey`/`authorization`/`prompt` → 该键被丢弃，其余保留。
+- [x] 失败测试：`fn` 抛错 → span `status.code=2` 且 `status.message` 是错误消息，**异常继续往外抛**。
+- [x] 实现 → `vitest run tests/unit/tracing.test.ts` 绿。
 
 ### Task 1.2 OTLP 导出
 **Files:** `src/lib/observability/otlp.ts`；测试 `tests/unit/tracing-export.test.ts`
 
-- [ ] 失败测试：`toOtlpPayload([a,b])` → `{resourceSpans:[{resource:{attributes:[{key:"service.name",value:{stringValue:"cabinet"}}]},scopeSpans:[{scope:{name:"cabinet"},spans:[…]}]}]}`；`startTimeUnixNano` 是 19 位十进制**字符串**。
-- [ ] 失败测试：kind INTERNAL=1 / SERVER=2；status UNSET=0 / ERROR=2。
-- [ ] 失败测试：`flush(endpoint, spans, fetchImpl)` 请求 `${endpoint}/v1/traces`（endpoint 尾部 `/` 先剥离），`content-type: application/json`；fetch 抛错返回 `{ok:false}` 且不抛。
-- [ ] 失败测试：队列上限 512，溢出丢最旧并累加 `dropped`。
-- [ ] 实现（含 `__setSinkForTests`；`timer.unref()`）→ 绿。
+- [x] 失败测试：`toOtlpPayload([a,b])` → `{resourceSpans:[{resource:{attributes:[{key:"service.name",value:{stringValue:"cabinet"}}]},scopeSpans:[{scope:{name:"cabinet"},spans:[…]}]}]}`；`startTimeUnixNano` 是 19 位十进制**字符串**。
+- [x] 失败测试：kind INTERNAL=1 / SERVER=2；status UNSET=0 / ERROR=2。
+- [x] 失败测试：`flush(endpoint, spans, fetchImpl)` 请求 `${endpoint}/v1/traces`（endpoint 尾部 `/` 先剥离），`content-type: application/json`；fetch 抛错返回 `{ok:false}` 且不抛。
+- [x] 失败测试：队列上限 512，溢出丢最旧并累加 `dropped`。
+- [x] 实现（含 `__setSinkForTests`；`timer.unref()`）→ 绿。
 
 ### Task 1.3 接进 runTask
 **Files:** `run.ts:345-367`（addStep）、`run.ts:369+` 的 try 段；测试 `tests/integration/tracing-run.test.ts`
 
-- [ ] 失败测试：用 `__setSinkForTests` 收集 span，跑一次 runTask（无模型 key，走 not_connected 路径）→ 恰好 1 个 `run.execute` 根 span（带 `run.id`），step span 数 = steps 行数。
-- [ ] `addStep` 内开子 span（`name=step.type`，attrs `step.idx/step.tool`），写入后 end。
-- [ ] 回归：run 抛 `ConflictError` 时根 span `status.code=2`，且**返回值/异常与改动前一致**（跑既有 `tests/integration/*run*.test.ts`）。
-- [ ] 绿。
+- [x] 失败测试：用 `__setSinkForTests` 收集 span，跑一次 runTask（无模型 key，走 not_connected 路径）→ 恰好 1 个 `run.execute` 根 span（带 `run.id`），step span 数 = steps 行数。
+- [x] `addStep` 内开子 span（`name=step.type`，attrs `step.idx/step.tool`），写入后 end。
+- [x] 回归：run 抛 `ConflictError` 时根 span `status.code=2`，且**返回值/异常与改动前一致**（跑既有 `tests/integration/*run*.test.ts`）。
+- [x] 绿。
 
 ### Task 1.4 文档
-- [ ] `docs/observability.md` 增 "Trace 层"：开关、字段映射、与审计链分工（审计=结论/trace=诊断）、丢弃策略。
+- [x] `docs/observability.md` 增 "Trace 层"：开关、字段映射、与审计链分工（审计=结论/trace=诊断）、丢弃策略。
+
+**落地记录（2026-10-25）**
+
+- 与计划的两处偏离，都是把「采样」表达得更简单：没有 `sampled` 字段，而是「没配 endpoint 就没装 sink」——
+  span 照建（微秒级），但一个字节都不发。测试用 `setSpanSink` 收集；生产用 `installOtlpExporterIfConfigured()`，
+  `src/instrumentation.ts`（Next 启动钩子）和 `scripts/run-worker.ts`（CLI 没有 Next 运行时）各调一次。
+- 文件名：单测是 `tests/unit/otlp.test.ts`（计划里写的 `tracing-export.test.ts`），
+  run 级是 `tests/integration/tracing.test.ts`。
+- step 子 span 用 `startSpan` 直接开而不是 `withSpan`：插入完就 end，`withSpan` 的异常语义用不上。
+- 额外补的：导出队列上限 512 + `dropped` 计数（计划要求）；属性键命中 `prompt|content|body` 也丢，比计划的四类更宽。
+- bigint 字面量在本仓库不可用（`target: ES2017`），统一用 `BigInt(...)` 构造。
+
+验证：`tsc --noEmit` 干净；`vitest run` **107 文件 / 925 用例全绿**（基线 104/908，新增 3 文件 17 例）；
+eslint 干净。
 
 ---
 

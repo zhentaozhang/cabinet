@@ -18,6 +18,10 @@ import {
 } from "@/server/services/commands/tasks/jobs";
 import { recoverStaleRuns } from "@/server/services/commands/tasks/recovery";
 import { ConflictError, PolicyDenied } from "@/lib/domain/errors";
+import { installOtlpExporterIfConfigured } from "@/lib/observability/otlp";
+
+// No Next runtime here, so nothing calls `instrumentation.ts` for us.
+installOtlpExporterIfConfigured();
 
 const once = process.argv.includes("--once");
 const intervalMs = positiveInt(process.env.RUN_WORKER_INTERVAL_MS, 3_000);

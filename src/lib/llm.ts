@@ -1,6 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { newId } from "@/lib/ids";
+import { withSpan } from "@/lib/observability/tracing";
 
 export type ArtifactDraft = {
   title: string;
@@ -95,18 +96,35 @@ export async function generateArtifact(
         : {}),
     });
 
-    const { text, usage } = await generateText({
-      model: provider(model),
-      abortSignal: controller.signal,
-      maxOutputTokens: input.maxOutputTokens,
-      temperature: 0.2,
-      // No hidden retries: one attempt is one billed call, one attempt id, and
-      // one row of accounting. The SDK default of 2 would triple the cost of a
-      // flaky provider while the ledger booked a single attempt.
-      maxRetries: 0,
-      system: composeSystemPrompt(input),
-      prompt: composeUserPrompt(input),
-    });
+    // The provider call is the one step whose latency and token count money
+    // depends on, so it gets its own span instead of a log line.
+    const { text, usage } = await withSpan(
+      {
+        name: "llm.generate",
+        attributes: {
+          "gen_ai.provider": providerName,
+          "gen_ai.request.model": model,
+          "gen_ai.request.max_tokens": input.maxOutputTokens,
+        },
+      },
+      async (span) => {
+        const result = await generateText({
+          model: provider(model),
+          abortSignal: controller.signal,
+          maxOutputTokens: input.maxOutputTokens,
+          temperature: 0.2,
+          // No hidden retries: one attempt is one billed call, one attempt id,
+          // and one row of accounting. The SDK default of 2 would triple the
+          // cost of a flaky provider while the ledger booked a single attempt.
+          maxRetries: 0,
+          system: composeSystemPrompt(input),
+          prompt: composeUserPrompt(input),
+        });
+        span.setAttribute("gen_ai.usage.input_tokens", result.usage?.inputTokens ?? 0);
+        span.setAttribute("gen_ai.usage.output_tokens", result.usage?.outputTokens ?? 0);
+        return result;
+      },
+    );
 
     if (!text.trim()) {
       return {

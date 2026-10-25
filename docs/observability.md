@@ -7,6 +7,7 @@
 | 用户说「刚才那次操作失败了」 | 让用户报 `x-request-id`，`grep` 一条日志 |
 | 线上是不是在正常干活 | `GET /api/metrics`（带 `OPS_TOKEN`） |
 | 部署能不能接流量 | `GET /api/health`（公开，无 session） |
+| 一次 run 到底慢在哪 | trace（配 `OTEL_EXPORTER_OTLP_ENDPOINT` 后可在 Jaeger/Tempo 里看） |
 
 ## 请求 id
 
@@ -62,6 +63,52 @@
 `jobsStaleLeases` 是最该盯的一个数：`running` 且租约已过期，说明有 worker
 死了但没把活交回来——恢复脚本会接住，但这个数持续不为 0 意味着 worker 在反复
 崩溃。`retrievalLast24h` 只统计最近 24 小时，因为累计值掩盖故障恢复。
+
+## Trace
+
+审计链和 trace 回答的是不同问题，别互相替代：
+
+| | 审计链（`audit_events`） | Trace（OTLP span） |
+|---|---|---|
+| 回答 | 谁在什么时候改了什么，可验证 | 这次执行花了多久，卡在哪一步 |
+| 存储 | 数据库，哈希链，永久 | 采集器，采样，可丢 |
+| 能否事后删除/伪造 | 不能（链会断） | 可以（丢掉不影响证据） |
+
+### 开关
+
+只有设置了 `OTEL_EXPORTER_OTLP_ENDPOINT` 才会导出：
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 pnpm dev
+```
+
+没设就只建 span 不发送——进程内多花几微秒，零网络、零定时器。导出走
+`POST {endpoint}/v1/traces`，就是 collector 原生吃的 OTLP/JSON，不需要装
+OpenTelemetry SDK：为了这点数据引入几十个传递依赖不划算（理由写在
+`src/lib/observability/tracing.ts` 的文件注释里）。
+
+### 层次
+
+| span 名 | 由谁开 | 关键属性 |
+|---|---|---|
+| `run.execute` | `runTask` | `task.id` `agent.id` `run.id` `run.steps` |
+| `&lt;step.type&gt;`（如 `plan`） | `addStep` | `step.idx` `step.tool` `step.latency_ms` |
+| `llm.generate` | `src/lib/llm.ts` | `gen_ai.provider` `gen_ai.request.model` `gen_ai.usage.*` |
+
+父子关系靠 `AsyncLocalStorage`，不是靠传参：子 span 继承父的 `traceId`，
+`parentSpanId` 指向父 `spanId`。
+
+### 属性是模式拒绝
+
+span 会被发到第三方。键名命中 `secret|token|password|authorization|api[-_]?key|prompt|content|payload|body`
+的属性**直接丢弃**，字符串超过 256 字符截断。按模式拒绝而不是按白名单放行，
+是为了让新调用点默认失败在安全一侧：宁可少一个属性，不要多一次泄漏。
+
+### 丢了怎么办
+
+导出队列上限 512，溢出丢最旧的并累加 `dropped`；满 32 条或每 5 秒 flush 一次，
+失败只打一行 `{"event":"otlp.export.failed"}`，不重试、不影响业务。
+「遥测不能成为任务失败的原因」是这条链路上唯一的硬规则。
 
 ## 相关
 
