@@ -27,7 +27,7 @@ Server 记在 `mcp_servers`（迁移 `0031`）：
 user_id  谁的数据
 name     短名，工具名里引用它：mcp:<name>:<remote tool>
 url      Streamable HTTP 端点
-resource 这个 server 需要哪个 grant 资源，通常写成 mcp:<name>
+resource 预留列，**调用时不被读取**：需要的 grant 资源由 name 推导（mcp:<name>），见下
 scope    read | write，默认 read
 enabled  关掉即从 run 里消失（不是删数据）
 ```
@@ -43,7 +43,8 @@ Agent 能用的 MCP 工具写在 `agents.tools` 里，名字格式 `mcp:<server>
 ["read_notes", "mcp:github:search_issues"]
 ```
 
-授权仍然只看 `agent_grants`，资源由 server 行给出（`mcp:github`）：
+授权仍然只看 `agent_grants`，资源是 `mcp:<name>`（由 server 的 `name` 推导，不读 `resource` 列——
+否则一行自称 `web` 的 server 就能花掉别人发给 `web` 的 grant）：
 
 ```sql
 INSERT INTO agent_grants (id, agent_id, resource, scope, config)
@@ -62,7 +63,7 @@ VALUES ('grt_gh', 'ag_coach', 'mcp:github', 'read', '{}');
 顺序是契约，不可交换（`src/server/services/commands/tasks/tool-loop.ts` → `governed-call.ts`）：
 
 1. **解析** — `mcp:<server>:<tool>` 拆成 server 与远端工具名；server 不存在 → `not_connected`
-2. **计划** — `planTools` 用 server 行的 `resource`/`scope` 作为 spec，查 grant；不通过 → `unauthorized`
+2. **计划** — `planTools` 用 `mcp:<name>` 和 server 行的 `scope` 作为 spec，查 grant；不通过 → `unauthorized`
 3. **预扣** — `reserveBudget` 写一条 `agent_budget_reservations`；被拒 → `budget_exceeded`，调用不发生
 4. **调用** — `createMcpClient({url}).callTool(...)`，超时由客户端负责（默认 8s）
 5. **结算** — 成功 `known_usage`（本期 0 分）、超时/网络错误 `unknown_usage`、其余 `not_contacted`
@@ -70,6 +71,11 @@ VALUES ('grt_gh', 'ag_coach', 'mcp:github', 'read', '{}');
 
 为什么预算预扣在调用之前：预扣放在后面，模型/工具就能用「先花掉再申请」绕过额度。
 为什么失败也要结算：一条不结算的预扣会永久占用额度，这正是 ledger 存在的原因。
+
+如果进程死在「预扣」和「结算」之间，那笔预留没有任何人收尾。所以 tick 里有一个
+`releaseStaleHolds`：把 `run_id IS NULL`（= 每次工具调用各自的预扣）且超过 15 分钟仍在
+`reserved` 的行按 `not_contacted` 释放。run 级别的预扣不归它管——那个由
+`recoverStaleRuns` 按 run 状态处理，而还在跑的 run 必须保住自己的额度。
 
 ## 失败枚举
 

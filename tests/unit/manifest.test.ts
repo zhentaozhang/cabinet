@@ -137,6 +137,15 @@ describe("verifyManifest", () => {
     expect(result.mismatches.map((entry) => entry.path)).toContain("steps[1].outputHash");
   });
 
+  it("does not claim the structure check when a hash is malformed", () => {
+    const bad = manifest({ steps: [step(0), { ...step(1), outputHash: "not-a-hash" }] });
+    const result = verifyManifest(bad);
+    expect(result.ok).toBe(false);
+    // "structure" listed next to a failure would let a caller that only reads
+    // `checks` believe the file was structurally sound.
+    expect(result.checks).not.toContain("structure");
+  });
+
   it("rejects another manifest version", () => {
     const result = verifyManifest(manifest({ version: 99 }));
     expect(result.ok).toBe(false);

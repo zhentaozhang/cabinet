@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull, lt, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agentBudgetPeriods,
+  agentBudgetReservations,
   approvals,
   dissents,
   idempotencyKeys,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/db/schema";
 import { evaluateDissents } from "@/server/services/commands/council/dissent";
 import { expireApprovalInTx } from "@/server/services/commands/tasks/approvals";
+import { settleBudget } from "@/server/services/commands/tasks/execution";
 import { failExhaustedJobs } from "@/server/services/commands/tasks/jobs";
 import { recoverStaleRuns } from "@/server/services/commands/tasks/recovery";
 
@@ -218,6 +220,57 @@ export async function settleDueDissents(): Promise<DissentSweepResult> {
   return { users: pending.length, vindicated, invalidated, failed };
 }
 
+export type ReleaseStaleHoldsResult = { released: number };
+
+/**
+ * How long a per-call hold may sit unsettled before the tick releases it.
+ *
+ * A per-tool reservation (`tool-loop.ts`) is created immediately before the
+ * network call and settled right after it — seconds, not minutes. A hold that
+ * old belongs to a process that died between the two, and a hold nobody settles
+ * keeps `reservedCents` raised forever, which is spending power lost with no
+ * ledger entry to explain it.
+ */
+export const STALE_HOLD_MS = 15 * 60_000;
+
+/**
+ * Release per-tool holds whose process never came back.
+ *
+ * Only rows with `run_id IS NULL`: a run-level hold is reconciled by
+ * `recoverStaleRuns`, and a running run must keep its allowance. Settlement
+ * goes through `settleBudget`, so the bucket, the reservation state and the
+ * reason commit together and a second pass changes nothing.
+ */
+export async function releaseStaleHolds(
+  now: Date = new Date(),
+  olderThanMs: number = STALE_HOLD_MS,
+): Promise<ReleaseStaleHoldsResult> {
+  const cutoff = new Date(now.getTime() - Math.max(0, olderThanMs));
+  const stale = await db
+    .select({ id: agentBudgetReservations.id })
+    .from(agentBudgetReservations)
+    .where(
+      and(
+        eq(agentBudgetReservations.state, "reserved"),
+        isNull(agentBudgetReservations.runId),
+        lte(agentBudgetReservations.createdAt, cutoff),
+      ),
+    );
+
+  let released = 0;
+  for (const row of stale) {
+    const settled = await db.transaction((tx) =>
+      settleBudget(tx, {
+        reservationId: row.id,
+        settlement: { state: "not_contacted" },
+        reason: "Stale per-tool hold released by tick.",
+      }),
+    );
+    if (settled) released += 1;
+  }
+  return { released };
+}
+
 export type CloseExpiredPeriodsResult = { closed: number };
 
 /**
@@ -253,6 +306,7 @@ export type TickStepName =
   | "failExhaustedJobs"
   | "settleDueDissents"
   | "closeExpiredPeriods"
+  | "releaseStaleHolds"
   | "pruneRateLimits"
   | "pruneIdempotencyKeys"
   | "archiveOldOutbox";
@@ -345,6 +399,10 @@ export function tickSteps(now: Date = new Date()): TickStep[] {
       run: async () => ({
         count: (await closeExpiredPeriods(now)).closed,
       }),
+    },
+    {
+      name: "releaseStaleHolds",
+      run: async () => ({ count: (await releaseStaleHolds(now)).released }),
     },
     {
       name: "pruneRateLimits",

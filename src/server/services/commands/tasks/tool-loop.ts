@@ -105,7 +105,6 @@ export async function runMcpToolLoop(
     .select({
       name: mcpServers.name,
       url: mcpServers.url,
-      resource: mcpServers.resource,
       scope: mcpServers.scope,
     })
     .from(mcpServers)
@@ -138,8 +137,11 @@ export async function runMcpToolLoop(
     }
 
     const remoteTool = remote.length > 0 ? remote : tool;
+    // The required resource comes from the server *name*, never from a column:
+    // a row that claimed "web" would otherwise spend a grant nobody issued to
+    // it. Grants say "read on mcp:github", and this is the same string.
     const spec: ToolSpec = {
-      resource: server.resource,
+      resource: MCP_TOOL_PREFIX + server.name,
       scope: server.scope === "write" ? "write" : "read",
       kind: server.scope === "write" ? "write" : "read",
     };

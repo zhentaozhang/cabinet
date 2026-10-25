@@ -181,7 +181,10 @@ export const mcpServers = pgTable(
     /** The name an Agent references as `mcp:<name>:<tool>`. */
     name: text("name").notNull(),
     url: text("url").notNull(),
-    /** The grant resource this server's tools need, e.g. `mcp:github`. */
+    /**
+     * Reserved: the required grant resource is derived from `name` (`mcp:<name>`)
+     * at call time, so a row cannot borrow a grant issued for another resource.
+     */
     resource: text("resource").notNull(),
     /** read | write — a write server's tools are `execute` tools. */
     scope: text("scope").notNull().default("read"),

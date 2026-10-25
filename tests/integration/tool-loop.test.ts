@@ -168,6 +168,36 @@ describe("runMcpToolLoop", () => {
     expect(sink.records[0].output.status).toBe("unauthorized");
   });
 
+  it("does not let a server row lend an unrelated grant to a tool", async () => {
+    // The grant is a statement about a *resource*, so a server row that claims
+    // someone else's resource name would spend a permission nobody granted it.
+    // The required resource is derived from the server name, not read from the
+    // row, so relabelling a row cannot widen a grant.
+    await addServer("shop", "web");
+    await addGrant("web", "read");
+    const sink = collect();
+
+    const result = await runMcpToolLoop({
+      userId: DEMO_USER_ID,
+      agentId: "ag_coach",
+      taskId: "tsk_read",
+      runId: "run_test_mcp",
+      timezone: "UTC",
+      tools: ["mcp:shop:search"],
+      grants: [{ resource: "web", scope: "read" }],
+      actionType: "internal",
+      input: "RAG 检索",
+      step: sink.step,
+    });
+
+    expect(result).toEqual({ attempted: 0, ok: 0 });
+    expect(calls).toEqual([]);
+    expect(sink.records[0].output).toMatchObject({
+      status: "unauthorized",
+      provider: "mcp:shop",
+    });
+  });
+
   it("records an unconfigured server instead of pretending", async () => {
     const sink = collect();
 

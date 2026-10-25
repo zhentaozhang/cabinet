@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agentBudgetPeriods,
+  agentBudgetReservations,
   approvals,
   auditEvents,
   dissents,
@@ -18,6 +19,7 @@ import {
   archiveOldOutbox,
   closeExpiredPeriods,
   pruneIdempotencyKeys,
+  releaseStaleHolds,
   pruneRateLimits,
   runSteps,
   runTick,
@@ -419,6 +421,61 @@ describe("tick: 一步失败不阻断其余步骤", () => {
     expect(tickSteps().map((entry) => entry.name)).toContain(
       "closeExpiredPeriods",
     );
+  });
+
+  it("释放没有结算的旧预留：一次崩溃不该永久占住预算", async () => {
+    // 每次 MCP 调用都单独预留一笔钱（tool-loop.ts），结算发生在调用返回之后。
+    // 如果进程在两者之间死掉，这一行会永远停在 reserved，
+    // 而 reservedCents 是按行累加的——预算就被一次没结算的调用永久占住了。
+    const now = new Date();
+    await db.insert(agentBudgetPeriods).values({
+      id: "bpd_stale",
+      userId: DEMO_USER_ID,
+      agentId: "ag_coach",
+      timezone: "Asia/Shanghai",
+      periodStart: new Date(now.getTime() - 86_400_000),
+      periodEnd: new Date(now.getTime() + 6 * 86_400_000),
+      limitCents: 1200,
+      // 两笔预留都在账上（30 已过期 + 10 仍在飞）。
+      reservedCents: 40,
+    });
+    await db.insert(agentBudgetReservations).values([
+      {
+        id: "brs_stale",
+        userId: DEMO_USER_ID,
+        periodId: "bpd_stale",
+        agentId: "ag_coach",
+        state: "reserved",
+        amountCents: 30,
+        createdAt: new Date(now.getTime() - 3_600_000),
+      },
+      {
+        id: "brs_fresh",
+        userId: DEMO_USER_ID,
+        periodId: "bpd_stale",
+        agentId: "ag_coach",
+        state: "reserved",
+        amountCents: 10,
+        createdAt: now,
+      },
+    ]);
+
+    expect((await releaseStaleHolds(now)).released).toBe(1);
+
+    const rows = await db.select().from(agentBudgetReservations);
+    expect(rows.find((row) => row.id === "brs_stale")?.state).toBe("released");
+    expect(rows.find((row) => row.id === "brs_stale")?.reason).toContain("tick");
+    // 刚预留的那笔还在飞，不能动。
+    expect(rows.find((row) => row.id === "brs_fresh")?.state).toBe("reserved");
+
+    const [period] = await db
+      .select()
+      .from(agentBudgetPeriods)
+      .where(eq(agentBudgetPeriods.id, "bpd_stale"));
+    expect(period.reservedCents).toBe(10);
+
+    expect((await releaseStaleHolds(now)).released).toBe(0);
+    expect(tickSteps().map((entry) => entry.name)).toContain("releaseStaleHolds");
   });
 });
 

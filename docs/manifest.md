@@ -67,7 +67,7 @@ manifest 是要发给外部审计方的文件，带正文等于把工作区一�
 
 | 检查 | 能证明 | 什么时候跳过 |
 | --- | --- | --- |
-| `structure` | 版本、id 非空、哈希是 64 位小写 hex、`verdict` 只用 pass/fail | 结构坏了直接 `ok:false` |
+| `structure` | 版本、id 非空、哈希是 64 位小写 hex、`verdict` 只用 pass/fail | 有结构问题时**不进 `checks`**：只读 `checks` 的调用方否则会把坏文件当成好的 |
 | `merkle` | 用 manifest 里现有的 step 重算，根一致 | — |
 | `auditHead` | 该 user 审计链里存在 `seq` 且哈希一致 | 没给 `chain`，或 `auditHead` 为 `null` 时进 `unchecked` |
 

@@ -231,7 +231,9 @@ export function verifyManifest(
     });
   }
 
-  checks.push("structure");
+  // A malformed field is a structural failure, so the label must not appear: a
+  // caller that reads only `checks` would otherwise see a broken file as sound.
+  if (mismatches.length === 0) checks.push("structure");
 
   const recomputed = merkleRoot(parsed.map((step) => leafHash(step)));
   if (recomputed !== doc.merkleRoot) {
