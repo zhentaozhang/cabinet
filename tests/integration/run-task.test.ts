@@ -64,7 +64,7 @@ describe("runtime policy enforcement", () => {
   });
 
   it("asks for a fresh approval when a failed task is retried", async () => {
-    // A consumed approval is historical: the retry path (run.ts:88-93) drops it
+    // A consumed approval is historical: the retry path (run.ts:108-110) drops it
     // so the policy sees "no approval" and the task parks in awaiting_approval
     // again, instead of the task inheriting a yes it already spent.
     await decideApproval("appr_booking", "approve", "test", DEMO_USER_ID);

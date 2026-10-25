@@ -152,10 +152,15 @@ GET /api/tasks/tsk_read/manifest?run=run_x  # 指定某一次运行
   二，「哪次 run 申请了这条审批」没有记录——被消费的审批属于**执行**它的 run，不是申请它的 run。
   崩溃恢复会把手里的审批交还任务（`reopenConsumedApprovalsTx` 把 `consumedAt` 和 `runId` 一起清空），
   所以「`run_id` 为空」既可能是没人花过，也可能是被交还了；两种都对该任务的每个 run 可见。
+  第三个边界由此而来：**同一份 run 的 manifest 不是终身不变的**。如果交还的审批又被之后某个 run 花掉，
+  `run_id` 会改写成那个新 run（`run.ts` 的消费 UPDATE），死 run 的 manifest 就从「列这条审批」
+  变成「不列」，digest 也随之变化。导出时机应当是 run 已经结算之后；要追完整历史，看审计链。
 - **常设授权不在 manifest 的 `approvals` 里**：`agent_grants.created_by_approval_id`
   （`src/lib/db/schema/agents.ts:65`）记录「这条常设授权当初是哪一次审批开出来的」。一次 run 如果靠
-  已经生效的常设授权放行，它自己根本没有申请审批，所以 manifest 的 `approvals` 是空数组——
-  空数组的意思是「这次 run 没花掉任何一次性审批」，不是「没有人为它放行」。
+  已经生效的常设授权放行（`policy.ts:393-400` 直接 allow 并回 `standingGrantId`，`run.ts` 扣 `useCount`），
+  它自己根本没有申请审批，所以 `approvals` 里**不含**它这次花掉的审批。
+  但不能读成「空数组」：manifest 只按「任务 + `run_id` 为空或等于本 run」取，**不按 `status` 过滤**，
+  该任务上一条 `rejected` 或已被 tick 判 `expired` 的审批（`run_id` 天生为空）一样会出现在列表里。
   「谁授权了这个 Agent 做这件事」只能去审计链查 `grant` 相关条目，manifest 不重复这一点。
 
 ## 测试

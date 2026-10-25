@@ -116,6 +116,25 @@ span 会被发到第三方。键名按 `.` `_` `-` `[` `]` 切成段，
 布尔用 `boolValue`。早期版本把所有数字都当 `stringValue`，后端就没法对
 `step.idx`、`gen_ai.usage.*` 求和。
 
+### 只在 Node 里跑（边界）
+`src/instrumentation.ts` 无条件调用 `installOtlpExporterIfConfigured()`，而 `tracing.ts`
+用的是 Node 的 API（`process.hrtime.bigint()`、`node:crypto`）。当前仓库没有
+`middleware.ts`、也没有 edge route，instrumentation 只会在 Node 里执行，所以这条线是安全的。
+
+一旦新增 middleware 或 `runtime = "edge"` 的 route，Next 会把 `src/instrumentation.ts`
+也编进 edge bundle（`bash scripts/verify.sh` 的 build 阶段已经能看到这条 import trace，
+现在只是 warning）。那时必须先加运行时守卫：
+
+```ts
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  const { installOtlpExporterIfConfigured } = await import("@/lib/observability/otlp");
+  // ...
+}
+```
+
+动态 import 不是风格问题：静态 import 会把 `otlp.ts` 整个拖进 edge bundle。
+
 ### 丢了怎么办
 
 导出队列上限 512，溢出丢最旧的并累加 `dropped`；满 32 条或每 5 秒 flush 一次，

@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { approvals, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
@@ -111,26 +111,42 @@ export type ExpiredApproval = {
  * clearing `consumedAt` lets the identical decision cover the retry that the
  * crash interrupted — the human already said yes to this work.
  *
- * Only the recovery sweep reopens. A retry the user presses does the opposite
- * on purpose: `runTask` drops the spent approval from the input so the policy
- * asks again (run.ts:88-93), because a new attempt should need a new yes rather
- * than inherit the one the failed attempt already used.
+ * Only the recovery sweep reopens, and only the approvals the dead run itself
+ * spent (`runId`), plus the ones spent before ownership was recorded (null).
+ * A task can hold several spent approvals — one per earlier run — and arming
+ * all of them would let an old yes cover work it was never given for.
+ *
+ * A retry the user presses does the opposite on purpose: `runTask` drops the
+ * spent approval from the input so the policy asks again (run.ts:108-110),
+ * because a new attempt should need a new yes rather than inherit the one the
+ * failed attempt already used.
  */
 export async function reopenConsumedApprovalsTx(
   tx: Tx,
   taskId: string,
+  runId: string,
 ): Promise<number> {
   const reopened = await tx
     .update(approvals)
-    // `runId` is cleared with the consumption: an approval that is no longer
-    // spent belongs to no run, and leaving the dead run's id behind would make
-    // that run's manifest list a decision it no longer holds.
+    // Both fields are cleared together. `consumedAt` so the yes covers the next
+    // attempt; `runId` because the run it named is being buried and no run
+    // spends this approval any more. "No run" is what null means downstream —
+    // the manifest of every run on this task lists it (manifest.ts:105-110) —
+    // so this does not hide the decision from the run that made it.
+    //
+    // If a later run spends it again, `run.ts` stamps its own id and the
+    // approval moves to that run: a manifest exported before and after such a
+    // re-consumption differs. Export once the run has settled, or read the
+    // audit chain, which keeps the whole history.
     .set({ consumedAt: null, runId: null })
     .where(
       and(
         eq(approvals.taskId, taskId),
         eq(approvals.status, "approved"),
         isNotNull(approvals.consumedAt),
+        // Rows consumed before `run_id` was written (2026-10-25) carry null and
+        // cannot be attributed; leaving them out would lock those tasks out.
+        or(eq(approvals.runId, runId), isNull(approvals.runId)),
       ),
     )
     .returning({ id: approvals.id });

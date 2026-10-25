@@ -103,9 +103,9 @@ export async function recoverStaleRuns(
       // approval consumed produces a Run button that can only ever fail with
       // "Approval has already been consumed." A *user* retry does not come
       // through here: `runTask` drops the spent approval so the policy asks
-      // again (run.ts:88-93).
+      // again (run.ts:108-110).
       const reopened = rewound
-        ? await reopenConsumedApprovalsTx(tx, run.taskId)
+        ? await reopenConsumedApprovalsTx(tx, run.taskId, run.id)
         : 0;
 
       await tx

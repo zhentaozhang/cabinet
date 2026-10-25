@@ -107,7 +107,9 @@ export const TOOL_STATUS_MAP: Record<
     description: "工具执行成功并返回有效数据",
   },
   not_connected: {
-    label: "未连接",
+    // "Not connected" would be a lie for a request that was sent and failed
+    // (governed-call.ts:50 maps network_error here with attempted: true).
+    label: "未接通",
     tone: "neutral",
     description:
       "这个工具在当前运行时没有走通（本地没有执行器、外部连接器未配置，或连接器本次请求没成功——看这一步的原因）",

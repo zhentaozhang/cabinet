@@ -307,8 +307,22 @@ describe("stale run recovery", () => {
       status: "approved",
       consumedAt: new Date(Date.now() - 120_000),
       // The dead run's id: reopening must clear it, because an approval nobody
-      // holds is not owned by the run that is about to be buried.
-      runId: "run_dead",
+      // holds is not owned by the run that is about to be buried — and it can
+      // only be reopened if this is the run being buried.
+      runId: RUN_ID,
+    });
+    // A second, older yes on the same task, spent by a run that already
+    // finished. Reopening it would hand the retry a decision it was never
+    // given for (approvals.ts:114-121).
+    await db.insert(approvals).values({
+      id: "apv_other_run",
+      userId: DEMO_USER_ID,
+      taskId: TASK_ID,
+      action: "run",
+      payload: { reason: "上一轮的 yes" },
+      status: "approved",
+      consumedAt: new Date(Date.now() - 240_000),
+      runId: "run_finished",
     });
     await db.insert(tasks).values({
       id: "tsk_untouched",
@@ -349,6 +363,15 @@ describe("stale run recovery", () => {
       .from(approvals)
       .where(eq(approvals.id, "apv_other_task"));
     expect(untouched.consumedAt).not.toBeNull();
+
+    // Nor is a yes another run of the same task already spent: the sweep is
+    // scoped to the run being buried.
+    const [otherRun] = await db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.id, "apv_other_run"));
+    expect(otherRun.consumedAt).not.toBeNull();
+    expect(otherRun.runId).toBe("run_finished");
 
     const [event] = await db
       .select()
