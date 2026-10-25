@@ -112,9 +112,21 @@ export type ExpiredApproval = {
  * crash interrupted — the human already said yes to this work.
  *
  * Only the recovery sweep reopens, and only the approvals the dead run itself
- * spent (`runId`), plus the ones spent before ownership was recorded (null).
- * A task can hold several spent approvals — one per earlier run — and arming
- * all of them would let an old yes cover work it was never given for.
+ * spent (`runId`). A task can hold several spent approvals — one per earlier
+ * run — and re-arming all of them would let an old yes cover work it was never
+ * given for.
+ *
+ * Rows with a null `runId` are the deliberate exception, not a rule: they were
+ * consumed before ownership was recorded (2026-10-25), so they cannot be
+ * attributed to any run, and leaving them consumed would lock those tasks out
+ * for good. The cost is that an old yes on that legacy data can be re-armed;
+ * it stops mattering as those rows age out.
+ *
+ * The precondition the caller relies on: `loadLatestApproval`
+ * (execution.ts:261-282) hands the policy the newest pending/approved approval
+ * on the task, and runs of one task are serialized, so the approval the buried
+ * run spent is that row. If a newer spent approval existed, reopening this one
+ * would not unlock the task — and nothing here would say so.
  *
  * A retry the user presses does the opposite on purpose: `runTask` drops the
  * spent approval from the input so the policy asks again (run.ts:108-110),

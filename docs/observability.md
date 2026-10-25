@@ -117,8 +117,11 @@ span 会被发到第三方。键名按 `.` `_` `-` `[` `]` 切成段，
 `step.idx`、`gen_ai.usage.*` 求和。
 
 ### 只在 Node 里跑（边界）
-`src/instrumentation.ts` 无条件调用 `installOtlpExporterIfConfigured()`，而 `tracing.ts`
-用的是 Node 的 API（`process.hrtime.bigint()`、`node:crypto`）。当前仓库没有
+`src/instrumentation.ts` 无条件调用 `installOtlpExporterIfConfigured()`，而这条链路
+用的是只有 Node 才有的 API：`node:async_hooks` 的 `AsyncLocalStorage`
+（`tracing.ts:1`、`context.ts:1`）和 `process.hrtime.bigint()`（`tracing.ts:136`、`:148`）。
+span id 生成的 `globalThis.crypto.randomUUID()`（`tracing.ts:86`）不算越界，edge 也有。
+当前仓库没有
 `middleware.ts`、也没有 edge route，instrumentation 只会在 Node 里执行，所以这条线是安全的。
 
 一旦新增 middleware 或 `runtime = "edge"` 的 route，Next 会把 `src/instrumentation.ts`

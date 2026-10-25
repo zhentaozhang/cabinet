@@ -32,7 +32,7 @@
 ## 5. 策略闸门：为什么这次运行被拦了
 
 - `src/lib/domain/policy.ts`（608 行）`gate()` 返回 `allow`/`deny`/`approval`；审批消费在 `src/server/services/commands/tasks/approvals.ts`。
-- 一个必读细节：**已消费的审批是历史**（`run.ts:88-93` 的注释），失败重试必须重新点头，所以重试会再开一张审批。
+- 一个必读细节：**已消费的审批是历史**（`run.ts:106-110` 的注释），失败重试必须重新点头，所以重试会再开一张审批。
 - 验证：`./node_modules/.bin/vitest run tests/unit/policy.test.ts tests/unit/policy-approval.test.ts tests/integration/standing-policy.test.ts`。
 
 ## 6. 钱和用量怎么记账

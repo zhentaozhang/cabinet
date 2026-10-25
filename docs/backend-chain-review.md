@@ -91,7 +91,7 @@ running ──✗ 不可取消（task-actions.ts:41-57）──► 只能靠 run
 修法：cancel 支持 `running`（同一事务改 task + 该 task 的 running run + `settleBudget(unknown_usage)`）；或在 `run/route.ts` 前置跑一次带节流的 `recoverStaleRuns`。
 
 **P1-2　恢复流程把任务退回 planned，但已消费的审批不清 ⇒ 死锁**
-`recovery.ts:89-92` 裸 UPDATE 到 `planned`；`run.ts:59` `retrying = failed || rejected`，`run.ts:89-91` 只在 retrying 时清 consumed approval ⇒ 恢复后 `policy.ts:380-393` 返回 `deny("Approval has already been consumed.")`，而 `task-actions.ts:33` RUNNABLE 含 `planned` ⇒ 按钮可点、点了恒失败。
+`recovery.ts:89-92` 裸 UPDATE 到 `planned`；`run.ts:77` `retrying = failed || rejected`，`run.ts:108-110` 只在 retrying 时清 consumed approval ⇒ 恢复后 `policy.ts:380-393` 返回 `deny("Approval has already been consumed.")`，而 `task-actions.ts:33` RUNNABLE 含 `planned` ⇒ 按钮可点、点了恒失败。
 修法：把 `resetForRetry` 抽成 `rewindTaskForRetry(tx, taskId, { clearConsumedApproval })`，recovery 与 run 共用。
 
 **P1-3　状态机被两处裸 UPDATE 绕过，且 `running→planned` 是非法迁移**
@@ -397,7 +397,7 @@ tick 里有三个清扫函数按时间删除旧行，而 0027 之前的索引一
 |---|---|---|---|
 | 崩溃恢复 | `src/server/services/commands/tasks/recovery.ts:92-119` | `running`（`assertTransition("task","running","planned")`） | **重开**（`consumedAt` 置 null） |
 | 审批过期 | `src/server/services/commands/tasks/approvals.ts:138-152` | `awaiting_approval` | 无可重开：这行审批是 `pending`，从没被消费 |
-| 用户重试 | `src/server/services/commands/tasks/run.ts:810-836` | `failed` / `rejected` | **丢弃**：`run.ts:88-93` 明确写「已消费的审批是历史」，重试要重新点头，`awaitApproval` 开一张新审批 |
+| 用户重试 | `src/server/services/commands/tasks/run.ts:810-836` | `failed` / `rejected` | **丢弃**：`run.ts:108-110` 明确写「已消费的审批是历史」，重试要重新点头，`awaitApproval` 开一张新审批 |
 
 三条路径对同一件事（一张被消费的审批）给出三个不同答案，而每个答案都对，**因为它们的语义不同**：崩溃是系统替用户把状态推回去（若把 `consumedAt` 留着，`decideRun` 的 `gate()` 会按 `src/lib/domain/policy.ts:380-393` 直接 `deny("Approval has already been consumed.")`，运行按钮从此永久失败）；重试是人主动再点一次；过期是那条审批从未生效。统一它们，等于把「重试要不要重新点头」这个安全语义交给一个共用函数去决定。
 

@@ -284,9 +284,9 @@ eslint 干净。
 
 1. `bash scripts/verify.sh`（migrate 临时库 → tsc → eslint → vitest → next build）。
 2. 独立审查 subagent：只读 diff + 计划，核对"失败测试是否真的先红后绿"。
-3. 有 ❌ 就修并重跑；三轮不过则上报。
+3. 有 ❌ 就修并重跑。第 3 轮起不再报阻断，第 5–7 轮都是「应该修」级精度问题；每一轮的处置都记在下面的表里。
 
-## 审查结果（六轮，2026-10-25）
+## 审查结果（七轮，2026-10-25）
 
 | 轮次 | 结论 | 处理 |
 |---|---|---|
@@ -295,12 +295,13 @@ eslint 干净。
 | 3（9e03e7c2） | **无阻断**，8 条精度问题（跨 run 归属/排序 tie-break、flush 链释放、注释与文档不一致、本地工具标签、日志口径） | 全部修在 46b0569 |
 | 4（c4a0602f，只审 46b0569） | **无阻断**，4 条：审批只修了查询没修归属、governed-call 注释仍反、三处修复无测试、本地工具徽标只改一半 | a02963c：消费处写 `runId`、注释重写、3 个新测试（审批归属、预算拒绝不记 attempted、同秒 audit step 的 tie-break）、徽标文案 |
 | 5（1adb0359，对 a02963c） | **无阻断**，7 条：flush 释放测试无判别性、徽标文案覆盖不到 network_error、退款归属机制说错、常设授权未进文档边界、一处 `select` 无 `ORDER BY`、计划表指代不清、`reopenConsumedApprovalsTx` 的「共用调用方」是假的 | ba2e772（交还时一并清 `runId`）+ 572ed47：`inFlight()` 探针让释放可断言、文案改「没有走通」、注释改指 `releaseStaleHolds`、`docs/manifest.md` 补常设授权边界、测试改用捕获的 `runId`、提交信息 amend |
-| 6（7c80a815，对 a02963c/ba2e772/572ed47） | **无阻断**，5 条：交还的**理由**与代码相反（清成 null 后死 run 的 manifest 仍列它）、交还范围是「该任务全部已消费」而非「这个 run 花的」、`run.ts:88-93` 行号错 3 处、审查表仍写「1befff5/本提交」且把 1032 记在第三轮、常设授权段「所以是空数组」过硬 | 见下一个提交：注释改成真实理由（null = 无主）、`reopenConsumedApprovalsTx` 增加 `runId` 过滤（保留 `runId IS NULL` 的历史行）、行号改正、表格与本段重写、`docs/manifest.md` 收窄结论并补「再消费会改 digest」、徽标改「未接通」 |
+| 7（481d4586，对 b81b40f） | **无阻断**，4 条：交还范围带进一条既不写注释也不测的前提（策略只读「任务最新一条」审批）、`docs/observability.md` 把 `node:async_hooks` 写成 `node:crypto`、`isNull(runId)` 分支的注释理由与代码方向相反且零覆盖、4 处残留行号与表格指代 | 本提交：注释写明「策略读最新一条 + 同一任务 run 串行」并在 `recovery.ts` 调用处重复一遍、文档改成真实越界 API、`isNull` 分支改写成「迁移前存量行的过渡降级」并补用例（换成 `eq(runId, runId)` 必红）、行号与指代改正 |
+| 6（7c80a815，对 a02963c/ba2e772/572ed47） | **无阻断**，5 条：交还的**理由**与代码相反（清成 null 后死 run 的 manifest 仍列它）、交还范围是「该任务全部已消费」而非「这个 run 花的」、`run.ts:88-93` 行号错 3 处、审查表仍写「1befff5/本提交」且把 1032 记在第三轮、常设授权段「所以是空数组」过硬 | b81b40f：注释改成真实理由（null = 无主）、`reopenConsumedApprovalsTx` 增加 `runId` 过滤（保留 `runId IS NULL` 的历史行）、行号改正、表格与本段重写、`docs/manifest.md` 收窄结论并补「再消费会改 digest」、徽标改「未接通」 |
 
 第三轮同时确认：分层未破（`src/lib` 无 `@/server` 引用）、零新增运行时依赖、条件写回 + `sql`now()`` 到位、
 `bash scripts/verify.sh` exit 0；第三轮时全仓 **118 文件 / 1029 用例**。第四轮 a02963c 加了 3 个用例，
-此后是 **118 文件 / 1032 用例**；本轮只在既有用例里加断言（交还按 run 归属，`tests/integration/run-jobs.test.ts`），
-用例数不变。
+此后是 **118 文件 / 1032 用例**；第 6、7 轮都只在既有用例里加断言（交还按 run 归属、恢复后策略看得见的那条审批确实是交还的那条，
+`tests/integration/run-jobs.test.ts`），用例数不变。
 
 第四轮留下的诚实边界（写进 docs/manifest.md）：`approvals.run_id` 从 2026-10-25 起在消费时写入，
 此前的审批仍为 null 因而对每个 run 可见；「哪次 run 申请了审批」没有记录，归属是「谁花掉了它」。

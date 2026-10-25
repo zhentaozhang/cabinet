@@ -20,7 +20,10 @@ import {
   MAX_CLAIM_ATTEMPTS,
 } from "@/server/services/commands/tasks/jobs";
 import { recoverStaleRuns } from "@/server/services/commands/tasks/recovery";
-import { reserveBudget } from "@/server/services/commands/tasks/execution";
+import {
+  loadLatestApproval,
+  reserveBudget,
+} from "@/server/services/commands/tasks/execution";
 import { resetDb } from "../helpers/db";
 
 const TASK_ID = "tsk_job";
@@ -313,7 +316,14 @@ describe("stale run recovery", () => {
     });
     // A second, older yes on the same task, spent by a run that already
     // finished. Reopening it would hand the retry a decision it was never
-    // given for (approvals.ts:114-121).
+    // given for (approvals.ts:114-120).
+    //
+    // `createdAt` is set explicitly and kept older than the dead run's yes:
+    // the policy reads the *newest* approval on the task (execution.ts:261-282),
+    // and runs of one task are serialized, so the row the buried run spent is
+    // also the newest one. Letting this fixture default to now() would build a
+    // state the scheduler cannot produce — and it would silently lock the task
+    // while the test still passed on the row it looked up by id.
     await db.insert(approvals).values({
       id: "apv_other_run",
       userId: DEMO_USER_ID,
@@ -322,7 +332,22 @@ describe("stale run recovery", () => {
       payload: { reason: "上一轮的 yes" },
       status: "approved",
       consumedAt: new Date(Date.now() - 240_000),
+      createdAt: new Date(Date.now() - 240_000),
       runId: "run_finished",
+    });
+    // A yes consumed before `run_id` was recorded (2026-10-25). It cannot be
+    // attributed to a run, so recovery reopens it too — otherwise tasks from
+    // before that migration would be locked out forever (approvals.ts:121-126).
+    await db.insert(approvals).values({
+      id: "apv_legacy",
+      userId: DEMO_USER_ID,
+      taskId: TASK_ID,
+      action: "run",
+      payload: { reason: "迁移前的 yes" },
+      status: "approved",
+      consumedAt: new Date(Date.now() - 300_000),
+      createdAt: new Date(Date.now() - 300_000),
+      runId: null,
     });
     await db.insert(tasks).values({
       id: "tsk_untouched",
@@ -372,6 +397,21 @@ describe("stale run recovery", () => {
       .where(eq(approvals.id, "apv_other_run"));
     expect(otherRun.consumedAt).not.toBeNull();
     expect(otherRun.runId).toBe("run_finished");
+
+    // An unattributed legacy yes is reopened: that branch is a deliberate
+    // downgrade, not an accident (approvals.ts:121-126).
+    const [legacy] = await db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.id, "apv_legacy"));
+    expect(legacy.consumedAt).toBeNull();
+
+    // Reopening is only worth anything if the policy can see the result: it
+    // reads the newest approval on the task (execution.ts:261-282), so assert
+    // that row — not just the one we looked up by id — is the reopened one.
+    const latest = await loadLatestApproval(TASK_ID);
+    expect(latest?.id).toBe("apv_recovery");
+    expect(latest?.consumedAt).toBeNull();
 
     const [event] = await db
       .select()

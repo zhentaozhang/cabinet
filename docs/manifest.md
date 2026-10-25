@@ -157,7 +157,7 @@ GET /api/tasks/tsk_read/manifest?run=run_x  # 指定某一次运行
   变成「不列」，digest 也随之变化。导出时机应当是 run 已经结算之后；要追完整历史，看审计链。
 - **常设授权不在 manifest 的 `approvals` 里**：`agent_grants.created_by_approval_id`
   （`src/lib/db/schema/agents.ts:65`）记录「这条常设授权当初是哪一次审批开出来的」。一次 run 如果靠
-  已经生效的常设授权放行（`policy.ts:393-400` 直接 allow 并回 `standingGrantId`，`run.ts` 扣 `useCount`），
+  已经生效的常设授权放行（`policy.ts:395-401` 直接 allow 并回 `standingGrantId`，`run.ts` 扣 `useCount`），
   它自己根本没有申请审批，所以 `approvals` 里**不含**它这次花掉的审批。
   但不能读成「空数组」：manifest 只按「任务 + `run_id` 为空或等于本 run」取，**不按 `status` 过滤**，
   该任务上一条 `rejected` 或已被 tick 判 `expired` 的审批（`run_id` 天生为空）一样会出现在列表里。
