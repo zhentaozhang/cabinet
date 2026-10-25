@@ -57,14 +57,23 @@ export function currentSpan(): Span | null {
 }
 
 /**
- * Attribute keys we refuse to record.
+ * Attribute names we refuse to record.
  *
  * A span is shipped to a third party; the prompt, the model key and the task
- * body live one `setAttribute` away from leaving the building. Deny by pattern
+ * body live one `setAttribute` away from leaving the building. Deny by name
  * rather than allow-list so a new call site fails closed.
+ *
+ * Matched per **segment** (`gen_ai.usage.input_tokens` → gen_ai, usage, input,
+ * tokens), not as a substring: a substring rule on "token" also dropped
+ * `max_tokens` and the two usage counters — the numbers a trace exists to show.
  */
-const SECRET_KEY = /secret|token|password|authorization|api[-_]?key|prompt|content|payload|body/i;
+const SECRET_SEGMENT =
+  /^(secret|token|password|passwd|authorization|auth|api[-_]?key|apikey|key|credential|credentials|prompt|content|payload|body)$/i;
 const MAX_ATTR_LEN = 256;
+
+function isSecretKey(key: string): boolean {
+  return key.split(/[.[\]_-]+/).some((segment) => SECRET_SEGMENT.test(segment));
+}
 
 function coerce(value: unknown): SpanAttribute | null {
   if (typeof value === "boolean") return value;
@@ -97,7 +106,7 @@ export function startSpan(input: {
   const parent = storage.getStore() ?? null;
   const attributes: Record<string, SpanAttribute> = {};
   for (const [key, value] of Object.entries(input.attributes ?? {})) {
-    if (SECRET_KEY.test(key)) continue;
+    if (isSecretKey(key)) continue;
     const coerced = coerce(value);
     if (coerced !== null) attributes[key] = coerced;
   }
@@ -107,7 +116,7 @@ export function startSpan(input: {
     spanId: hex(16),
     parentSpanId: parent?.spanId ?? null,
     setAttribute(key, value) {
-      if (SECRET_KEY.test(key)) return;
+      if (isSecretKey(key)) return;
       const coerced = coerce(value);
       if (coerced !== null) attributes[key] = coerced;
     },

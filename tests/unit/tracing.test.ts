@@ -70,6 +70,36 @@ describe("tracing", () => {
     expect(Object.keys(attrs)).not.toContain("prompt");
   });
 
+  it("keeps the token counts, which are not secrets", () => {
+    const { spans, restore } = collect();
+    const span = startSpan({
+      name: "llm.generate",
+      attributes: {
+        "gen_ai.request.max_tokens": 512,
+        "gen_ai.usage.input_tokens": 1200,
+        "gen_ai.usage.output_tokens": 30,
+      },
+    });
+    span.end();
+    restore();
+    // A substring rule on "token" silently dropped all three, so the trace
+    // showed a model call with no cost attached to it.
+    expect(spans[0]!.attributes["gen_ai.request.max_tokens"]).toBe(512);
+    expect(spans[0]!.attributes["gen_ai.usage.input_tokens"]).toBe(1200);
+    expect(spans[0]!.attributes["gen_ai.usage.output_tokens"]).toBe(30);
+  });
+
+  it("drops a secret whose name is only a segment of the key", () => {
+    const { spans, restore } = collect();
+    const span = startSpan({ name: "llm.generate" });
+    span.setAttribute("openai.api_key", "sk-live");
+    span.setAttribute("http.request.header.authorization", "Bearer x");
+    span.setAttribute("user.password", "hunter2");
+    span.end();
+    restore();
+    expect(Object.keys(spans[0]!.attributes)).toEqual([]);
+  });
+
   it("marks a failed span and lets the error through", async () => {
     const { spans, restore } = collect();
     await expect(

@@ -75,7 +75,7 @@ describe("buildManifest", () => {
     const result = verifyManifest(manifest);
     expect(result.mismatches).toEqual([]);
     expect(result.ok).toBe(true);
-    expect(result.checks).toEqual(["structure", "merkle"]);
+    expect(result.checks).toEqual(["structure", "digest", "merkle"]);
   });
 
   it("refuses a run that belongs to somebody else", async () => {

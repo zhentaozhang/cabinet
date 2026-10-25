@@ -13,6 +13,7 @@ import {
 import {
   MANIFEST_VERSION,
   leafHash,
+  manifestDigest,
   merkleRoot,
   type ManifestAcceptance,
   type RunManifest,
@@ -120,7 +121,7 @@ export async function buildManifest(
 
   const auditRow = auditRows[0];
 
-  return {
+  const body = {
     version: MANIFEST_VERSION,
     runId: run.id,
     taskId: run.taskId,
@@ -150,4 +151,8 @@ export async function buildManifest(
     auditHead: headRows[0] ? { seq: Number(headRows[0].seq), hash: headRows[0].hash } : null,
     merkleRoot: merkleRoot(manifestSteps.map((step) => leafHash(step))),
   };
+  return {
+    ...body,
+    digest: manifestDigest(body as Record<string, unknown>),
+  } as RunManifest;
 }

@@ -9,7 +9,7 @@ import { canonicalJson, sha256 } from "@/lib/ids";
  * the workspace, and one that can only be checked against our database is not
  * evidence for anyone else.
  */
-export const MANIFEST_VERSION = 1;
+export const MANIFEST_VERSION = 2;
 
 export type ManifestStep = {
   idx: number;
@@ -63,7 +63,18 @@ export type RunManifest = {
    * be faked as `seq: 0`, which a verifier would have to distrust anyway.
    */
   auditHead: { seq: number; hash: string } | null;
+  /**
+   * One root over the steps, so a subset of them can be checked without the
+   * whole file. Null when the run recorded no step — there is nothing to prove.
+   */
   merkleRoot: string | null;
+  /**
+   * `sha256` over every other field, canonical JSON. The step hashes cover the
+   * steps only; a verdict, an approval or a deleted section would otherwise be
+   * editable in place while the merkle check still passes. Verified last, so a
+   * mismatch is reported instead of a section being trusted on its own.
+   */
+  digest: string;
 };
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -102,6 +113,21 @@ export function merkleRoot(leaves: string[]): string | null {
     level = next;
   }
   return level[0];
+}
+
+/**
+ * Digest of a manifest body: canonical JSON of every field except `digest`.
+ *
+ * Canonical so the digest survives a re-serialisation (key order, whitespace)
+ * and changes on any real edit, including a field this codebase does not know
+ * about yet — an unauthenticated extra field is exactly what an attacker adds.
+ */
+export function manifestDigest(doc: Record<string, unknown>): string {
+  const body: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(doc)) {
+    if (key !== "digest") body[key] = value;
+  }
+  return sha256(canonicalJson(body));
 }
 
 export type ManifestMismatch = {
@@ -235,11 +261,26 @@ export function verifyManifest(
   // caller that reads only `checks` would otherwise see a broken file as sound.
   if (mismatches.length === 0) checks.push("structure");
 
-  const recomputed = merkleRoot(parsed.map((step) => leafHash(step)));
-  if (recomputed !== doc.merkleRoot) {
-    fail("merkleRoot", recomputed, doc.merkleRoot);
+  // Covers everything the step hashes cannot: verdicts, approvals, artifact
+  // ids, and sections removed outright.
+  const expectedDigest = manifestDigest(doc);
+  if (doc.digest !== expectedDigest) {
+    fail("digest", expectedDigest, doc.digest ?? "(missing)");
   } else {
-    checks.push("merkle");
+    checks.push("digest");
+  }
+
+  if (steps.length === 0) {
+    // No leaves, no proof. Report the absence rather than a passed check.
+    if (doc.merkleRoot !== null) fail("merkleRoot", null, doc.merkleRoot);
+    else unchecked.push("merkle");
+  } else {
+    const recomputed = merkleRoot(parsed.map((step) => leafHash(step)));
+    if (recomputed !== doc.merkleRoot) {
+      fail("merkleRoot", recomputed, doc.merkleRoot);
+    } else {
+      checks.push("merkle");
+    }
   }
 
   if (doc.auditHead === null) {

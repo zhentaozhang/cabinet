@@ -47,6 +47,17 @@ describe("otlp payload", () => {
     expect(wire.endTimeUnixNano).toBe("1700000000500000000");
   });
 
+  it("sends an integer attribute as intValue and a fraction as doubleValue", () => {
+    const wire = toOtlpPayload([
+      span({ attributes: { "step.idx": 3, ratio: 0.5, ok: true } }),
+    ]).resourceSpans[0]!.scopeSpans[0]!.spans[0]!;
+    expect(wire.attributes).toEqual([
+      { key: "step.idx", value: { intValue: "3" } },
+      { key: "ratio", value: { doubleValue: 0.5 } },
+      { key: "ok", value: { boolValue: true } },
+    ]);
+  });
+
   it("converts attributes to OTLP key/value pairs and omits a null parent", () => {
     const wire = toOtlpPayload([span()]).resourceSpans[0]!.scopeSpans[0]!.spans[0]!;
     expect(wire.attributes).toEqual([{ key: "run.id", value: { stringValue: "run_1" } }]);

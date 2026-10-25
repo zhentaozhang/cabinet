@@ -11,7 +11,7 @@
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "runId": "run_…", "taskId": "tsk_…", "agentId": "ag_…", "userId": "usr_…",
   "status": "succeeded", "createdAt": "…",
   "model": { "provider": "openai", "model": "gpt-4.1-mini" },
@@ -24,7 +24,8 @@
   "acceptanceRunId": "run_…",
   "approvals": [{ "id": "apr_…", "action": "send_email", "status": "approved", "decidedAt": "…" }],
   "auditHead": { "seq": 412, "hash": "…64 hex…" },
-  "merkleRoot": "…64 hex…"
+  "merkleRoot": "…64 hex…",
+  "digest": "…64 hex…"
 }
 ```
 
@@ -43,9 +44,19 @@ manifest 是要发给外部审计方的文件，带正文等于把工作区一�
   不是 `Function.prototype.toString()` 的哈希——打包、压缩、dev overlay 都会改源码文本，
   同一份 prompt 会在 dev 和 prod 得出不同版本号，那样「版本」就失去了可比性。
 
-代价要说清楚：**step 的 `input`/`output` 被改而哈希表没被同步改，manifest 验得出来；
-但如果有人把库里的行和 manifest 里的哈希一起改掉，单靠 manifest 验不出来**——
-那需要审计链和外部锚定（见下文）。
+## 两类哈希：树根管 steps，digest 管其余
+
+- `merkleRoot` 只覆盖 **steps**。它让「给一部分 step 就能验」成立。
+- `digest` = `sha256(canonicalJson(整个 manifest 除 digest 之外))`，覆盖**所有其它字段**：
+  验收判定值、审批记录、产物/证据 id、删除掉的一整段、以及本代码还不认识的新字段。
+
+为什么两者都要：第一版只有 `merkleRoot`，于是把 `acceptance[0].verdict` 从 fail 改成 pass、
+或者把 `approvals` 整段删掉，`ok` 仍然是 `true`——而验收判定正是外部审计方最先看的那行。
+提交 `9a3d549` 之后的审查用三条手工篡改抓到了这一点，改法就是加 `digest`（`MANIFEST_VERSION` 因此变成 2）。
+
+代价要说清楚：**字段被改而 digest 没被同步改，manifest 验得出来；如果有人把 digest 一起改掉，
+单靠 manifest 验不出来**——digest 保护的是「文件没有被随手改动」，不是「这份文件来自我方」。
+后者需要 `auditHead` 对上审计链，再往上需要外部锚定（见「已知未做的」）。
 
 ## Merkle 规则（写死，避免「自己实现自己验」）
 
@@ -68,7 +79,8 @@ manifest 是要发给外部审计方的文件，带正文等于把工作区一�
 | 检查 | 能证明 | 什么时候跳过 |
 | --- | --- | --- |
 | `structure` | 版本、id 非空、哈希是 64 位小写 hex、`verdict` 只用 pass/fail | 有结构问题时**不进 `checks`**：只读 `checks` 的调用方否则会把坏文件当成好的 |
-| `merkle` | 用 manifest 里现有的 step 重算，根一致 | — |
+| `digest` | 重算整个文件的 digest，与文件里写的 `digest` 一致 | 有 mismatch 时**不进 `checks`** |
+| `merkle` | 用 manifest 里现有的 step 重算，根一致 | 该 run 没有任何 step 时进 `unchecked`：没有叶子就没有证明，不能记成通过 |
 | `auditHead` | 该 user 审计链里存在 `seq` 且哈希一致 | 没给 `chain`，或 `auditHead` 为 `null` 时进 `unchecked` |
 
 `unchecked` 里的项**永远不算通过**。这是 `AGENTS.md` 第 2 条的同一件事：
@@ -120,6 +132,6 @@ DATABASE_URL_TEST=postgres://localhost:5432/cabinet_test TZ=UTC \
   tests/integration/manifest.test.ts tests/integration/manifest-route.test.ts
 ```
 
-覆盖：Merkle 三种叶子数（含奇数晋级与「不复制」反证）、`canonicalJson` 与键序无关、
+覆盖：`digest` 抓到「改验收判定」「删一段」「改审批」，空 steps 进 `unchecked`；Merkle 三种叶子数（含奇数晋级与「不复制」反证）、`canonicalJson` 与键序无关、
 篡改某个 `outputHash` 后 `ok:false` 且 path 指向 `merkleRoot`、伪造 `auditHead` 被链拒、
 CLI 原文件 exit 0 / 篡改文件 exit 1 / 错链 exit 1、路由 401/404/200 与「响应体不含 prompt」。

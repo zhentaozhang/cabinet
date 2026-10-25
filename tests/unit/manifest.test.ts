@@ -4,6 +4,7 @@ import { sha256 } from "@/lib/ids";
 import {
   MANIFEST_VERSION,
   leafHash,
+  manifestDigest,
   merkleRoot,
   verifyManifest,
   type RunManifest,
@@ -21,7 +22,7 @@ function step(idx: number, outputHash = hex(String(idx % 10))): Step {
 
 function manifest(overrides: Partial<RunManifest> = {}): RunManifest {
   const steps = overrides.steps ?? [step(0), step(1)];
-  return {
+  const body = {
     version: MANIFEST_VERSION,
     runId: "run_1",
     taskId: "tsk_1",
@@ -41,6 +42,10 @@ function manifest(overrides: Partial<RunManifest> = {}): RunManifest {
     merkleRoot: merkleRoot(steps.map((entry) => leafHash(entry))),
     ...overrides,
   };
+  // The digest covers every field except itself, so it is computed after the
+  // overrides are applied — a test that wants a tampered file mutates the
+  // returned object instead of passing a broken field in.
+  return { ...body, digest: manifestDigest(body as Record<string, unknown>) } as RunManifest;
 }
 
 describe("merkleRoot", () => {
@@ -94,7 +99,7 @@ describe("verifyManifest", () => {
   it("accepts an intact manifest and leaves the anchor unchecked without a chain", () => {
     const result = verifyManifest(manifest());
     expect(result.ok).toBe(true);
-    expect(result.checks).toEqual(["structure", "merkle"]);
+    expect(result.checks).toEqual(["structure", "digest", "merkle"]);
     expect(result.unchecked).toEqual(["auditHead"]);
     expect(result.mismatches).toEqual([]);
   });
@@ -149,7 +154,7 @@ describe("verifyManifest", () => {
   it("rejects another manifest version", () => {
     const result = verifyManifest(manifest({ version: 99 }));
     expect(result.ok).toBe(false);
-    expect(result.mismatches[0]).toMatchObject({ path: "version", expected: "1", actual: "99" });
+    expect(result.mismatches[0]).toMatchObject({ path: "version", expected: String(MANIFEST_VERSION), actual: "99" });
   });
 
   it("rejects an acceptance verdict outside pass|fail", () => {
@@ -165,5 +170,40 @@ describe("verifyManifest", () => {
     const result = verifyManifest("nope");
     expect(result.ok).toBe(false);
     expect(result.mismatches[0].path).toBe("manifest");
+  });
+
+  it("detects a rewritten acceptance verdict", () => {
+    const doc = manifest();
+    doc.acceptance = [{ item: { type: "min_words" }, verdict: "fail", undetermined: false }];
+    const result = verifyManifest(doc);
+    expect(result.ok).toBe(false);
+    expect(result.mismatches.map((entry) => entry.path)).toContain("digest");
+  });
+
+  it("detects a deleted section, which the step hashes cannot cover", () => {
+    const doc = manifest() as unknown as Record<string, unknown>;
+    delete doc.approvals;
+    const result = verifyManifest(doc);
+    expect(result.ok).toBe(false);
+    expect(result.mismatches.map((entry) => entry.path)).toContain("digest");
+  });
+
+  it("detects a rewritten approval decision", () => {
+    const doc = manifest();
+    doc.approvals = [
+      { id: "apr_1", action: "send_money", status: "approved", decidedAt: null },
+    ];
+    const result = verifyManifest(doc);
+    expect(result.ok).toBe(false);
+    expect(result.mismatches.map((entry) => entry.path)).toContain("digest");
+  });
+
+  it("reports a run with no step as having no merkle proof", () => {
+    const empty = manifest({ steps: [], merkleRoot: null });
+    const result = verifyManifest(empty);
+    expect(result.ok).toBe(true);
+    // No leaves means no proof: calling it a passed check would be a lie.
+    expect(result.checks).not.toContain("merkle");
+    expect(result.unchecked).toContain("merkle");
   });
 });

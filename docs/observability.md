@@ -98,11 +98,23 @@ OpenTelemetry SDK：为了这点数据引入几十个传递依赖不划算（理
 父子关系靠 `AsyncLocalStorage`，不是靠传参：子 span 继承父的 `traceId`，
 `parentSpanId` 指向父 `spanId`。
 
-### 属性是模式拒绝
+### 属性按「键名分段」拒绝
 
-span 会被发到第三方。键名命中 `secret|token|password|authorization|api[-_]?key|prompt|content|payload|body`
-的属性**直接丢弃**，字符串超过 256 字符截断。按模式拒绝而不是按白名单放行，
+span 会被发到第三方。键名按 `.` `_` `-` `[` `]` 切成段，
+**任意一段**等于 `secret|token|password|passwd|authorization|auth|api[-_]?key|apikey|key|credential|credentials|prompt|content|payload|body`
+的属性**直接丢弃**，字符串超过 256 字符截断。按拒绝清单而不是白名单放行，
 是为了让新调用点默认失败在安全一侧：宁可少一个属性，不要多一次泄漏。
+
+分段而不是子串匹配，是被一个真实缺陷逼出来的：子串规则里含 `token`，
+于是 `gen_ai.request.max_tokens`、`gen_ai.usage.input_tokens`、`gen_ai.usage.output_tokens`
+全被丢掉——span 上只剩下 provider 和 model，「这次 run 花了多少 token」这个
+本来就该由 trace 回答的问题永远问不出来。现在 `input_tokens` 切出来是 `tokens`，
+不等于 `token`，因此保留；而 `openai.api_key`、`http.request.header.authorization`、
+`user.password` 仍然整条丢弃（见 `tests/unit/tracing.test.ts`）。
+
+数值属性按类型发出：整数用 `intValue`（十进制字符串）、小数用 `doubleValue`、
+布尔用 `boolValue`。早期版本把所有数字都当 `stringValue`，后端就没法对
+`step.idx`、`gen_ai.usage.*` 求和。
 
 ### 丢了怎么办
 

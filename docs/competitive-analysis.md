@@ -34,7 +34,7 @@ Cabinet 的位置不在「Agent 框架」，而在 **「Agent 的治理层」**�
 | 条目 | 状态 | 证据 |
 | --- | --- | --- |
 | P0-1 执行面：工具循环 + MCP | **已补** | `a51698a`；`src/server/services/commands/tasks/tool-loop.ts`、`src/lib/mcp/`、`docs/mcp.md`。顺序是授权 → 预扣 → 调用 → 结算 → 留痕，任一步失败都落一条可读 step |
-| P0-3 可观测：trace | **已补** | `ef2625b`；`src/lib/observability/tracing.ts`、`otlp.ts`、`src/instrumentation.ts`、`docs/observability.md`。零依赖 OTLP/JSON 导出，未配 endpoint 时零开销 |
+| P0-3 可观测：trace | **已补** | `ef2625b`；`src/lib/observability/tracing.ts`、`otlp.ts`、`src/instrumentation.ts`、`docs/observability.md`。零依赖 OTLP/JSON 导出，未配 endpoint 时不发任何网络请求（span 仍会构建，只是不导出） |
 | ★2 可离线验证的 run manifest | **已做** | `982e907`；`src/lib/domain/manifest.ts`、`scripts/verify-manifest.ts`、`docs/manifest.md` |
 | ★4 验收契约导出 | **已做** | `06a03a1`；`src/lib/domain/acceptance-export.ts`、`GET /api/tasks/[id]/acceptance`、`docs/acceptance-contract.md` |
 | P0-2 记忆：向量/混合检索 | 未做 | 本机 Postgres 的 `pg_available_extensions` 只有 `pg_trgm`，没有 `vector`；且不新增运行时依赖。仍只有词面 + 权重排序 |

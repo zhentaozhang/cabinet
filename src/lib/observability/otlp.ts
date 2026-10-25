@@ -23,6 +23,7 @@ const DEFAULT_MAX_QUEUE = 512;
 type AnyValue =
   | { stringValue: string }
   | { intValue: string }
+  | { doubleValue: number }
   | { boolValue: boolean };
 
 type WireSpan = {
@@ -49,7 +50,13 @@ export type OtlpPayload = {
 
 function anyValue(value: SpanAttribute): AnyValue {
   if (typeof value === "boolean") return { boolValue: value };
-  if (typeof value === "number") return { stringValue: String(value) };
+  if (typeof value === "number") {
+    // Typed as the collector expects, so a backend can sum step.idx and
+    // max_tokens instead of receiving every number as a string.
+    return Number.isInteger(value)
+      ? { intValue: String(value) }
+      : { doubleValue: value };
+  }
   return { stringValue: value };
 }
 
