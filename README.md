@@ -229,7 +229,7 @@ app/api/**（route handler；当前 45 个，`find src/app -name route.ts | wc -
 - 默认在请求内同步执行；`RUN_EXECUTION=worker` 时改为 `run_jobs` 队列 + `scripts/run-worker.ts` 消费。异步环节还有邮件投递（`outbox` + `pnpm notify:deliver`）和 `pnpm tick` 维护循环；三者都靠部署层调度，不是 web 进程里的定时器。
 - 没有使用 LangGraph / CrewAI；状态机和审计是应用代码。
 - 连接器与证据的规则见 `docs/evidence-and-connectors.md`，通知见 `docs/notifications.md`。
-- 一次运行可以导出成可离线校验的 manifest（Merkle + 审计链头），见 `docs/manifest.md`；外部工具调用的治理见 `docs/mcp.md`。
+- 一次运行可以导出成可离线校验的 manifest（Merkle + 审计链头），见 `docs/manifest.md`；验收标准可导出成可 diff 的契约，见 `docs/acceptance-contract.md`；外部工具调用的治理见 `docs/mcp.md`。
 
 技术栈：Next.js 16、React 19、TypeScript、Tailwind 4、Postgres + Drizzle、better-auth、Vercel AI SDK（可选）。
 

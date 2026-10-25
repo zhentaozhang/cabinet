@@ -257,11 +257,28 @@ eslint 干净。
 
 **Files:** `src/lib/domain/acceptance-export.ts`；测试 `tests/unit/acceptance-export.test.ts`
 
-- [ ] 失败测试：**7 种**类型各产出片段：`section/min_words/min_sources/min_evidence/contains/claims_table/manual`；`manual` 标 `x-undetermined:true` 且用 `note` 字段（不是 `value`）。
-- [ ] 失败测试：同一 task 两次导出字节一致（无时间戳）。
-- [ ] 绿。
+- [x] 失败测试：**7 种**类型各产出片段：`section/min_words/min_sources/min_evidence/contains/claims_table/manual`；`manual` 标 `x-undetermined:true` 且用 `note` 字段（不是 `value`）。
+- [x] 失败测试：同一 task 两次导出字节一致（无时间戳）。
+- [x] 绿。
 
 ---
+
+
+### 落地记录（2026-10-25）
+
+1. **导出 + 渲染分成两个纯函数**：`exportAcceptanceContract` 返回对象（可 JSON 化、可 diff），
+   `renderAcceptanceContract` 返回 Markdown。计划的「片段」两者都覆盖，但对象是可测的、Markdown 是给人签的。
+2. **`spec` 不是原始 item**：六种类型用 `value`、`manual` 用 `note`，键名是实现细节；导出改成语义键名，
+   `manual` 的 `spec` 为 `null`、`undetermined` 恒 true。
+3. **空清单导出一条人工项**（而不是空数组）：空数组会被读成「没什么要检查的」，
+   正是过去让 Auditor 写出「逐条对照通过」的措辞（`AGENTS.md` 第 2 条）。
+4. **额外接了路由与读模型**（计划只写 domain 模块）：`GET /api/tasks/[id]/acceptance`（JSON）与
+   `?format=markdown`（`.md` 下载），读模型 `src/server/readmodels/acceptance.ts`。
+   没有出口的导出函数等于没做；路由同样把「他人任务」与「不存在」答成同一个 404。
+5. **新增 `docs/acceptance-contract.md`** 与 README 链接，写清 7 种类型的 `statement`/`spec` 对照表、
+   为什么没有时间戳、以及与 manifest 的分工（契约 = 规则，manifest = 某次运行的哈希）。
+
+验证：`tests/unit/acceptance-export.test.ts` 9 例、`tests/integration/acceptance-route.test.ts` 3 例；`bash scripts/verify.sh` 全过。
 
 ## 审查关卡（每阶段结束）
 
