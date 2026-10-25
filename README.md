@@ -217,7 +217,7 @@ DEMO_MODE=false
 RSC 页面 / 客户端组件
   → @/contracts + @/lib/api
   → HTTP（同源；可配 API_BASE_URL）
-app/api/**（44 个 route handler）
+app/api/**（route handler；当前 45 个，`find src/app -name route.ts | wc -l`）
   → server/readmodels · server/services（queries / commands）
   → domain（纯函数：policy / state / acceptance）
   → Postgres（Drizzle）
@@ -226,7 +226,7 @@ app/api/**（44 个 route handler）
 - 页面和组件不能 import `server/`、`lib/db`；ESLint + `tests/unit/boundary.test.ts` 强制。
 - `src/lib` 也不能 import `@/server/*`，**没有豁免**。曾经的唯一例外 `src/lib/engine.ts`（@deprecated 垫片）已删除，调用方直接指向 `@/server/services/engine`；留一个具名豁免等于让「再加一条」成为破坏边界最省事的方式。
 - `server/services/engine.ts` 只是 re-export barrel，业务在 `queries/` 和 `commands/`。
-- 运行在请求内同步完成；唯一的后台动作是邮件投递（`outbox` 表 + `pnpm notify:deliver`，由部署层 cron 触发，不是进程内定时器）。
+- 默认在请求内同步执行；`RUN_EXECUTION=worker` 时改为 `run_jobs` 队列 + `scripts/run-worker.ts` 消费。异步环节还有邮件投递（`outbox` + `pnpm notify:deliver`）和 `pnpm tick` 维护循环；三者都靠部署层调度，不是 web 进程里的定时器。
 - 没有使用 LangGraph / CrewAI；状态机和审计是应用代码。
 - 连接器与证据的规则见 `docs/evidence-and-connectors.md`，通知见 `docs/notifications.md`。
 
@@ -263,7 +263,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-2026-10-24 在当前分支跑通：97 个测试文件 / 852 个测试通过，typecheck / lint / build 均通过。没有调用真实模型，也没有做浏览器 E2E。
+2026-10-25 在当前分支实测：`find tests -name '*.test.ts' | wc -l` = 104 个测试文件，`vitest run` 报 908 passed / 0 failed（76s），typecheck / lint / build 均通过。没有调用真实模型，也没有做浏览器 E2E。数字随提交变化，以命令输出为准，不要照抄。
 
 ### GitHub Actions 现在需要手动触发
 
@@ -289,7 +289,7 @@ gh run watch
 - **管理时长没有埋点**：`user_actions` 只有 seed 写入；真实工作区会显示估算或空值。
 - **成本是估算**：按供应商返回的 token 数和配置单价计算，不是供应商账单；没有返回 usage 的运行记为“用量未知”并保留全额预留。预算是 Agent 的每周模型用量，不是个人财务。
 - **台账是唯一账目**：周预算由 `agent_budget_periods` / `agent_budget_reservations` 记账，`runs.cost_cents` 只是逐次运行的遥测，`agents.spent_cents` / `agents.budget_period_start` 已冻结，不再读写。
-- **同步执行**：没有后台队列、重试调度或流式输出。邮件是唯一的异步环节，走 outbox + cron，不是 web 进程里的定时器。
+- **同步执行是默认值**：`RUN_EXECUTION=worker` 才把请求交给 `run_jobs` 队列（`scripts/run-worker.ts` 消费；`FOR UPDATE SKIP LOCKED` 领取、10 分钟租约、最多领取 5 次，见 `src/server/services/commands/tasks/jobs.ts`）。**没有通用重试调度**：重新领取只发生在“租约过期”这一种情况；也没有流式输出，响应是完整 JSON。
 - **Agent Card 未签名**：只读 JSON，不是 A2A 实现。
 
 ## License
