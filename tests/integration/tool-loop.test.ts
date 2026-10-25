@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import {
+  agentBudgetPeriods,
   agentBudgetReservations,
   agentGrants,
   agents,
@@ -331,6 +332,58 @@ describe("runMcpToolLoop", () => {
       .from(agentBudgetReservations);
     expect(holds).toHaveLength(0);
     expect(sink.records[0].output.attempted).toBe(false);
+  });
+
+  it("does not book a budget refusal as an attempted call", async () => {
+    // The per-call hold is zero-cost (MCP_TOOL_COST_CENTS), so the refusal has
+    // to come from the week itself: a zero allowance leaves nothing to reserve
+    // and admission refuses before any request. 46b0569 moved the "attempted"
+    // tally from before the call to after it; the refusal is what proves the
+    // move, because this path used to count 1 for a call that never left.
+    await addServer("fake", "mcp:fake");
+    await addGrant("mcp:fake");
+    // A zero Agent cap means "use the policy ceiling", not "refuse everything",
+    // so the week is exhausted where the ledger keeps it: the period row's
+    // stored limit. Two calls, the second one with nothing left to reserve.
+    const args = {
+      userId: DEMO_USER_ID,
+      agentId: "ag_coach",
+      taskId: "tsk_read",
+      runId: "run_test_mcp",
+      timezone: "UTC",
+      tools: ["mcp:fake:search"],
+      grants: [{ resource: "mcp:fake", scope: "read" }],
+      actionType: "internal" as const,
+      input: "RAG 检索",
+      step: async () => {},
+    };
+    await runMcpToolLoop(args);
+    await db.update(agentBudgetPeriods).set({ limitCents: 0 });
+    calls = [];
+    const sink = collect();
+
+    const result = await runMcpToolLoop({
+      userId: DEMO_USER_ID,
+      agentId: "ag_coach",
+      taskId: "tsk_read",
+      runId: "run_test_mcp",
+      timezone: "UTC",
+      tools: ["mcp:fake:search"],
+      grants: [{ resource: "mcp:fake", scope: "read" }],
+      actionType: "internal",
+      input: "RAG 检索",
+      step: sink.step,
+    });
+
+    expect(result).toEqual({ attempted: 0, ok: 0 });
+    expect(calls).toEqual([]);
+    expect(sink.records[0].output).toMatchObject({
+      status: "budget_exceeded",
+      attempted: false,
+    });
+    // Null, not a server name: the label is what the recovery pass used to
+    // read as "this was probably charged".
+    expect(sink.records[0].output.provider).toBeNull();
   });
 
   it("runs an MCP-only Agent without inventing a rejected built-in step", async () => {

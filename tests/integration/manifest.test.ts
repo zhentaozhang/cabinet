@@ -162,6 +162,38 @@ describe("buildManifest", () => {
     expect(verifyManifest(manifest).ok).toBe(true);
   });
 
+  it("picks the same audit verdict when two share a timestamp", async () => {
+    // Every row written by one transaction shares now(), so the audit steps of
+    // two audits ran at the same instant have no ordering by time alone. The id
+    // is the tie-break; without it the same run could export two digests.
+    await runTask("tsk_read", DEMO_USER_ID);
+    const run = await latestRun("tsk_read");
+    const stamp = new Date("2026-10-05T00:00:00Z");
+    for (const [offset, id, passed] of [
+      [0, "stp_audit_a", false],
+      [1, "stp_audit_z", true],
+    ] as const) {
+      await db.insert(steps).values({
+        id,
+        runId: run.id,
+        idx: 900 + offset,
+        type: "audit",
+        input: {},
+        output: { checklist: [{ text: "有引用", passed, undetermined: false }] },
+        tokensIn: 0,
+        tokensOut: 0,
+        latencyMs: 0,
+        createdAt: stamp,
+      });
+    }
+
+    const manifest = await buildManifest(run.id, DEMO_USER_ID);
+    if (!manifest) throw new Error("manifest missing");
+    // The higher id wins the tie, so the verdict is the one from stp_audit_z.
+    expect(manifest.acceptance[0]?.verdict).toBe("pass");
+    expect(verifyManifest(manifest).ok).toBe(true);
+  });
+
   it("refuses a run that belongs to somebody else", async () => {
     await runTask("tsk_read", DEMO_USER_ID);
     const run = await latestRun("tsk_read");

@@ -145,8 +145,11 @@ GET /api/tasks/tsk_read/manifest?run=run_x  # 指定某一次运行
   「最新」按 `createdAt desc, id desc` 排——同一事务写下的行共享 `now()`，只按时间排会让同一份 run
   两次导出得到不同 digest。要判定「这份验收是不是针对这一次 run」，看 `acceptanceRunId`，
   manifest 不能替你判断，因为它没有这条边。
-- **审批只列属于这次 run 的**：`approvals.runId` 为空（今天所有审批都是这种，任务级）或等于本 run 的才进
-  `approvals`；其他 run 的审批不会出现在这份文件里。排序是 `createdAt asc, id asc`，同样为了可复现。
+- **审批按「谁花掉了它」归属**：`approvals.run_id` 在消费那一刻写入消费它的 run
+  （`src/server/services/commands/tasks/run.ts` 的条件 UPDATE）。manifest 只列 `run_id` 为空（还没被任何 run
+  消费）或等于本 run 的审批，排序 `createdAt asc, id asc` 以保证可复现。
+  两个必须说清的边界：一，2026-10-25 之前消费的审批 `run_id` 是空的，仍对所有 run 可见；
+  二，「哪次 run 申请了这条审批」没有记录——被消费的审批属于**执行**它的 run，不是申请它的 run。
 
 ## 测试
 

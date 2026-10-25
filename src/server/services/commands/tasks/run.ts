@@ -292,7 +292,10 @@ async function executeRun(taskId: string, userId: string) {
     if (approval?.status === "approved" && !approval.consumedAt) {
       const [consumed] = await tx
         .update(approvals)
-        .set({ consumedAt: new Date() })
+        // The run that spends the approval owns it from here on. Without this,
+        // `approvals.run_id` was never written by anything, so a manifest could
+        // not tell which run an approval authorised (46b0569 审查第 1 条).
+        .set({ consumedAt: new Date(), runId })
         .where(
           and(
             eq(approvals.id, approval.id),

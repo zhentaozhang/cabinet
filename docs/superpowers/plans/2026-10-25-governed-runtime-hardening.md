@@ -292,10 +292,14 @@ eslint 干净。
 |---|---|---|
 | 1（87df0755） | 2 条必须修：manifest 完整性只覆盖 steps、`gen_ai.usage.*` 被字典杀掉 | 加 `digest`（v2）、属性按「键名分段」拒绝 → 665832e |
 | 2（5f332e7f） | 3 条阻断：MCP-only 写出矛盾 step、两类「永远要人判」标成确定、没发出的请求被记成「可能已调用」 | 分流 planner、`attempted` 标记 + `src/lib/domain/contact.ts`、三值 verdict → 4d0b0fc |
-| 3（9e03e7c2） | **无阻断**，8 条精度问题（跨 run 归属/排序 tie-break、flush 链释放、注释与文档不一致、本地工具标签、日志口径） | 全部修在本轮 follow-up 提交 |
+| 3（9e03e7c2） | **无阻断**，8 条精度问题（跨 run 归属/排序 tie-break、flush 链释放、注释与文档不一致、本地工具标签、日志口径） | 全部修在 46b0569 |
+| 4（c4a0602f，只审 46b0569） | **无阻断**，4 条：审批只修了查询没修归属、governed-call 注释仍反、三处修复无测试、本地工具徽标只改一半 | 本轮 8f 尾随提交：消费处写 `runId`、注释重写、3 个测试 + 2 个 tie-break/flush 断言、徽标文案 |
 
 第三轮同时确认：分层未破（`src/lib` 无 `@/server` 引用）、零新增运行时依赖、条件写回 + `sql`now()`` 到位、
-`bash scripts/verify.sh` exit 0、全仓 118 文件 / 1029 用例通过。
+`bash scripts/verify.sh` exit 0、全仓 118 文件 / 1032 用例通过。
+
+第四轮留下的诚实边界（写进 docs/manifest.md）：`approvals.run_id` 从 2026-10-25 起在消费时写入，
+此前的审批仍为 null 因而对每个 run 可见；「哪次 run 申请了审批」没有记录，归属是「谁花掉了它」。
 
 ## 已知风险
 - Next 16 破坏性变更：新增 route 前读 `node_modules/next/dist/docs/`。

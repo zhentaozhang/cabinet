@@ -87,6 +87,11 @@ describe("runtime policy enforcement", () => {
       .where(eq(approvals.id, "appr_booking"));
     expect(approval.status).toBe("approved");
     expect(approval.consumedAt).not.toBeNull();
+    // The run that spends the approval owns it: without this stamp a manifest
+    // cannot say which run an approval authorised (46b0569 审查第 1 条).
+    const [first] = await db.select().from(runs).where(eq(runs.taskId, "tsk_booking"));
+    expect(approval.runId).toBe(first?.id ?? null);
+    expect(approval.runId).not.toBeNull();
   });
 
   it("rejects a repeated approval decision", async () => {

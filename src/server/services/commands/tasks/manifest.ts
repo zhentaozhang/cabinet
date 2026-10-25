@@ -93,10 +93,12 @@ export async function buildManifest(
         .from(evidence)
         .where(eq(evidence.runId, runId))
         .orderBy(asc(evidence.createdAt)),
-      // Only approvals that belong to this run (or to the task with no run of
-      // their own — every approval written today is task-scoped) are listed.
-      // Without the filter a manifest for run A happily renders a decision
-      // taken for run B, and nothing in the document says so.
+      // Only approvals that belong to this run are listed, plus the task-scoped
+      // ones that no run has spent yet (`run_id` stays null until a run
+      // consumes the approval). Without the filter a manifest for run A happily
+      // renders a decision taken for run B, and nothing in the document says so.
+      // Ownership is "the run that spent it", not "the run that asked for it":
+      // an approval requested by run A can be consumed by run B.
       db
         .select()
         .from(approvals)
