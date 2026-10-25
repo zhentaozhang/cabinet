@@ -306,6 +306,9 @@ describe("stale run recovery", () => {
       payload: { reason: "超阈值" },
       status: "approved",
       consumedAt: new Date(Date.now() - 120_000),
+      // The dead run's id: reopening must clear it, because an approval nobody
+      // holds is not owned by the run that is about to be buried.
+      runId: "run_dead",
     });
     await db.insert(tasks).values({
       id: "tsk_untouched",
@@ -337,6 +340,7 @@ describe("stale run recovery", () => {
       .from(approvals)
       .where(eq(approvals.id, "apv_recovery"));
     expect(reopened.consumedAt).toBeNull();
+    expect(reopened.runId).toBeNull();
 
     // Only the recovered task's approval is reopened; another task's spent
     // approval is still a historical fact.

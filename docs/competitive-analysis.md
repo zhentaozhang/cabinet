@@ -51,6 +51,8 @@ Cabinet 的位置不在「Agent 框架」，而在 **「Agent 的治理层」**�
   对真实第三方工具还不够用（`docs/mcp.md` 的能力边界表已逐条写明）。
 - 验收判定有第三种 `undetermined`：没有人判过的行不会被写成 `fail`，读 `verdict` 的消费方
   不会把「没判定」读成「不合格」（`docs/manifest.md`）。
+- 审批的 run 归属从**消费那一刻**开始写（`approvals.run_id`）；此前消费的审批不带归属，仍对该任务每个 run
+  可见，而且没有记录「谁申请的」——归属是「谁花掉了它」（`docs/manifest.md`）。
 
 ---
 

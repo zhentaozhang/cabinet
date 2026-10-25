@@ -150,6 +150,8 @@ GET /api/tasks/tsk_read/manifest?run=run_x  # 指定某一次运行
   消费）或等于本 run 的审批，排序 `createdAt asc, id asc` 以保证可复现。
   两个必须说清的边界：一，2026-10-25 之前消费的审批 `run_id` 是空的，仍对所有 run 可见；
   二，「哪次 run 申请了这条审批」没有记录——被消费的审批属于**执行**它的 run，不是申请它的 run。
+  崩溃恢复会把手里的审批交还任务（`reopenConsumedApprovalsTx` 把 `consumedAt` 和 `runId` 一起清空），
+  所以「`run_id` 为空」既可能是没人花过，也可能是被交还了；两种都对该任务的每个 run 可见。
 
 ## 测试
 

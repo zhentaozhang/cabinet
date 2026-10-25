@@ -119,7 +119,10 @@ export async function reopenConsumedApprovalsTx(
 ): Promise<number> {
   const reopened = await tx
     .update(approvals)
-    .set({ consumedAt: null })
+    // `runId` is cleared with the consumption: an approval that is no longer
+    // spent belongs to no run, and leaving the dead run's id behind would make
+    // that run's manifest list a decision it no longer holds.
+    .set({ consumedAt: null, runId: null })
     .where(
       and(
         eq(approvals.taskId, taskId),
