@@ -627,10 +627,9 @@ async function executeRun(taskId: string, userId: string) {
       taskId,
       runId,
       timezone,
-      tools: mergeTools(
-        agent.tools,
-        activeSkills.flatMap((skill) => skill.tools),
-      ),
+      // The same list the built-in planner saw, so the two cannot disagree
+      // about what the Agent declared.
+      tools: declaredTools,
       grants: grants.map((grant) => ({
         resource: grant.resource,
         scope: grant.scope,
