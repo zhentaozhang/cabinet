@@ -381,7 +381,67 @@ export function ApprovalActions({
   );
 }
 
-function changeLabel(change: InsightDto["proposedChange"]): string {
+/**
+ * 策略键的中文名与单位。
+ *
+ * 为什么不直接 import src/lib/policy/overrides.ts 的键表：那是服务端模块（依赖
+ * zod 与领域错误），客户端组件不该把它整包拉进 bundle。这份表只负责"读起来像人话"，
+ * 真正的白名单与范围校验仍在服务端；这里认不出的键会原样显示路径，不假装认识。
+ */
+const POLICY_KEY_LABELS: Record<
+  string,
+  { label: string; unit?: string; ratio?: boolean }
+> = {
+  "reflection.windowDays": { label: "反思窗口", unit: " 天" },
+  "reflection.minRejectEvents": { label: "触发反思的最少驳回次数", unit: " 次" },
+  "reflection.minTaskSample": { label: "触发反思的最少任务样本", unit: " 个" },
+  "reflection.eveningHour": { label: "晚间时段起点", unit: " 点" },
+  "reflection.eveningCompletionThreshold": {
+    label: "晚间完成率阈值",
+    ratio: true,
+  },
+  "reflection.lowEnergyThreshold": { label: "低精力判定分", unit: " 分" },
+  "reflection.budgetPressureRatio": { label: "预算压力比", ratio: true },
+  "reflection.confidence": { label: "反思洞察置信度", ratio: true },
+  "audit.rejectStreakLimit": { label: "连续驳回上限", unit: " 次" },
+  "audit.passRateWindow": { label: "通过率统计窗口", unit: " 条" },
+  "learning.nextTask.minWords": { label: "下一任务最少字数", unit: " 字" },
+  "learning.nextTask.retestAfterDays": { label: "复测间隔", unit: " 天" },
+  "learning.nextTask.minRecallScore": { label: "召回分下限", ratio: true },
+  "learning.nextTask.estimateMin": { label: "下一任务预估时长", unit: " 分钟" },
+  "learning.nextTask.maxErrorTags": { label: "错误标签上限", unit: " 个" },
+  "learning.targetCheckinsPerWeek": { label: "每周打卡目标", unit: " 次/周" },
+};
+
+function policyLabel(key: string): string {
+  return POLICY_KEY_LABELS[key]?.label ?? key;
+}
+
+function policyValueText(key: string, value: unknown): string {
+  if (typeof value === "number") {
+    const meta = POLICY_KEY_LABELS[key];
+    const base = `${value}${meta?.unit ?? ""}`;
+    // 0–1 的比率类阈值同时给出百分比：单看 0.35 判断不出是放松还是收紧。
+    return meta?.ratio ? `${base}（${Math.round(value * 100)}%）` : base;
+  }
+  if (typeof value === "boolean") return value ? "开" : "关";
+  return typeof value === "string" ? value : String(value);
+}
+
+function changeLabel(
+  change: InsightDto["proposedChange"],
+  status?: string,
+): string {
+  if (change.type === "set_policy" && typeof change.key === "string") {
+    const value = policyValueText(change.key, change.value);
+    /*
+     * 回滚只撤掉这条洞察写的那条覆盖，配置回到默认值。此时还写"调整策略"
+     * 会让人以为改动仍在生效，所以按洞察状态换一句结论。
+     */
+    return status === "rolled_back"
+      ? `已恢复默认：${policyLabel(change.key)}（曾被改为 ${value}）`
+      : `调整策略：${policyLabel(change.key)} → ${value}`;
+  }
   if (change.type === "reschedule") {
     return `把任务时间 ${change.from ?? "?"} → ${change.to ?? "?"}`;
   }
@@ -404,11 +464,25 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
    */
   const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
   const status = optimisticStatus ?? insight.status;
+  /**
+   * 策略覆盖会改掉"下一次决策"的输入（阈值、窗口、粒度），和改一条文案的任务
+   * 不是一回事，所以采纳前要多一步确认。
+   */
+  const isPolicyChange =
+    insight.proposedChange.type === "set_policy" &&
+    typeof insight.proposedChange.key === "string";
+  const [confirmPolicy, setConfirmPolicy] = useState(false);
 
   async function act(action: "accept" | "reject" | "rollback") {
     setBusy(action);
     setOptimisticStatus(
-      action === "accept" ? "applied" : action === "reject" ? "rejected" : "proposed",
+      // 回滚后的服务端状态是 rolled_back，乐观值也照写：写成 proposed 会让卡片
+      // 在刷新的那一两秒里既显示"调整策略"，又把采纳/驳回按钮重新摆出来。
+      action === "accept"
+        ? "applied"
+        : action === "reject"
+          ? "rejected"
+          : "rolled_back",
     );
     const data = await call(`/api/insights/${insight.id}`, "PATCH", { action });
     setBusy(null);
@@ -418,7 +492,16 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
       toast.error(data.error ?? "操作失败");
       return;
     }
-    const label = action === "accept" ? "已采纳" : action === "reject" ? "已拒绝" : "已回滚";
+    const label =
+      action === "accept"
+        ? isPolicyChange
+          ? "已采纳，策略已生效"
+          : "已采纳"
+        : action === "reject"
+          ? "已拒绝"
+          : isPolicyChange
+            ? "已回滚，配置已恢复默认"
+            : "已回滚";
     setMsg(label);
     toast.success(label);
     router.refresh();
@@ -455,7 +538,19 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
 
       <div className="mt-3 rounded-lg border border-line bg-panel/60 px-3 py-2">
         <div className="text-eyebrow uppercase tracking-[0.14em] text-faint">proposed change</div>
-        <div className="mt-1 text-label text-accent">{changeLabel(insight.proposedChange)}</div>
+        <div className="mt-1 text-label text-accent">
+          {changeLabel(insight.proposedChange, status)}
+        </div>
+        {isPolicyChange && typeof insight.proposedChange.reason === "string" && insight.proposedChange.reason ? (
+          <p className="mt-1 text-label text-muted">
+            理由：{insight.proposedChange.reason}
+          </p>
+        ) : null}
+        {isPolicyChange && status === "proposed" ? (
+          <p className="mt-1 text-label text-faint">
+            采纳后这条覆盖会立刻影响后续任务的判定阈值；不想要了可以回滚，配置会回到默认值。
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -473,9 +568,18 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
       <div className="mt-3 flex items-center gap-2">
         {status === "proposed" ? (
           <>
-            <Button size="sm" variant="primary" onClick={() => act("accept")} disabled={busy !== null}>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                // 写策略是多步后果（影响后续所有决策），先讲清楚再执行。
+                if (isPolicyChange) setConfirmPolicy(true);
+                else void act("accept");
+              }}
+              disabled={busy !== null}
+            >
               {busy === "accept" ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-              采纳这项变更
+              {isPolicyChange ? "采纳并写入策略" : "采纳这项变更"}
             </Button>
             <Button size="sm" onClick={() => act("reject")} disabled={busy !== null}>
               <X className="size-3" /> 驳回这项变更
@@ -505,6 +609,32 @@ export function InsightCard({ insight }: { insight: InsightDto }) {
           label="洞察置信度"
         />
       </div>
+
+      <ConfirmDialog
+        open={confirmPolicy}
+        variant="primary"
+        title="写入这条策略覆盖？"
+        confirmLabel="采纳并生效"
+        busy={busy !== null}
+        description={
+          <span>
+            「{policyLabel(String(insight.proposedChange.key ?? ""))}」会从默认值改成{" "}
+            <span className="mono text-ink">
+              {policyValueText(
+                String(insight.proposedChange.key ?? ""),
+                insight.proposedChange.value,
+              )}
+            </span>
+            。这不是一次性改动：之后每一次任务判定、反思与下一任务生成都会读到新值。
+            它是可以回滚的，回滚后配置恢复默认。
+          </span>
+        }
+        onConfirm={async () => {
+          await act("accept");
+          setConfirmPolicy(false);
+        }}
+        onCancel={() => setConfirmPolicy(false)}
+      />
     </div>
   );
 }

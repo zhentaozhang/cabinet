@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Link2, SearchX, ShieldCheck } from "lucide-react
 import { fetchAuditPage } from "@/lib/api/pages";
 import { dateTime } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState } from "@/components/ui";
-import { VerifyAuditButton } from "@/components/actions";
+import { AuditChainCheck } from "./audit-chain-check";
 import { cn } from "@/lib/format";
 import { statusLabel } from "@/contracts/labels";
 
@@ -72,7 +72,8 @@ export default async function AuditPage({
             后面所有记录的 hash 校验都会失败。
           </p>
         </div>
-        <VerifyAuditButton />
+        {/* 校验结论要留在页面上被对照，所以不是页头一行小字，而是一块结果面板。 */}
+        <AuditChainCheck total={data.total} />
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -213,8 +214,9 @@ export default async function AuditPage({
       <div className="mt-3 flex items-start gap-2 text-label leading-relaxed text-faint">
         <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-teal" />
         <p>
-          链路校验会重新计算每条记录的 hash，并比对 prevHash。出现不一致时，
-          页面会指出第一条被改动的记录。
+          上面「校验审计链」会重新计算每条记录的 hash，并比对 prevHash。出现不一致时，
+          结果里会指出第一条对不上的事件 id；校验失败（网络或服务端报错）时会原样
+          显示报错原文，不给出任何「链是完整的」结论。
         </p>
       </div>
     </div>

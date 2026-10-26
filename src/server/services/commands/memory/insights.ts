@@ -5,6 +5,7 @@ import { logAuditTx } from "@/lib/audit";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
 import { localDateTimeParts, zonedTimeToUtc } from "@/lib/domain/time";
 import type { Tx } from "../../shared/tx";
+import { applyOverrideTx, rollbackOverrideTx } from "../policy";
 import { factForChange, rollbackMemoryForSource, writeMemoryFact } from "./facts";
 
 async function applyChange(
@@ -15,8 +16,11 @@ async function applyChange(
     to?: string;
     minutes?: number;
     rule?: string;
+    key?: string;
+    value?: unknown;
   },
   userId: string,
+  insightId: string,
 ): Promise<{
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
@@ -117,6 +121,22 @@ async function applyChange(
     };
   }
 
+  if (change.type === "set_policy" && change.key) {
+    // 覆盖写在同一个事务里：洞察状态与运行时策略要么一起生效，要么一起回滚，
+    // 否则会出现"洞察显示已采纳、策略其实没变"的静默不一致。
+    const applied = await applyOverrideTx(tx, {
+      userId,
+      key: change.key,
+      value: change.value,
+      insightId,
+      actor: "user",
+    });
+    return {
+      before: { key: change.key, value: applied.previousValue },
+      after: { key: change.key, value: applied.value },
+    };
+  }
+
   return { before: null, after: null };
 }
 
@@ -127,9 +147,11 @@ async function reverseChange(
     taskId?: string;
     from?: string;
     rule?: string;
+    key?: string;
   },
   userId: string,
   beforeState: Record<string, unknown> | null,
+  insightId: string,
 ): Promise<void> {
   if (!beforeState) {
     throw new ConflictError(
@@ -168,6 +190,18 @@ async function reverseChange(
           eq(tasks.userId, userId),
         ),
       );
+    return;
+  }
+
+  if (change.type === "set_policy") {
+    // 只撤销这条洞察自己写的那条覆盖：用户后来手写的同名覆盖不该被一起抹掉，
+    // rollbackOverrideTx 会在归属不匹配时抛 ConflictError。
+    const key =
+      typeof beforeState.key === "string" ? beforeState.key : change.key;
+    if (!key) {
+      throw new ConflictError("Rollback state is missing the policy key.");
+    }
+    await rollbackOverrideTx(tx, { userId, key, insightId, actor: "user" });
     return;
   }
 
@@ -249,6 +283,7 @@ export async function applyInsight(
         insight.proposedChange,
         insight.userId,
         insight.beforeState,
+        insight.id,
       );
 
       await rollbackMemoryForSource(tx, {
@@ -273,7 +308,12 @@ export async function applyInsight(
   }
 
   await db.transaction(async (tx) => {
-    const state = await applyChange(tx, insight.proposedChange, insight.userId);
+    const state = await applyChange(
+      tx,
+      insight.proposedChange,
+      insight.userId,
+      insight.id,
+    );
 
     const [updated] = await tx
       .update(insights)

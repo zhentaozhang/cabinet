@@ -104,6 +104,15 @@ function specOf(item: AcceptanceItem): {
         spec: null,
         undetermined: true,
       };
+    case "judge":
+      // A model reads the answer. Without a configured model the item stays
+      // undetermined (src/server/services/commands/tasks/judge.ts), so the
+      // export cannot promise a verdict.
+      return {
+        statement: "模型判卷：" + item.value,
+        spec: { judge: item.value },
+        undetermined: true,
+      };
   }
 }
 

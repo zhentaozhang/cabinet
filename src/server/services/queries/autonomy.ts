@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents } from "@/lib/db/schema";
-import { getPolicyConfig } from "@/lib/policy/config";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import {
   decideGraduation,
   decideUpgrade,
@@ -59,7 +59,7 @@ export async function evaluateAutonomyUpgrade(
     throw new ConflictError("Invalid autonomy level");
   }
 
-  const config = await getPolicyConfig();
+  const config = await getPolicyConfigFor(userId);
   const window = await loadAuditWindow(
     agent.id,
     userId,
@@ -112,7 +112,7 @@ export async function evaluateGraduation(
     .where(and(eq(agents.id, agentId), eq(agents.userId, userId)));
   if (!agent) throw new NotFoundError("Agent not found");
 
-  const config = await getPolicyConfig();
+  const config = await getPolicyConfigFor(userId);
   const window = await loadAuditWindow(
     agent.id,
     userId,

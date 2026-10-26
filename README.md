@@ -81,7 +81,7 @@ Coach 生成下一道学习任务
         ↓
 用户作答或 Agent 生成 → 提交
         ↓
-Auditor 按清单验收（章节 / 字数 / 关键词）
+Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
         ↓
 目标进度 + 周复盘
         ↓
@@ -89,27 +89,29 @@ Auditor 按清单验收（章节 / 字数 / 关键词）
 ```
 
 - 学习目标进度（默认权重）= 学习任务验收比例 × 0.5 + 最近回忆分 × 0.3 + min(本周打卡次数 / 5, 1) × 0.2；权重和目标打卡数在 `policy_config.learning`。
+- 知识点掌握度：每道学习任务绑定一个知识点（`tasks.topic_key`），验收结论回写 `learning_mastery`，用 SM-2 变体排下次复习——答对走 1 → 3 → round(间隔 × ease) 递增（ease 从 2.5 起，每次 +0.1、夹在 1.3–2.8，间隔上限 60 天），答错把间隔压回 1 天且 ease −0.2。出题时**到期的知识点优先**，标题写成「复习：<知识点>」。
 - 重测：上次学习任务验收通过 ≥ 3 天，且最近 Check-in 有错题标签时，下一题标记为 `learning_retest`。
+- 判卷：清单里的 `judge` 项（"能用自己的话解释 X"）在验收时交给模型判定；没有配 `OPENAI_API_KEY` 时保持"未判定"而不是自动通过，超时/解析失败同样降级为未判定并写明原因。未判定的条目不算失败（任务仍可验收），但审计结论会写明"另有 N 项未判定，未计入本次结论"，学习任务在判卷项未判定时也不推进知识点掌握度——没有结论就不假装复习了一次。
 - 早报和周复盘是确定性模板，不调用模型。
-- 反思从审计驳回、晚间完成率、低精力、预算压力和暂停 Agent 中找信号；一次生成一条洞察，可采纳或回滚。
+- 反思从审计驳回、晚间完成率、低精力、预算压力和暂停 Agent 中找信号；一次生成一条洞察，可采纳或回滚。驳回率过高时会提出真实的策略变更（`set_policy`），采纳后立刻改变后续任务的判定阈值；回滚把阈值恢复成 `policy_config` 里的默认值（同一 (用户, 键) 只保留一条 active 覆盖，历次改动留在审计链里）。
 
 ## 机制清单
 
 | 机制 | 当前实现 | 边界 |
 |---|---|---|
 | 任务状态机 | planned → assigned → running → submitted → auditing → accepted / rejected → done；外部动作走 awaiting_approval | 条件更新 + 409 冲突 |
-| 策略门禁 | 状态、生命周期、自主等级、grant、周预算台账、审批 | 阈值来自 `policy_config`，缺失时 fail-closed |
+| 策略门禁 | 状态、生命周期、自主等级、grant、周预算台账、审批 | 阈值来自 `policy_config`（可按用户被 `policy_overrides` 覆盖），缺失时 fail-closed |
 | 审批 | 外部动作 / 超预算进入审批；批准后消费一次 | 不执行真实外部动作 |
-| 验收 | 确定性清单：section / min_words / min_sources / contains / manual | 不是模型判断 |
+| 验收 | 清单项：section / min_words / min_sources / min_evidence / contains / claims_table / manual / judge | 除 judge 外都是确定性检查；judge 未配模型时保持"未判定" |
 | 分离职责 | 只有 auditor 角色、且不是 assignee，才能验收 | 没有“用户覆盖 Auditor”的入口 |
 | 审计链 | 每个用户一条 SHA-256 前向哈希链 | Review 页可验证 |
-| 记忆 | 证据、scope、冲突、删除、历史 | 词面匹配，不是向量检索 |
-| 学习任务 | 规则生成；重测条件 | 依赖学习目标和 Check-in |
-| 反思 | 规则候选 → 洞察 → 采纳/回滚 | 不调用模型 |
+| 记忆 | 证据、scope、冲突、删除、历史；排序 = 词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度，可注入外部 rerank | 没有 embedding / 向量库（本机 Postgres 无 `vector` 扩展） |
+| 学习任务 | 规则生成；知识点掌握度 + SM-2 间隔重复排期；到期优先复习 | 依赖学习目标和 Check-in；难度仍来自配置 |
+| 反思 | 规则候选 → 洞察 → 采纳/回滚；`set_policy` 提案走白名单覆盖表 | 候选仍是规则生成，不调用模型 |
 | 内阁 | 用户发起；规则生成 5 个立场；批准/有条件批准生成跟进任务，决议写入程序记忆 | 不自动召集 |
 | 学徒 | 5 条观摩证据 → 确定性考试 → 练习通过 → 常规审计 | 考试是模板产物；练习通过不等于转正 |
-| 模型 | 每次运行一次 `generateText` | 不调用工具；失败不静默回退 |
-| 外部工具 | 未接入 | 运行步骤固定 `not_connected` |
+| 模型 | 运行一次 `generateText`；判卷用 temperature 0 的第二次调用 | 失败不静默回退，判卷失败降级为"未判定" |
+| 外部工具 | `web_search` / `web_fetch` 走真实检索；MCP 服务器按声明调用（`tool-loop.ts runMcpToolLoop`）；`MODEL_TOOL_SELECTION=on` 时改由模型在 `web_search` / `web_fetch` 之间逐步选择（默认关闭，走计划好的单个工具） | 未声明的工具步骤仍是 `not_connected`；两条路径互斥，MCP 调用不经过模型 |
 
 ## 七个角色
 
@@ -119,7 +121,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词）
 | **Iris** / researcher | 找资料、验证来源、给反例 | 运行时会按角色选择 `web_search` 工具标签 | 没有联网；标签步骤 `not_connected` |
 | **Mira** / coach | 出题、陪练、调难度 | 生成下一道学习任务；读取 Check-in | 出题内容是模型/模板，难度规则来自配置 |
 | **Vault** / treasurer | 预算、时间、成本 | 内阁里生成预算立场；反思里报告预算压力 | 没有个人账本/日历；预算是 Agent 运行成本 |
-| **Justus** / auditor | 独立验收、周审计 | 按验收清单判定；执行者不能自审 | 不是 LLM 评审 |
+| **Justus** / auditor | 独立验收、周审计 | 按验收清单逐条判定；执行者不能自审；`judge` 项交给模型判卷 | 规则判定为主，模型只回答清单里的主观项 |
 | **Pip** / apprentice | 影子学习 → 观摩 → 练习考试 | 需要先记录 5 条 mentor 真实运行作为观摩；考试走常规审计；两次失败退休 | 考试是模拟产物；练习通过不改变信任分与等级 |
 | **Cass** / critic | 红队、挑战假设 | 只在内阁里生成反对立场 | 规则驱动，不是独立模型 |
 
@@ -198,6 +200,8 @@ DEMO_MODE=false
 
 - `DEMO_MODE=true` 时，未配置 Key 或调用失败会退回模板。
 - `DEMO_MODE=false` 时，未配置 Key 或调用失败会让任务失败，不会生成模板产物。
+- 可选 `OPENAI_JUDGE_MODEL`：只给判卷用（缺省回落到 `OPENAI_MODEL`）。判卷要的是稳定，所以温度固定 0，和写产物的那次调用互不影响。
+- 可选 `MODEL_TOOL_SELECTION=on`：让模型自己决定调 `web_search` 还是 `web_fetch`（默认关闭，走计划阶段选好的单个工具）。开启后每次工具调用都是一次独立的计费请求，用量按实际 token 记账。
 - `AUTH_REQUIRED=false` 只用于本地；生产环境会自动要求登录（`NODE_ENV=production`），并应设置 `DEMO_MODE=false`、关闭演示登录和 reset。
 - 演示账号：`demo@cabinet.local` / `cabinet-demo`。
 
@@ -247,6 +251,7 @@ app/api/**（route handler；当前 47 个，`find src/app -name route.ts | wc -
 
 - Task：`planned → assigned → running → submitted → auditing → accepted / rejected → done`（正常执行路径；外部动作先走 `awaiting_approval`）
 - Run：`running → succeeded / failed`（状态机也定义了 `queued`，当前任务运行直接从 `running` 开始）
+- Goal：`active → paused / completed / archived`；`paused / completed / archived → active`（重新打开）
 - Agent：`probation → active → paused → retired`
 - Apprentice：`shadowing → drafting → examining → active`；失败一次回 `drafting`，失败两次 `retired`
 - Insight：`proposed → applied / rejected`；`applied → rolled_back`
@@ -264,7 +269,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-2026-10-25 在当前分支实测：`find tests -name '*.test.ts' | wc -l` = 118 个测试文件，`vitest run` 报 1032 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。数字随提交变化，以命令输出为准，不要照抄。
+2026-10-26 在当前分支实测：`find tests -name '*.test.ts' | wc -l` = 133 个测试文件，`vitest run` 报 1255 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。数字随提交变化，以命令输出为准，不要照抄。
 
 ### GitHub Actions 现在需要手动触发
 
@@ -285,8 +290,10 @@ gh run watch
 - **不是自治多 Agent**：没有 Agent 间消息、协商或自动委派；内阁由用户发起，立场由规则生成。
 - **没有用户覆盖 Auditor 的入口**：只有重新提交或按清单重跑；UI/charter 里的“用户可覆盖”目前只是文案。
 - **学徒考试是模拟**：考试产物由确定性模板生成；5 条验收项必须全部通过；考试前需要 5 条显式记录的观摩证据（只有 mentor 的真实模型运行、且任务已验收才算）。练习通过只把阶段推进到 `practice_passed`，不授予生产技能、不加信任分、不提等级。
-- **反思、早报、周复盘是规则/模板**：不调用模型。
-- **记忆检索是词面匹配**：没有 embedding / 向量库。
+- **早报、周复盘、反思候选是规则/模板**：不调用模型。反思能提出真实的策略覆盖（`set_policy`，16 个白名单键，可回滚），但"要不要提出"本身是规则判断，不是模型分析。
+- **记忆检索没有 embedding**：排序是词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度；本机 Postgres 没有 `vector` 扩展，所以没有向量检索。`retrieveMemories` 留了 `rerank` 钩子，接外部重排模型不需要改调用方。
+- **掌握度只有排期、没有独立页面**：`learning_mastery` 会随每次验收更新并决定下次复习时间，但还没有"这个知识点我掌握到几成"的单独视图（服务层 `listMastery()` 已就绪，缺 API 与页面）。
+- **判卷依赖模型**：`judge` 项没有配置 `OPENAI_API_KEY` 时永远是"未判定"（不会自动通过）；真实模型路径没有网络级测试，测试里注入的是假判卷函数。
 - **管理时长没有埋点**：`user_actions` 只有 seed 写入；真实工作区会显示估算或空值。
 - **成本是估算**：按供应商返回的 token 数和配置单价计算，不是供应商账单；没有返回 usage 的运行记为“用量未知”并保留全额预留。预算是 Agent 的每周模型用量，不是个人财务。
 - **台账是唯一账目**：周预算由 `agent_budget_periods` / `agent_budget_reservations` 记账，`runs.cost_cents` 只是逐次运行的遥测，`agents.spent_cents` / `agents.budget_period_start` 已冻结，不再读写。

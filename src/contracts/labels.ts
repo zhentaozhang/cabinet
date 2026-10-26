@@ -182,6 +182,10 @@ export const STATUS_LABELS: Record<string, string> = {
   done: "完成",
   failed: "失败",
   cancelled: "已取消",
+  // goal — 目标自己的用词在 GOAL_STATUS_LABELS。这里补一份是因为目标状态也会
+  // 走通用徽章（今天页面的目标卡），少一个键就会把 completed 原样印出来。
+  completed: "已完成",
+  archived: "已归档",
   // run
   queued: "排队中",
   succeeded: "成功",
@@ -228,7 +232,11 @@ export function statusLabel(status: string): string {
 }
 
 export function statusTone(status: string): BadgeTone {
-  if (["accepted", "done", "succeeded", "applied", "active"].includes(status))
+  if (
+    ["accepted", "done", "succeeded", "applied", "active", "completed"].includes(
+      status,
+    )
+  )
     return "teal";
   if (
     [
@@ -258,6 +266,37 @@ export function statusTone(status: string): BadgeTone {
   )
     return "violet";
   return "neutral";
+}
+
+/**
+ * Goal wording, kept apart from STATUS_LABELS on purpose.
+ *
+ * There `active` reads "在岗" and `paused` "暂停" — agent-on-duty vocabulary.
+ * A goal in the same states is not a suspended employee, so the same values get
+ * their own words here. The values are shared; the wording is not.
+ */
+export const GOAL_STATUS_LABELS: Record<string, string> = {
+  active: "进行中",
+  paused: "已暂停",
+  completed: "已完成",
+  archived: "已归档",
+};
+
+export function goalStatusLabel(status: string): string {
+  return GOAL_STATUS_LABELS[status] ?? status;
+}
+
+/** The words on the buttons that move a goal, not the states they land on. */
+export const GOAL_ACTION_LABELS: Record<string, string> = {
+  pause: "暂停",
+  resume: "恢复",
+  complete: "标记完成",
+  archive: "归档",
+  reopen: "重新打开",
+};
+
+export function goalActionLabel(action: string): string {
+  return GOAL_ACTION_LABELS[action] ?? action;
 }
 
 export const MEMORY_TYPE_LABEL: Record<string, string> = {

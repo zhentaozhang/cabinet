@@ -180,6 +180,9 @@ export function getChecklistRuleLabel(item: AcceptanceItemDto): string {
       return `包含核心章节「${item.value}」`;
     case "manual":
       return `人工核验项：${item.note}`;
+    case "judge":
+      // 判卷标准是一句自然语言要求，原样显示比改写成"规则"更能解释为什么没通过。
+      return `模型判卷：${item.value}`;
     default:
       return "自定义契约规则";
   }
@@ -199,6 +202,9 @@ export function getChecklistTypeTag(type: AcceptanceItemDto["type"]) {
       return <span className="mono rounded bg-panel px-1.5 py-0.5 text-label text-muted">章节规范</span>;
     case "manual":
       return <span className="mono rounded bg-accent/15 border border-accent/30 px-1.5 py-0.5 text-label text-accent">人工复核</span>;
+    case "judge":
+      // 与"人工复核"共用强调色：两者都是"还没有确定结论、需要人看"的状态。
+      return <span className="mono rounded bg-accent/15 border border-accent/30 px-1.5 py-0.5 text-label text-accent">模型判卷</span>;
     default:
       return <span className="mono rounded bg-panel px-1.5 py-0.5 text-label text-muted">规则</span>;
   }

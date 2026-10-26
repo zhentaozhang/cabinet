@@ -17,8 +17,12 @@ import {
   evidence,
   goals,
   insights,
+  learningAttempts,
+  learningMastery,
+  learningTopics,
   memories,
   outbox,
+  policyOverrides,
   profiles,
   retrievalCalls,
   reviews,
@@ -352,6 +356,52 @@ export async function* exportAccountNdjson(
           .from(apprenticeExamSnapshots)
           .where(eq(apprenticeExamSnapshots.userId, userId))
           .orderBy(apprenticeExamSnapshots.id)
+          .limit(limit)
+          .offset(offset),
+    },
+    // 学习历史与策略覆盖同样是用户自己的数据：/api/account 的删除清单里有
+    // 这四张表，导出侧也必须一致，否则"能删不能带走"。
+    {
+      name: "learningTopics",
+      rows: (limit, offset) =>
+        db
+          .select()
+          .from(learningTopics)
+          .where(eq(learningTopics.userId, userId))
+          .orderBy(learningTopics.id)
+          .limit(limit)
+          .offset(offset),
+    },
+    {
+      name: "learningMastery",
+      rows: (limit, offset) =>
+        db
+          .select()
+          .from(learningMastery)
+          .where(eq(learningMastery.userId, userId))
+          .orderBy(learningMastery.id)
+          .limit(limit)
+          .offset(offset),
+    },
+    {
+      name: "learningAttempts",
+      rows: (limit, offset) =>
+        db
+          .select()
+          .from(learningAttempts)
+          .where(eq(learningAttempts.userId, userId))
+          .orderBy(learningAttempts.id)
+          .limit(limit)
+          .offset(offset),
+    },
+    {
+      name: "policyOverrides",
+      rows: (limit, offset) =>
+        db
+          .select()
+          .from(policyOverrides)
+          .where(eq(policyOverrides.userId, userId))
+          .orderBy(policyOverrides.id)
           .limit(limit)
           .offset(offset),
     },

@@ -32,6 +32,13 @@ export const tasks = pgTable(
     approvalThresholdCents: integer("approval_threshold_cents"),
     estimatedCostCents: integer("estimated_cost_cents").notNull().default(0),
     template: text("template"),
+    /**
+     * The learning topic this task drills, as a normalised key
+     * (`closure`, `事件循环`). Nullable because most tasks are not learning
+     * tasks. Kept on the task — not only on the attempt — so the scheduler can
+     * see "we already have a pending task for this topic" without a join.
+     */
+    topicKey: text("topic_key"),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     acceptedAutonomyLevel: integer("accepted_autonomy_level"),
     createdBy: text("created_by").notNull().default("agent"),
@@ -49,6 +56,7 @@ export const tasks = pgTable(
     index("tasks_user_due_idx").on(t.userId, t.dueAt),
     index("tasks_user_updated_idx").on(t.userId, t.updatedAt),
     index("tasks_user_accepted_idx").on(t.userId, t.acceptedAt),
+    index("tasks_user_topic_idx").on(t.userId, t.topicKey),
     check(
       "tasks_assignee_not_auditor",
       sql`${t.assigneeId} IS NULL OR ${t.auditorId} IS NULL OR ${t.assigneeId} <> ${t.auditorId}`,

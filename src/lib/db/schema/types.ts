@@ -17,7 +17,16 @@ export type AcceptanceItem =
   | { type: "min_evidence"; value: number; required: boolean }
   | { type: "claims_table"; value: number; required: boolean }
   | { type: "section"; value: string; required: boolean }
-  | { type: "manual"; note: string; required: boolean };
+  | { type: "manual"; note: string; required: boolean }
+  /**
+   * A criterion only a reader can settle ("解释为什么闭包能捕获变量").
+   *
+   * The deterministic pass in `domain/acceptance` cannot decide it and says so
+   * (`undetermined`), exactly like `manual`. If a model is configured, the
+   * judge pass fills in a verdict; without one the item stays undetermined
+   * rather than silently passing or failing.
+   */
+  | { type: "judge"; value: string; required: boolean };
 
 export type AcceptanceResult = {
   item: AcceptanceItem;
@@ -31,10 +40,41 @@ export type AcceptanceResult = {
   undetermined?: boolean;
 };
 
+/** One judge ruling on one `judge` acceptance item. */
+export type JudgeVerdict = {
+  /** The criterion text this ruling answers — matched back by string. */
+  criterion: string;
+  pass: boolean;
+  reason: string;
+  /** The judge could not settle it (empty answer, unparseable reply). */
+  undetermined?: boolean;
+};
+
+/**
+ * A live override of one policy config leaf, written by an accepted insight.
+ * `rolled_back` rows are kept: the audit trail must show the value was tried
+ * and withdrawn, not that it never existed.
+ */
+export type PolicyOverrideStatus = "active" | "rolled_back";
+
+/**
+ * The change an insight proposes when accepted.
+ *
+ * `set_policy` is the only variant that changes runtime behaviour instead of
+ * text or a single task: `key` is a dotted path into the policy config
+ * (whitelisted in lib/policy/overrides.ts), and accepting it writes a
+ * per-user override that `getPolicyConfigFor` folds into every later decision.
+ */
 export type ProposedChange =
   | { type: "reschedule"; taskId: string; from: string; to: string }
   | { type: "split_task"; taskId: string; minutes: number }
   | { type: "add_rule"; rule: string }
+  | {
+      type: "set_policy";
+      key: string;
+      value: number | boolean | string;
+      reason: string;
+    }
   | { type: "none" };
 
 export type Metrics = Record<string, number | string>;

@@ -19,8 +19,12 @@ import {
   goals,
   idempotencyKeys,
   insights,
+  learningAttempts,
+  learningMastery,
+  learningTopics,
   memories,
   outbox,
+  policyOverrides,
   profiles,
   rateLimits,
   retrievalCalls,
@@ -54,6 +58,10 @@ export async function exportAccount(userId: string) {
     outboxRows,
     retrievalRows,
     runJobRows,
+    topicRows,
+    masteryRows,
+    attemptRows,
+    overrideRows,
   ] = await Promise.all([
     db.select().from(users).where(eq(users.id, userId)),
     db.select().from(profiles).where(eq(profiles.userId, userId)),
@@ -72,6 +80,12 @@ export async function exportAccount(userId: string) {
     db.select().from(outbox).where(eq(outbox.userId, userId)),
     db.select().from(retrievalCalls).where(eq(retrievalCalls.userId, userId)),
     db.select().from(runJobs).where(eq(runJobs.userId, userId)),
+    // 学习历史与策略覆盖同样是用户的个人数据：迁移到一个新工具时，
+    // "我复习过哪些知识点、答错过什么" 不能说丢就丢。
+    db.select().from(learningTopics).where(eq(learningTopics.userId, userId)),
+    db.select().from(learningMastery).where(eq(learningMastery.userId, userId)),
+    db.select().from(learningAttempts).where(eq(learningAttempts.userId, userId)),
+    db.select().from(policyOverrides).where(eq(policyOverrides.userId, userId)),
   ]);
 
   const agentIds = agentRows.map((row) => row.id);
@@ -158,6 +172,10 @@ export async function exportAccount(userId: string) {
     outbox: outboxRows,
     retrievalCalls: retrievalRows,
     runJobs: runJobRows,
+    learningTopics: topicRows,
+    learningMastery: masteryRows,
+    learningAttempts: attemptRows,
+    policyOverrides: overrideRows,
   };
 }
 
@@ -208,6 +226,17 @@ export async function deleteAccount(userId: string): Promise<void> {
     await tx
       .delete(apprenticeExamSnapshots)
       .where(eq(apprenticeExamSnapshots.userId, userId));
+    /**
+     * 学习与策略数据同理（约定见上）：learning_attempts 指向 artifacts 和
+     * tasks，learning_mastery 指向 learning_topics，learning_topics 指向
+     * goals，policy_overrides 指向 insights，四张表全部 ON DELETE no action。
+     * 少删任何一张，删号都会在第一个被引用的父表上撞外键、整条事务回滚，
+     * /api/account 的 DELETE 直接 500。
+     */
+    await tx.delete(policyOverrides).where(eq(policyOverrides.userId, userId));
+    await tx.delete(learningAttempts).where(eq(learningAttempts.userId, userId));
+    await tx.delete(learningMastery).where(eq(learningMastery.userId, userId));
+    await tx.delete(learningTopics).where(eq(learningTopics.userId, userId));
 
     if (councilIds.length) {
       await tx

@@ -162,6 +162,18 @@ export function evaluateAcceptance(
       };
     }
 
+    if (item.type === "judge") {
+      // 判卷要读语义，确定性规则给不出结论：这里只能如实说"没判"，
+      // 交给有模型时的 judgeSubmission 回填。标成 passed 会把没判过的项
+      // 显示成通过；标成失败又会让没有模型的环境一律驳回任务。
+      return {
+        item,
+        passed: false,
+        undetermined: true,
+        reason: `需要模型判定：${item.value}`,
+      };
+    }
+
     // A manual item is the user's verdict to give, never the Auditor's: the
     // non-empty check is not a pass, so it must not silently turn green.
     return {

@@ -1,9 +1,11 @@
 import { cache } from "react";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { policyConfig } from "@/lib/db/schema";
+import { policyConfig, policyOverrides } from "@/lib/db/schema";
 import type { PolicyConfig } from "@/lib/domain/policy";
 import { SEED_POLICY_CONFIG } from "@/lib/domain/policy";
+import { applyOverrides } from "@/lib/policy/overrides";
 
 const REQUIRED_KEYS = [
   "autonomy",
@@ -154,6 +156,36 @@ export const getPolicyConfig = cache(
     return parsed.data as PolicyConfig;
   },
 );
+
+/**
+ * 单个用户的运行时策略 = 全局策略 + 该用户 active 的覆盖。
+ *
+ * 为什么这里刻意不整体 `cache`：采纳一条洞察后，同一个请求里紧接着的
+ * `getPolicyConfigFor` 必须能看到刚写入的值；把结果按 userId 缓存会读不到，
+ * 而按模块作用域缓存还会把用户 A 的覆盖串给用户 B。全局 base 仍然复用
+ * `getPolicyConfig` 自带的 cache，所以每次多出来的只有一条覆盖表查询。
+ */
+export async function getPolicyConfigFor(
+  userId: string,
+): Promise<PolicyConfig> {
+  const [base, rows] = await Promise.all([
+    getPolicyConfig(),
+    db
+      .select({
+        key: policyOverrides.key,
+        valueJson: policyOverrides.valueJson,
+      })
+      .from(policyOverrides)
+      .where(
+        and(
+          eq(policyOverrides.userId, userId),
+          eq(policyOverrides.status, "active"),
+        ),
+      ),
+  ]);
+  // 没有覆盖时也走 applyOverrides：它返回深拷贝，避免调用方改到被 cache 的 base。
+  return applyOverrides(base, rows);
+}
 
 /** Seed/test helper only. */
 export function policyConfigSeedRows() {

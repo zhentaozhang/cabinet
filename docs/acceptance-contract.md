@@ -20,7 +20,7 @@
 }
 ```
 
-7 种类型都会被翻译成一句人能读懂的话 + 一份机器能读的 `spec`：
+8 种类型都会被翻译成一句人能读懂的话 + 一份机器能读的 `spec`：
 
 | 类型 | `statement` | `spec` | `undetermined` |
 | --- | --- | --- | --- |
@@ -31,12 +31,13 @@
 | `contains` | 正文必须包含 «X» | `{ contains }` | false |
 | `claims_table` | 断言表至少 N 行；格式系统查，内容人查 | `{ claimsTableRows }` | **true** |
 | `manual` | 人工判定：<note> | `null` | **true** |
+| `judge` | 模型判卷：<criterion> | `{ judge }` | **true** |
 
 两个刻意的选择：
 
-1. **`spec` 不是原始 item**。原始 item 六种类型用 `value`、`manual` 用 `note`，
+1. **`spec` 不是原始 item**。原始 item 里六种类型用 `value`、`manual` 用 `note`、`judge` 用 `value`，
    键名是实现细节；导出面向的是外部读者，键名要能自己解释自己。
-2. **`undetermined` 只在三种类型上为 true：`manual`、`claims_table`、`min_evidence`。**
+2. **`undetermined` 只在四种类型上为 true：`manual`、`claims_table`、`min_evidence`、`judge`。**
    判据是求值器 `src/lib/domain/acceptance.ts` 的真实行为，不是类型的名字：
    - `manual` 恒为 `{ passed: false, undetermined: true }`（:167-172）；
    - `claims_table` 格式合格时也恒为 undetermined（:142-147，「每行是否被原文支持需你逐行核对」）；
@@ -44,6 +45,11 @@
      导出侧没有原文可比，只能标 undetermined——所以「导出说 undetermined」不等于「系统从不判它」。
    - `min_evidence` 在人工提交的产物上 undetermined（:99-106），只有平台自己跑过检索、
      能拿到 `evidenceIds` 时才会判。
+
+    - `judge` 在纯函数求值器里恒为 undetermined（「需要模型判定」）：求值器是离线的，
+      判卷要调模型，发生在 `src/server/services/commands/tasks/judge.ts`；
+      没有配模型、超时、解析失败都保持 undetermined——**判卷失败不会被当成通过**。
+      所以「导出说 judge 项 undetermined」意思是「这一项要靠模型或人来答」，不是「没人会答」。
 
    第一版把这两个标成 false，外部复核方读到的就是「本仓库会判定它」——而它永远不会。
    这正是 `AGENTS.md` 第 2 条禁止的那种标签。
@@ -76,6 +82,9 @@ Markdown 版本会把「需人工判定」标在正文里，并在末尾单独�
 - `min_evidence` 在人工提交的产物上不判定：没有检索证据可数，标 undetermined。
 - `undetermined: true` 的条目**永远不会被算作通过**，导出和渲染都会把它标出来；
   但它也不会被算作失败——它是一条等待人签字的空位。
+- 有未判定条目时，审计结论必须写明「另有 N 项未判定（模型判卷/人工判定），
+  未计入本次结论」，不能说「验收清单逐项通过」；学习任务在 `judge` 项未判定时
+  不推进知识点掌握度（`src/server/services/commands/tasks/audit.ts`）。
 - 导出与某次运行无关：同一个任务导出两次逐字节相同，换一次运行也不变。
 
 ## 与 manifest 的分工
@@ -92,6 +101,6 @@ DATABASE_URL_TEST=postgres://localhost:5432/cabinet_test TZ=UTC \
   tests/integration/acceptance-route.test.ts
 ```
 
-覆盖：7 种类型各自的 `statement`/`spec`、`manual` 的 `undetermined` 与 `note`、
+覆盖：8 种类型各自的 `statement`/`spec`、`manual` 的 `undetermined` 与 `note`、
 空清单导出一条人工项、两次导出逐字节一致、序号 id 稳定、Markdown 标注人工项、
 路由 200/404（他人任务与不存在同答 404）与 Markdown 下载头。

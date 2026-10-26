@@ -19,6 +19,7 @@ export * from "./schema/agents";
 export * from "./schema/goals";
 export * from "./schema/tasks";
 export * from "./schema/runs";
+export * from "./schema/learning";
 export * from "./schema/memory";
 export * from "./schema/councils";
 export * from "./schema/governance";

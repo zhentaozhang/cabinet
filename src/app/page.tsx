@@ -16,7 +16,9 @@ import {
 } from "lucide-react";
 import { fetchTodayPage } from "@/lib/api/pages";
 import { roleMeta } from "@/lib/agents";
-import { dateTime, money, pct, timeOnly } from "@/lib/format";
+import type { GoalDto } from "@/contracts";
+import { goalStatusLabel } from "@/contracts/labels";
+import { cn, dateTime, money, pct, timeOnly } from "@/lib/format";
 import {
   buildTodayActionQueue,
   getProvenanceLabel,
@@ -44,6 +46,7 @@ import {
   QuickCreate,
 } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
+import { GoalStatusActions } from "./goal-status-actions";
 
 export const metadata: Metadata = {
   title: "Today · Cabinet",
@@ -54,7 +57,14 @@ export const dynamic = "force-dynamic";
 export default async function TodayPage() {
   const data = await fetchTodayPage();
   const tz = data.user.timezone;
-  const primaryGoal = data.goals[0];
+  /*
+    目标列表按创建顺序来，第一个不一定是"还在推进"的那个：暂停/完成/归档的目标
+    也会留在列表里（用户得能找回它们）。所以主目标只认 status === "active"，
+    一个都没有时宁可让页头说"没有进行中的目标"，也不让一个停掉的目标冒充当前方向。
+  */
+  const activeGoals = data.goals.filter((goal) => goal.status === "active");
+  const inactiveGoals = data.goals.filter((goal) => goal.status !== "active");
+  const primaryGoal = activeGoals[0];
   /*
     Who spent the week's model budget. It comes from the same ledger rows as
     `weekly.costCents`, so the card's big number and its "top spender" line
@@ -111,7 +121,11 @@ export default async function TodayPage() {
 
   const brief =
     data.brief?.narrative ??
-    `# 今日早报\n\n目标：${data.goals.map((g) => `${g.title}（${pct(g.progress)}）`).join(" · ")}\n\n## 今天的关键判断\n- 今天有 ${inFlight.length} 个待推进任务。\n- 有 ${data.approvals.length} 个决定等你。`;
+    `# 今日早报\n\n目标：${
+      activeGoals.length > 0
+        ? activeGoals.map((g) => `${g.title}（${pct(g.progress)}）`).join(" · ")
+        : "没有进行中的目标"
+    }\n\n## 今天的关键判断\n- 今天有 ${inFlight.length} 个待推进任务。\n- 有 ${data.approvals.length} 个决定等你。`;
 
   const weekly = data.weeklyMetrics;
   const metricRows = weeklyMetricRows(weekly);
@@ -134,7 +148,9 @@ export default async function TodayPage() {
             <span>
               {primaryGoal
                 ? `目标：${primaryGoal.title} (${pct(primaryGoal.progress)})`
-                : "尚未设定目标"}
+                : data.goals.length > 0
+                  ? "没有进行中的目标"
+                  : "尚未设定目标"}
             </span>
             <span>·</span>
             <span className="text-ink font-medium">
@@ -381,6 +397,8 @@ export default async function TodayPage() {
           right={
             primaryGoal ? (
               <Badge tone="accent">{pct(primaryGoal.progress)}</Badge>
+            ) : data.goals.length > 0 ? (
+              <Badge tone="neutral">没有进行中的目标</Badge>
             ) : (
               <Badge tone="neutral">尚未设定目标</Badge>
             )
@@ -388,22 +406,40 @@ export default async function TodayPage() {
         />
         <div className="space-y-4 px-5 py-4">
           {data.goals.length > 0 ? (
-            data.goals.map((goal) => (
-              <div key={goal.id}>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-label text-ink">{goal.title}</span>
-                  <span className="mono text-label text-muted">
-                    {pct(goal.progress)}
-                  </span>
+            <>
+              {activeGoals.length > 0 ? (
+                activeGoals.map((goal) => (
+                  <GoalRow key={goal.id} goal={goal} />
+                ))
+              ) : (
+                <div className="text-label text-faint">
+                  当前没有进行中的目标。下面仍是你的目标，可以恢复或重新打开。
                 </div>
-                <Progress
-                  label={`${goal.title} 的目标进度`}
-                  value={goal.progress}
-                  tone={goal.domain === "health" ? "teal" : "accent"}
-                />
-                <div className="mt-1 text-label text-faint">{goal.target}</div>
-              </div>
-            ))
+              )}
+              {inactiveGoals.length > 0 ? (
+                <div
+                  className={
+                    activeGoals.length > 0
+                      ? "border-t border-line pt-3"
+                      : undefined
+                  }
+                >
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <span className="text-eyebrow uppercase tracking-[0.14em] text-faint">
+                      paused · completed · archived
+                    </span>
+                    <span className="text-label text-faint">
+                      {inactiveGoals.length} 个不在推进中，仍可在这里恢复或重新打开
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {inactiveGoals.map((goal) => (
+                      <GoalRow key={goal.id} goal={goal} muted />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </>
           ) : (
             <div className="text-label text-faint">
               还没有设定目标。有了目标，内阁才知道该替你推进什么。
@@ -799,10 +835,17 @@ export default async function TodayPage() {
                     name: agent.name,
                     role: agent.role,
                   }))}
-                  goals={data.goals.map((goal) => ({
-                    id: goal.id,
-                    title: goal.title,
-                  }))}
+                  goals={data.goals
+                    // 已归档的目标不再接受新任务（归档是"这段结束了"），完成的目标
+                    // 仍可补做，但在下拉里标出来，免得被当成还在推进的方向。
+                    .filter((goal) => goal.status !== "archived")
+                    .map((goal) => ({
+                      id: goal.id,
+                      title:
+                        goal.status === "completed"
+                          ? `${goal.title}（已完成）`
+                          : goal.title,
+                    }))}
                 />
               </div>
             </Card>
@@ -821,6 +864,43 @@ export default async function TodayPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 一行目标：标题 + 状态 + 进度 + 目标说明 + 生命周期按钮。
+ *
+ * 状态用目标自己的词（进行中 / 已暂停 / 已完成 / 已归档）而不是 StatusBadge：
+ * 后者说的是 Agent "在岗 / 暂停"，套到目标上会把暂停读成"这个人被停职了"。
+ * 非进行中的目标是弱化而不是隐藏——归档不等于删除，用户要能把它找回来重开。
+ */
+function GoalRow({ goal, muted = false }: { goal: GoalDto; muted?: boolean }) {
+  const isActive = goal.status === "active";
+  return (
+    <div className={cn(muted && "opacity-75")}>
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-label text-ink" title={goal.title}>
+            {goal.title}
+          </span>
+          <Badge tone={isActive ? "teal" : "neutral"}>
+            {goalStatusLabel(goal.status)}
+          </Badge>
+        </span>
+        <span className="mono text-label text-muted">{pct(goal.progress)}</span>
+      </div>
+      <Progress
+        label={`${goal.title} 的目标进度`}
+        value={goal.progress}
+        tone={goal.domain === "health" ? "teal" : "accent"}
+      />
+      <div className="mt-1 text-label text-faint">{goal.target}</div>
+      <GoalStatusActions
+        goalId={goal.id}
+        status={goal.status}
+        title={goal.title}
+      />
     </div>
   );
 }

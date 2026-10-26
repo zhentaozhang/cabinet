@@ -8,7 +8,7 @@ import {
   reviews,
   tasks,
 } from "@/lib/db/schema";
-import { getPolicyConfig } from "@/lib/policy/config";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import { loadAutonomyDecisions } from "./autonomy";
 import { loadAuditWindows } from "./audit-samples";
 import { getWeeklyMetrics } from "./metrics";
@@ -99,7 +99,7 @@ export async function getReviewData(
       .orderBy(desc(dissents.createdAt), desc(dissents.id))
       .limit(limit)
       .offset(dissentOffset),
-    getPolicyConfig(),
+    getPolicyConfigFor(userId),
     getWeeklyMetrics(userId),
   ]);
   // The audit window is read through the same eligibility filter the promotion

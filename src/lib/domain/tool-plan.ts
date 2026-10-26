@@ -71,31 +71,21 @@ export function planTools(input: {
   extraSpecs?: Record<string, ToolSpec>;
 }): ToolPlan {
   const considered: ConsideredTool[] = [];
-  const specs = input.extraSpecs
-    ? { ...TOOL_SPECS, ...input.extraSpecs }
-    : TOOL_SPECS;
+  const specs = resolveSpecs(input.extraSpecs);
 
   for (const tool of input.tools) {
-    const spec = specs[tool];
-    if (!spec) {
-      considered.push({ tool, accepted: false, reason: "unknown_tool" });
-      continue;
-    }
-    if (spec.kind === "execute" && input.actionType === "internal") {
-      considered.push({ tool, accepted: false, reason: "needs_action" });
-      continue;
-    }
-    if (!hasGrant(input.grants, spec.resource, spec.scope)) {
-      considered.push({ tool, accepted: false, reason: "missing_grant" });
+    const decision = gateTool(tool, specs, input);
+    if (!decision.allowed) {
+      considered.push({ tool, accepted: false, reason: decision.rejection });
       continue;
     }
     considered.push({ tool, accepted: true });
     return {
       planned: {
         tool,
-        resource: spec.resource,
-        scope: spec.scope,
-        kind: spec.kind,
+        resource: decision.spec.resource,
+        scope: decision.spec.scope,
+        kind: decision.spec.kind,
       },
       considered,
       reason: "Tool permitted by grant.",
@@ -110,6 +100,93 @@ export function planTools(input: {
         ? "This Agent declares no tools."
         : "No declared tool is permitted for this Agent.",
   };
+}
+
+/**
+ * 一个工具能不能用：注册表 → 动作类型 → 授权，三步的顺序在 planTools 里就是顺序。
+ *
+ * 抽出来的原因只有一个：`selectableTools` 要回答"模型能选哪些"，
+ * 而"能不能选"必须和"会不会被放行"是同一个答案。两处各写一遍判断，
+ * 迟早会出现"模型看不到却被授权"或"模型看得到却调用被拒"。
+ */
+function gateTool(
+  tool: string,
+  specs: Record<string, ToolSpec>,
+  input: { grants: Grant[]; actionType: string },
+):
+  | { allowed: true; spec: ToolSpec }
+  | { allowed: false; rejection: ToolRejection } {
+  const spec = specs[tool];
+  if (!spec) return { allowed: false, rejection: "unknown_tool" };
+  // execute 类工具会改外部世界，内部动作里不允许出现，先于授权判断。
+  if (spec.kind === "execute" && input.actionType === "internal") {
+    return { allowed: false, rejection: "needs_action" };
+  }
+  // 授权问题只由 policy.hasGrant 回答：撤销、通配符、scope 等级都在它里面。
+  if (!hasGrant(input.grants, spec.resource, spec.scope)) {
+    return { allowed: false, rejection: "missing_grant" };
+  }
+  return { allowed: true, spec };
+}
+
+function resolveSpecs(
+  extraSpecs?: Record<string, ToolSpec>,
+): Record<string, ToolSpec> {
+  return extraSpecs ? { ...TOOL_SPECS, ...extraSpecs } : TOOL_SPECS;
+}
+
+/** 交给模型挑的工具：名字 + 它需要的授权 + 是否必须人工审批。 */
+export type SelectableTool = {
+  tool: string;
+  resource: string;
+  scope: "read" | "write";
+  kind: ToolSpec["kind"];
+  /**
+   * 写/执行类工具必须经人工审批，模型只能提出，不能自己拍板。
+   * 这一位是"要不要审批"的唯一出处，UI 和执行链都读它。
+   */
+  requiresApproval: boolean;
+};
+
+/**
+ * MCP 工具名以 `mcp:` 开头（见 tool-loop.ts）。
+ *
+ * 这里不 import 那个常量：domain 层不该反过来依赖 server 层，
+ * 而 MCP 的 resource 来自数据库里的服务端行，本轮不交给模型挑。
+ */
+const MCP_PREFIX = "mcp:";
+
+/**
+ * 模型可以自己挑的工具清单。
+ *
+ * 与 planTools 的区别是"全给还是挑一个"：planTools 返回第一个可用的（确定性路径），
+ * 这里返回全部可用的（交给模型选）。判定本身是同一次调用，所以两者永不分歧。
+ */
+export function selectableTools(input: {
+  declaredTools: string[];
+  grants: Grant[];
+  actionType: string;
+  extraSpecs?: Record<string, ToolSpec>;
+}): SelectableTool[] {
+  const specs = resolveSpecs(input.extraSpecs);
+  const selected: SelectableTool[] = [];
+
+  for (const tool of input.declaredTools) {
+    // MCP 工具下一轮再开放：它的 resource 需要先查服务端行，这里给不出授权依据。
+    if (tool.startsWith(MCP_PREFIX)) continue;
+    const decision = gateTool(tool, specs, input);
+    if (!decision.allowed) continue;
+    selected.push({
+      tool,
+      resource: decision.spec.resource,
+      scope: decision.spec.scope,
+      kind: decision.spec.kind,
+      // 只有读操作可以不经审批：写外部世界的事，模型只能提议。
+      requiresApproval: decision.spec.kind !== "read",
+    });
+  }
+
+  return selected;
 }
 
 /**

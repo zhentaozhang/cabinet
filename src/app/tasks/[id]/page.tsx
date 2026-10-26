@@ -30,6 +30,7 @@ import {
   statusTone,
 } from "@/lib/agents";
 import { dateTime, money, timeOnly } from "@/lib/format";
+import { goalStatusLabel } from "@/contracts/labels";
 import { isSimulatedSource, sourceLabel } from "@/lib/domain/provenance";
 import {
   STEP_META,
@@ -51,7 +52,6 @@ import {
   Card,
   CardHeader,
   EmptyState,
-  StatusBadge,
 } from "@/components/ui";
 import { parseClaimsTable } from "@/lib/domain/claims";
 import {
@@ -60,6 +60,7 @@ import {
   TaskActions,
 } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
+import { VerifiabilityPanel } from "./verifiability-panel";
 
 export const metadata: Metadata = {
   title: "Task · Cabinet",
@@ -846,7 +847,14 @@ export default async function TaskPage({
                     <span className="font-medium text-ink truncate">{goal.title}</span>
                   </div>
                   {goal.status ? (
-                    <StatusBadge status={goal.status} />
+                    /*
+                      目标状态用目标自己的词。StatusBadge 是 Agent 的语汇
+                      （active=在岗、paused=暂停），套在目标上会把"目标已暂停"
+                      读成"这个人被停职了"。
+                    */
+                    <Badge tone={goal.status === "active" ? "teal" : "neutral"}>
+                      {goalStatusLabel(goal.status)}
+                    </Badge>
                   ) : null}
                 </div>
               ) : null}
@@ -865,7 +873,7 @@ export default async function TaskPage({
                   <div className="hidden sm:grid sm:grid-cols-[1.25fr_85px_1fr] items-center gap-3 border-b border-line bg-panel2/80 px-3.5 py-2 text-eyebrow font-semibold uppercase tracking-[0.14em] text-faint">
                     <span>契约规则</span>
                     <span>分类</span>
-                    <span>判定结果（Auditor / 人工）</span>
+                    <span>判定结果（Auditor / 模型 / 人工）</span>
                   </div>
                   <div className="divide-y divide-line/70">
                     {orderedChecklist.map(({ item, index, result }) => (
@@ -928,12 +936,33 @@ export default async function TaskPage({
                               ) : null}
                             </div>
                           ) : (
+                            /*
+                              三种规则三种「还没人判」的措辞。judge 项以前落进
+                              "待规则核查"，但没有任何规则会去查它——它等的是模型。
+                              未配置模型时那一项会一直停在未判定（judge.ts 会写成
+                              undetermined），所以文案只说"待"，不承诺会有结论。
+                            */
                             <span
                               className={
-                                item.type === "manual" ? "text-accent" : "text-faint"
+                                item.type === "manual"
+                                  ? "text-accent"
+                                  : item.type === "judge"
+                                    ? "text-violet"
+                                    : "text-faint"
+                              }
+                              title={
+                                item.type === "manual"
+                                  ? "由你本人判定：系统没有可执行的规则，也不会替你下结论。"
+                                  : item.type === "judge"
+                                    ? "待模型判卷：把产物交给已配置的模型阅读并给出结论。没有配置模型时这一项会一直保持未判定，不会因为超时或失败被当作通过。"
+                                    : undefined
                               }
                             >
-                              {item.type === "manual" ? "需人工复核" : "待规则核查"}
+                              {item.type === "manual"
+                                ? "需人工复核"
+                                : item.type === "judge"
+                                  ? "待模型判卷"
+                                  : "待规则核查"}
                             </span>
                           )}
                         </div>
@@ -944,13 +973,39 @@ export default async function TaskPage({
               ) : null}
 
               <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 text-label text-faint border-t border-line/60 pt-3">
-                <span>规则项由 Auditor 自动化核对；「需人工复核」项由人类主理人确认。</span>
+                <span>
+                  规则项由 Auditor 自动化核对；「待模型判卷」项由模型判定（未配置模型时保持未判定）；
+                  「需人工复核」项由人类主理人确认。
+                </span>
                 <div className="flex items-center gap-3">
                   <span>预估 {task.estimateMin} 分钟</span>
                   <span>·</span>
                   <span>截止 {dateTime(task.dueAt, tz)}</span>
                 </div>
               </div>
+            </div>
+          </Card>
+
+          {/* 可核验性：把已经落库、但界面上一直够不到的导出能力铺出来 */}
+          <Card>
+            <CardHeader
+              eyebrow="Verifiability"
+              title="可核验性"
+              right={
+                runs.length > 0 ? (
+                  <Badge tone="neutral">{runs.length} 次运行</Badge>
+                ) : (
+                  <Badge tone="neutral">还没有 run</Badge>
+                )
+              }
+            />
+            <div className="px-5 py-4">
+              <VerifiabilityPanel
+                taskId={task.id}
+                timezone={tz}
+                hasRuns={runs.length > 0}
+                hasChecklist={checklistRows.length > 0}
+              />
             </div>
           </Card>
 

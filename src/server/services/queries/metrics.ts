@@ -14,7 +14,7 @@ import {
 import { addLocalDays, localDateKey, weekRange } from "@/lib/domain/time";
 import { LEARNING_TEMPLATES } from "@/lib/domain/learning";
 import { retrievalUnitPriceCents } from "@/lib/config/pricing";
-import { getPolicyConfig } from "@/lib/policy/config";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 
 /**
  * What one external retrieval costs, in cents.
@@ -44,7 +44,7 @@ async function weeklyWindow(userId: string) {
 export async function getWeeklyMetrics(userId: string) {
   const [{ timezone, range }, config] = await Promise.all([
     weeklyWindow(userId),
-    getPolicyConfig(),
+    getPolicyConfigFor(userId),
   ]);
   const now = new Date();
   const endOfToday = addLocalDays(now, 1, timezone);

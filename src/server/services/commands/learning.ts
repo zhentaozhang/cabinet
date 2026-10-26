@@ -1,16 +1,36 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, checkins, goals, tasks } from "@/lib/db/schema";
-import { getPolicyConfig } from "@/lib/policy/config";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import { ValidationError } from "@/lib/domain/errors";
 import {
   buildNextLearningTask,
   LEARNING_TEMPLATES,
+  type LearningTopic,
 } from "@/lib/domain/learning";
+import { DEFAULT_TOPIC_KEY, normalizeTopicKey } from "@/lib/domain/mastery";
+import { logEvent } from "@/lib/observability/log";
 import { createTask } from "./tasks/create";
+import { dueTopics } from "./learning/mastery";
 
+/**
+ * Queue the next study task for the active learning goal.
+ *
+ * Which topic to ask about, in order of authority:
+ *   1. a topic that spaced repetition says is due — the schedule exists to be
+ *      obeyed, and it knows about decay the check-in never sees;
+ *   2. the first weak point from the latest check-in — the only free-form
+ *      signal about what actually went wrong today;
+ *   3. `基础概念` — a fresh loop with no history still needs somewhere to start.
+ *
+ * An open learning task is reused rather than queued twice: the learner can
+ * only work on one at a time, and a second task would double-count the same
+ * check-in.
+ */
 export async function ensureNextLearningTask(userId: string) {
-  const config = await getPolicyConfig();
+  // 走用户级配置：反思采纳的 learning.nextTask.* 覆盖必须在这里生效，
+  // 否则"我采纳了缩短作业字数"之后下的任务仍是旧长度。
+  const config = await getPolicyConfigFor(userId);
   const [coach] = await db
     .select({ id: agents.id })
     .from(agents)
@@ -56,6 +76,10 @@ export async function ensureNextLearningTask(userId: string) {
     .limit(1);
   if (existing) return existing;
 
+  const due = await dueTopics(userId, { limit: 1 });
+  const dueTopic: LearningTopic | null =
+    due.length > 0 ? { key: due[0].topicKey, label: due[0].label } : null;
+
   const [latestCheckin] = await db
     .select()
     .from(checkins)
@@ -79,21 +103,33 @@ export async function ensureNextLearningTask(userId: string) {
   const daysSinceAccepted = lastAccepted?.acceptedAt
     ? (Date.now() - lastAccepted.acceptedAt.getTime()) / 86_400_000
     : null;
+  // A due review and a retest of a failed answer are different errands, and a
+  // task can only tell one story. The scheduled review wins; the retest
+  // condition picks up again on the next task that has no due topic.
   const retest =
+    !dueTopic &&
     Boolean(latestCheckin?.errorTags.length) &&
     daysSinceAccepted !== null &&
     daysSinceAccepted >= config.learning.nextTask.retestAfterDays;
+
+  const errorTags = latestCheckin?.errorTags ?? [];
+  const topicKey = dueTopic
+    ? dueTopic.key
+    : normalizeTopicKey(errorTags[0] ?? DEFAULT_TOPIC_KEY);
 
   const draft = buildNextLearningTask({
     goalTitle: goal.title,
     goalTarget: goal.target,
     latestRecallScore: latestCheckin?.recallScore ?? null,
-    errorTags: latestCheckin?.errorTags ?? [],
+    errorTags,
     retest,
     config: config.learning,
+    // Only a scheduled review gets the topic framing; the check-in fallbacks
+    // keep their existing titles and checklists.
+    topic: dueTopic ?? undefined,
   });
 
-  return createTask(
+  const created = await createTask(
     {
       goalId: goal.id,
       title: draft.title,
@@ -111,4 +147,27 @@ export async function ensureNextLearningTask(userId: string) {
     },
     userId,
   );
+
+  // `topicKey` is the learning domain's own scheduling column, so it is written
+  // here instead of widening createTask's shared signature with a field no
+  // other domain needs. It is not a state change: `updatedAt` stays untouched,
+  // and a failure to write it only costs the scheduler one lookup later.
+  let withTopic: typeof created | undefined;
+  try {
+    [withTopic] = await db
+      .update(tasks)
+      .set({ topicKey })
+      .where(and(eq(tasks.id, created.id), eq(tasks.userId, userId)))
+      .returning();
+  } catch (error) {
+    // 任务已经建好了：把这里失败抛出去会让打卡接口报错，而用户其实已经拿到
+    // 今天的任务。排期列缺失只影响"下次复习怎么看这道题"，日志足够定位。
+    logEvent("warn", "learning.topic_key_failed", {
+      taskId: created.id,
+      topicKey,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return withTopic ?? created;
 }

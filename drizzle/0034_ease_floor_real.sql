@@ -1,0 +1,2 @@
+ALTER TABLE "learning_mastery" DROP CONSTRAINT "learning_mastery_ease_floor";--> statement-breakpoint
+ALTER TABLE "learning_mastery" ADD CONSTRAINT "learning_mastery_ease_floor" CHECK ("learning_mastery"."ease_factor" >= 1.3::real);

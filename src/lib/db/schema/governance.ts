@@ -4,6 +4,7 @@ import { users } from "./core";
 import { agents } from "./agents";
 import { tasks } from "./tasks";
 import { runs } from "./runs";
+import { insights } from "./memory";
 
 export const auditEvents = pgTable(
   "audit_events",
@@ -191,6 +192,51 @@ export const retrievalCalls = pgTable(
       .defaultNow(),
   },
   (t) => [index("retrieval_calls_user_created_idx").on(t.userId, t.createdAt)],
+);
+
+/**
+ * Per-user overrides applied on top of the global `policy_config` row set.
+ *
+ * The global table stays the default an operator edits by hand. An accepted
+ * reflection insight writes here instead, so "采纳这条建议" can change what the
+ * runtime actually does (thresholds, retry gaps, weights) without giving the
+ * insight writer permission to rewrite shared defaults for everyone.
+ *
+ * `key` is a dotted path into the policy schema (`reflection.eveningHour`).
+ * Only whitelisted paths are accepted — see `lib/policy/overrides.ts`.
+ */
+export const policyOverrides = pgTable(
+  "policy_overrides",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    key: text("key").notNull(),
+    valueJson: jsonb("value_json").$type<unknown>().notNull(),
+    /** The insight that proposed it; null for a hand-written override. */
+    insightId: text("insight_id").references(() => insights.id),
+    status: text("status").notNull().default("active"),
+    appliedAt: timestamp("applied_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    rolledBackAt: timestamp("rolled_back_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // At most one live override per (user, key): a second accept supersedes
+    // rather than stacks, so rollback never has to guess which one was live.
+    uniqueIndex("policy_overrides_user_key_active_idx")
+      .on(t.userId, t.key)
+      .where(sql`${t.status} = 'active'`),
+    index("policy_overrides_user_status_idx").on(t.userId, t.status),
+    check(
+      "policy_overrides_status_check",
+      sql`${t.status} IN ('active', 'rolled_back')`,
+    ),
+  ],
 );
 
 export type RetrievalCallRow = typeof retrievalCalls.$inferSelect;

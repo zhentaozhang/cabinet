@@ -162,6 +162,13 @@ export const acceptanceItemSchema = z.discriminatedUnion("type", [
     note: z.string(),
     required: z.boolean(),
   }),
+  // Decided by a model reading the answer, not by a rule. Offline it stays
+  // undetermined, which is why the DTO carries no "passed" flag of its own.
+  z.object({
+    type: z.literal("judge"),
+    value: z.string(),
+    required: z.boolean(),
+  }),
 ]);
 export type AcceptanceItemDto = z.infer<typeof acceptanceItemSchema>;
 

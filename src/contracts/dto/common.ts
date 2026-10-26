@@ -30,6 +30,11 @@ export const insightChangeSchema = z
     to: z.string().optional(),
     minutes: z.number().optional(),
     rule: z.string().optional(),
+    // set_policy 携带的三个字段：不显式声明就会落进 catchall 变成 unknown，
+    // 界面渲染"调整策略：key → value"时拿不到类型。
+    key: z.string().optional(),
+    value: z.union([z.number(), z.boolean(), z.string()]).optional(),
+    reason: z.string().optional(),
   })
   .catchall(z.unknown());
 export type InsightChangeDto = z.infer<typeof insightChangeSchema>;

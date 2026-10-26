@@ -7,7 +7,7 @@ import { configuredSearchProviders } from "@/lib/connectors/registry";
 import { newId } from "@/lib/ids";
 import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
-import { getPolicyConfig } from "@/lib/policy/config";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import { recalculateGoalProgress } from "../progress";
 
 export async function promoteSuggestion(taskId: string, userId: string) {
@@ -133,7 +133,7 @@ export async function createTask(
   }
 
   const id = newId("tsk");
-  const policy = input.goalId ? await getPolicyConfig() : null;
+  const policy = input.goalId ? await getPolicyConfigFor(userId) : null;
   // A task handed to a web-capable Agent is a research task: without an
   // evidence requirement the Auditor could accept prose with no sources.
   const checklist =

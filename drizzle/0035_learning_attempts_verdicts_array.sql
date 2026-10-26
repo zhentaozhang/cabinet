@@ -1,0 +1,1 @@
+ALTER TABLE "learning_attempts" ADD CONSTRAINT "learning_attempts_verdicts_is_array" CHECK ("learning_attempts"."verdicts" IS NULL OR jsonb_typeof("learning_attempts"."verdicts") = 'array');

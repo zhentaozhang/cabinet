@@ -7,7 +7,7 @@ import { assertTransition } from "@/lib/domain/state";
 import { localDateKey } from "@/lib/domain/time";
 import { ValidationError } from "@/lib/domain/errors";
 import { getWorkspace } from "../queries/workspace";
-import { getPolicyConfig } from "@/lib/policy/config";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import { ensureNextLearningTask } from "./learning";
 import { recalculateUserGoalProgress } from "./progress";
 
@@ -24,7 +24,8 @@ export async function saveCheckin(
   userId: string,
 ) {
   const { user } = await getWorkspace(userId);
-  const config = await getPolicyConfig();
+  // 用户级配置：打卡会重算目标进度，而进度权重/周打卡目标可能被洞察覆盖过。
+  const config = await getPolicyConfigFor(userId);
   const today = localDateKey(new Date(), user.timezone);
 
   const taskIds = [...new Set(input.completed.map((item) => item.taskId))];

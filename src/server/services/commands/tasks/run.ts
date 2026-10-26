@@ -25,7 +25,12 @@ import { fetchAndPersist } from "@/server/services/connectors/page";
 import { extractFirstUrl } from "@/lib/connectors/page";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
-import { planTools, REJECTION_STATUS, type ToolStepStatus } from "@/lib/domain/tool-plan";
+import {
+  planTools,
+  REJECTION_STATUS,
+  selectableTools,
+  type ToolStepStatus,
+} from "@/lib/domain/tool-plan";
 import { mergeTools, readRules } from "@/lib/domain/execution-context";
 import { decideRun } from "@/lib/domain/policy";
 import { usageCents } from "@/lib/domain/agent-budget";
@@ -38,7 +43,14 @@ import {
   ValidationError,
 } from "@/lib/domain/errors";
 import { draftFor } from "../../shared/draft";
-import { declaredMcpTools, MCP_TOOL_PREFIX, runMcpToolLoop } from "./tool-loop";
+import type { PersistedEvidence } from "@/server/services/connectors/search";
+
+import {
+  declaredMcpTools,
+  MCP_TOOL_PREFIX,
+  runMcpToolLoop,
+  runModelToolLoop,
+} from "./tool-loop";
 import {
   loadLatestApproval,
   loadWeeklyUsage,
@@ -485,16 +497,34 @@ async function executeRun(taskId: string, userId: string) {
     // is about to run successfully (5f332e7f 阻断 1).
     const builtinTools = declaredTools.filter((tool) => !tool.startsWith(MCP_TOOL_PREFIX));
     const mcpTools = declaredMcpTools(declaredTools);
+    // 授权只认 resource+scope；确定性与模型可选两条路径共用同一份投影。
+    const toolGrants = grants.map((grant) => ({
+      resource: grant.resource,
+      scope: grant.scope,
+    }));
     const toolPlan = planTools({
       // A passed skill may bring its own tool; the grant check below still
       // decides whether it may actually run.
       tools: builtinTools,
-      grants: grants.map((grant) => ({
-        resource: grant.resource,
-        scope: grant.scope,
-      })),
+      grants: toolGrants,
       actionType: task.actionType,
     });
+    /**
+     * 模型可选工具，默认关闭（MODEL_TOOL_SELECTION 未设置即关闭）。
+     *
+     * 开启时工具由模型在 runModelToolLoop 里自己挑，确定性单工具执行同时让位：
+     * 两者都跑会给一次运行记两次外部请求与两次预算。关闭时 selectable 为空，
+     * 下面每个分支都与改动前逐字一致。
+     */
+    const selectable =
+      process.env.MODEL_TOOL_SELECTION === "on"
+        ? selectableTools({
+            declaredTools: builtinTools,
+            grants: toolGrants,
+            actionType: task.actionType,
+          })
+        : [];
+    const modelSelectsTools = selectable.length > 0;
     const toolStartedAt = performance.now();
     let toolStatus: ToolStepStatus;
     let toolReason: string;
@@ -503,7 +533,13 @@ async function executeRun(taskId: string, userId: string) {
     /** The exact string sent to the provider, so the trace can be replayed. */
     let toolQuery: string | null = null;
 
-    if (!toolPlan.planned) {
+    if (modelSelectsTools) {
+      // 工具选择交给模型，这里只占住"确定性执行未使用"这个事实。
+      // 不写 step：真正的每次调用由 runModelToolLoop 逐条记录。
+      toolStatus = "skipped";
+      toolReason =
+        "MODEL_TOOL_SELECTION=on：本运行的工具由模型选择，确定性单工具执行未使用。";
+    } else if (!toolPlan.planned) {
       const rejection = toolPlan.considered[0]?.reason;
       // Same vocabulary as the MCP loop: an unknown tool is "not connected",
       // never "unauthorized", because no permission decision was made.
@@ -600,7 +636,7 @@ async function executeRun(taskId: string, userId: string) {
     // An MCP-only Agent gets no built-in step at all: the planner saw no
     // built-in tool, and writing "unauthorized" here would contradict the loop
     // that calls the same tool right after this comment.
-    if (builtinTools.length > 0 || mcpTools.length === 0) {
+    if (!modelSelectsTools && (builtinTools.length > 0 || mcpTools.length === 0)) {
       await addStep({
         type: "tool",
         tool: toolPlan.planned?.tool,
@@ -647,6 +683,38 @@ async function executeRun(taskId: string, userId: string) {
       step: addStep,
     });
 
+    // 模型自选工具：只在开关打开且确有可选工具时进入。
+    // 每次调用仍走 grant → 周检索预算 → 连接器 → retrieval_calls 台账，
+    // 失败按真实状态记录，不会写成成功。
+    let modelToolEvidence: PersistedEvidence[] = [];
+    // 模型自选工具那次也要计入 runs 的 token 与费用：它是一次真实计费调用。
+    // usage 为 null 说明 provider 没报用量（或根本没调成功），不能当成 0。
+    let modelToolUsage: { inputTokens: number; outputTokens: number } | null = null;
+    // model 非 null 等价于"模型这次真的被调成功了"，是补 attempt 的依据。
+    let modelToolModel: string | null = null;
+    if (modelSelectsTools) {
+      const selection = await runModelToolLoop({
+        userId: task.userId,
+        agentId: agent.id,
+        taskId,
+        runId,
+        timezone,
+        task: {
+          title: task.title,
+          description: task.description,
+          acceptanceCriteria: task.acceptanceCriteria,
+          actionType: task.actionType,
+        },
+        allowed: selectable,
+        grants: toolGrants,
+        step: addStep,
+      });
+      // 模型自己取的证据同样可以进产物，否则它搜了也等于白搜。
+      modelToolEvidence = selection.evidence;
+      modelToolUsage = selection.usage;
+      modelToolModel = selection.model;
+    }
+
     const [priorRejection] = await db
       .select({ id: auditEvents.id })
       .from(auditEvents)
@@ -671,7 +739,11 @@ async function executeRun(taskId: string, userId: string) {
         steps: skill.steps,
       })),
       rules,
-      evidence: [...(search?.evidence ?? []), ...(page?.evidence ?? [])].map(
+      evidence: [
+        ...(search?.evidence ?? []),
+        ...(page?.evidence ?? []),
+        ...modelToolEvidence,
+      ].map(
         (item) => ({
           id: item.id,
           title: item.title,
@@ -691,6 +763,19 @@ async function executeRun(taskId: string, userId: string) {
         provider: modelResult.provider,
         model: modelResult.model,
         costSource: modelResult.costSource,
+      };
+    }
+    // 模型自选工具那次也是一次真实的 provider 请求。如果 generateArtifact 没有
+    // 产生 attempt（未配置 / 直接失败），就必须用工具那次的信息补上：
+    // 否则 runs 行会声称"没联系过 provider"，而账上已经为那次调用花了钱。
+    if (!attempt && modelToolModel !== null) {
+      providerContact = "real";
+      attempt = {
+        attemptId: newId("att"),
+        provider: "openai",
+        model: modelToolModel,
+        // provider 报了 token 才是 actual；没报就只能承认 unknown。
+        costSource: modelToolUsage !== null ? "actual" : "unknown",
       };
     }
 
@@ -741,13 +826,25 @@ async function executeRun(taskId: string, userId: string) {
 
     // Only provider-reported tokens count as measured model usage. Trace steps
     // keep illustrative counters; they never become run usage or run cost.
-    const measured =
+    const artifactMeasured =
       modelResult.status === "success" && modelResult.costSource === "actual"
         ? {
             tokensIn: modelResult.draft.tokensIn,
             tokensOut: modelResult.draft.tokensOut,
           }
         : null;
+    // 两次真实计费调用（生成产物 + 模型自选工具）要合并成同一条 run 账：
+    // 只记前者会让 runs 行少算一次 token，却仍然写着 costSource "actual"。
+    // 两边都没有可信用量时才是 null——不能拿 0 冒充"没花钱"。
+    const measured =
+      artifactMeasured === null && modelToolUsage === null
+        ? null
+        : {
+            tokensIn:
+              (artifactMeasured?.tokensIn ?? 0) + (modelToolUsage?.inputTokens ?? 0),
+            tokensOut:
+              (artifactMeasured?.tokensOut ?? 0) + (modelToolUsage?.outputTokens ?? 0),
+          };
     const cost = measured
       ? Number(
           (
@@ -799,9 +896,9 @@ async function executeRun(taskId: string, userId: string) {
         await settleBudget(tx, {
           runId,
           settlement:
-            providerContact === "real" &&
-            modelResult.status === "success" &&
-            modelResult.costSource === "actual"
+            // measured 非 null 就说明至少有一次调用拿到了 provider 报的用量；
+            // 工具那次单独拿到也算（默认关时与旧条件完全等价）。
+            measured !== null
               ? { state: "known_usage", estimatedCents: cost }
               : providerContact === "none"
                 ? { state: "not_contacted" }

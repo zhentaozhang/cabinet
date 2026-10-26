@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   checklistPassed,
   evaluateAcceptance,
+  undeterminedCount,
 } from "@/lib/domain/acceptance";
 
 describe("acceptance checklist", () => {
@@ -156,5 +157,31 @@ describe("claims table rule", () => {
     expect(result.passed).toBe(false);
     expect(result.undetermined).toBeFalsy();
     expect(result.reason).toContain("引用了不存在的证据");
+  });
+});
+
+describe("judge items", () => {
+  it("never claims a verdict without a model, and stays pending rather than failed", () => {
+    const [judge] = evaluateAcceptance("这段答案讲了闭包。", [
+      { type: "judge", value: "解释闭包为什么能捕获变量", required: true },
+    ]);
+
+    expect(judge.passed).toBe(false);
+    expect(judge.undetermined).toBe(true);
+    expect(judge.reason).toBe("需要模型判定：解释闭包为什么能捕获变量");
+    // 待判不是失败：没有模型的环境不该因为"判不了"就把任务驳回。
+    expect(checklistPassed([judge])).toBe(true);
+    expect(undeterminedCount([judge])).toBe(1);
+  });
+
+  it("does not hide a deterministic failure behind a pending judge item", () => {
+    const results = evaluateAcceptance("短", [
+      { type: "judge", value: "解释闭包", required: true },
+      { type: "min_words", value: 50, required: true },
+    ]);
+
+    expect(results[0].undetermined).toBe(true);
+    expect(results[1].undetermined).toBeFalsy();
+    expect(checklistPassed(results)).toBe(false);
   });
 });

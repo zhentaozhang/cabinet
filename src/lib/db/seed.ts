@@ -115,7 +115,8 @@ async function wipeDemoTables(): Promise<void> {
       agent_budget_reservations, agent_budget_periods,
       apprentice_exam_snapshots, apprentice_observations,
       dissents, council_positions, councils, skills, checkins, audit_events, approvals,
-      reviews, insights, memories, artifacts, steps, runs, tasks, goals,
+      reviews, insights, policy_overrides, memories, artifacts, steps, runs, tasks, goals,
+      learning_attempts, learning_mastery, learning_topics,
       agent_grants, agent_templates, agents, profiles, policy_config,
       idempotency_keys, rate_limits, user_actions, sessions, accounts,
       verifications, users
