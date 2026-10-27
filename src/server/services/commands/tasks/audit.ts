@@ -32,12 +32,111 @@ import { recalculateGoalProgress } from "../progress";
 import { recordOutcome } from "../learning/mastery";
 import { recordTaskLesson } from "../memory/task-lesson";
 import { logEvent } from "@/lib/observability/log";
+import type { Tx } from "@/server/services/shared/tx";
 import { judgeSubmission, type JudgeFn } from "./judge";
 
 export type AuditOptions = {
   /** 测试注入的判卷函数；生产路径下走 llm.judgeAnswer。 */
   judge?: JudgeFn;
 };
+
+type TaskRow = typeof tasks.$inferSelect;
+
+/** 判卷是否发生、为什么没发生；写进审计行，事后能看出"判过了没通过"与"没判"的区别。 */
+type JudgeTrace = {
+  judgedBy: "model" | null;
+  reason: string;
+  model: string | null;
+  score: number | null;
+};
+
+type PreJudgement = {
+  artifactId: string;
+  content: string;
+  results: AcceptanceResult[];
+  trace: JudgeTrace | null;
+};
+
+/** 产物对应的证据 id；手交产物没有 run，也就没有检索发生过。 */
+async function evidenceIdsFor(client: Tx | typeof db, runId: string | null) {
+  if (!runId) return [];
+  const rows = await client
+    .select({ id: evidence.id })
+    .from(evidence)
+    .where(eq(evidence.runId, runId));
+  return rows.map((row) => row.id);
+}
+
+function acceptanceContext(ids: string[], runId: string | null) {
+  return {
+    evidenceCount: ids.length,
+    evidenceIds: new Set(ids),
+    evidenceApplicable: Boolean(runId),
+  };
+}
+
+/** 题面取标题 + 描述：判卷要判的是"回答了这道题"，不是"写了这段话"。 */
+function judgeQuestion(task: TaskRow) {
+  return task.description.trim()
+    ? `${task.title}\n\n${task.description}`
+    : task.title;
+}
+
+/**
+ * 事务外先把判卷跑完。
+ *
+ * 判卷要调模型，超时上限 20 秒；放进审计事务里就等于把任务行锁 20 秒——
+ * 这期间用户提交、取消、改派全都在排队等一个远程调用，而任务状态还停在
+ * submitted，看起来像服务卡死。这里只读产物、算确定性判定、调一次模型，
+ * 除了判卷自己的 learning_attempts（先落下来才说得清模型到底判了什么）
+ * 不写任何业务行；事务里只比对"判的是不是当前这份产物"。
+ */
+async function prepareJudgement(input: {
+  task: TaskRow;
+  userId: string;
+  options: AuditOptions;
+}): Promise<PreJudgement | null> {
+  const { task, userId, options } = input;
+  if (!task.acceptanceChecklist?.length) return null;
+  const [artifact] = await db
+    .select()
+    .from(artifacts)
+    .where(eq(artifacts.taskId, task.id))
+    .orderBy(desc(artifacts.createdAt))
+    .limit(1);
+  if (!artifact) return null;
+
+  const ids = await evidenceIdsFor(db, artifact.runId);
+  const judged = await judgeSubmission({
+    userId,
+    taskId: task.id,
+    artifactId: artifact.id,
+    question: judgeQuestion(task),
+    answer: artifact.content,
+    checklist: task.acceptanceChecklist,
+    results: evaluateAcceptance(
+      artifact.content,
+      task.acceptanceChecklist,
+      acceptanceContext(ids, artifact.runId),
+    ),
+    judge: options.judge,
+  });
+
+  return {
+    artifactId: artifact.id,
+    content: artifact.content,
+    results: judged.results,
+    trace:
+      judged.reason === "no_judge_items"
+        ? null
+        : {
+            judgedBy: judged.judged ? "model" : null,
+            reason: judged.reason,
+            model: judged.judgeModel ?? null,
+            score: judged.score ?? null,
+          },
+  };
+}
 
 export async function auditTask(
   taskId: string,
@@ -111,6 +210,9 @@ async function auditTaskInner(
     .from(runs)
     .where(eq(runs.taskId, taskId))
     .orderBy(desc(runs.createdAt));
+  // 判卷在这里跑完，事务里只做比对（见 prepareJudgement 的注释）。
+  const preJudge = await prepareJudgement({ task, userId, options });
+
   const result = await db.transaction(async (tx) => {
     const [locked] = await tx
       .update(tasks)
@@ -183,58 +285,40 @@ async function auditTaskInner(
     let acceptanceReport: AcceptanceResult[] | null = null;
     // 判卷是否发生、为什么没发生，都要能从事后记录里读出来：
     // "判过了没通过"和"根本没判"在页面上长得一样，但在责任上完全不同。
-    let judgeTrace: {
-      judgedBy: "model" | null;
-      reason: string;
-      model: string | null;
-      score: number | null;
-    } | null = null;
+    let judgeTrace: JudgeTrace | null = null;
 
     if (artifact && task.acceptanceChecklist?.length) {
       // Evidence is read from the run that produced the artifact, so a draft
       // cannot borrow citations from another run or invent them.
-      const evidenceRows = artifact.runId
-        ? await tx
-            .select({ id: evidence.id })
-            .from(evidence)
-            .where(eq(evidence.runId, artifact.runId))
-        : [];
+      const ids = await evidenceIdsFor(tx, artifact.runId);
       acceptanceReport = evaluateAcceptance(
         artifact.content,
         task.acceptanceChecklist,
-        {
-          evidenceCount: evidenceRows.length,
-          evidenceIds: new Set(evidenceRows.map((row) => row.id)),
-          // A hand-submitted artifact has no run, so no retrieval happened.
-          evidenceApplicable: Boolean(artifact.runId),
-        },
+        acceptanceContext(ids, artifact.runId),
       );
-      // 判卷必须在算 pass 之前：judge 项在确定性判定里一律是 undetermined，
-      // 先算结论再回填会让报告写着"逐项通过"却挂着一条待判条目。
-      const judged = await judgeSubmission({
-        userId,
-        taskId,
-        artifactId: artifact.id,
-        // 题面取标题 + 描述：判卷要判的是"回答了这道题"，不是"写了这段话"。
-        question: task.description.trim()
-          ? `${task.title}\n\n${task.description}`
-          : task.title,
-        answer: artifact.content,
-        checklist: task.acceptanceChecklist,
-        results: acceptanceReport,
-        tx,
-        judge: options.judge,
-      });
-      acceptanceReport = judged.results;
-      if (judged.reason !== "no_judge_items") {
+      // 判卷结论已经在事务外拿到。这里只认"判的就是现在这份产物"：读产物与
+      // 拿到行锁之间有窗口（提交只允许从 planned/assigned/submitted/rejected
+      // 发起），若恰好有人补交了一份，事务外那份判卷说的就是另一段内容，
+      // 拿来给现在的产物下结论等于让报告描述一份没被判过的答案。
+      const reusable =
+        preJudge !== null &&
+        preJudge.artifactId === artifact.id &&
+        preJudge.content === artifact.content;
+      if (reusable) {
+        acceptanceReport = preJudge.results;
+        judgeTrace = preJudge.trace;
+      } else if (preJudge?.trace) {
+        // 判过，但判的不是这份：结论一律不给，落回到"需要人判定"那一档，
+        // 并如实记下为什么这份报告里没有判卷结论。
         judgeTrace = {
-          judgedBy: judged.judged ? "model" : null,
-          reason: judged.reason,
-          model: judged.judgeModel ?? null,
-          score: judged.score ?? null,
+          judgedBy: null,
+          reason: "artifact_changed",
+          model: preJudge.trace.model,
+          score: null,
         };
       }
-
+      // 判卷必须在算 pass 之前：judge 项在确定性判定里一律是 undetermined，
+      // 先算结论再回填会让报告写着"逐项通过"却挂着一条待判条目。
       verdict = auditVerdict(acceptanceReport);
       // 必须判定却没人判定的条目：needs_review 的理由就是它。
       const pendingRequiredItems = acceptanceReport.filter(

@@ -336,6 +336,9 @@ export const NOTIFY_KIND_LABEL: Record<string, string> = {
   budget: "预算拦截",
   conflict: "记忆冲突",
   council: "内阁会议",
+  // 待判定是"没有结论"，与驳回（有结论且不通过）是两件事：共用"验收未通过"
+  // 会让收件箱把"请你判断"读成"已经被驳回"。
+  review: "待你判定",
 };
 
 export function notifyKindLabel(kind: string): string {

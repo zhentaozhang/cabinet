@@ -5,6 +5,7 @@ import {
   ACTION_TYPE_LABELS,
   CAPABILITY_LABELS,
   MEMORY_TYPE_LABELS,
+  NOTIFY_KIND_LABEL,
   RESOURCE_LABELS,
   RISK_LABELS,
   STATUS_LABELS,
@@ -13,12 +14,28 @@ import {
   capabilityLabel,
   capabilityTone,
   memoryTypeLabel,
+  notifyKindLabel,
   resourceLabel,
   riskLabel,
   statusLabel,
   statusNextAction,
   statusTone,
 } from "@/contracts/labels";
+
+import type { NotifyKind } from "@/server/services/commands/notify";
+
+/**
+ * 收件箱的 kind 是后端枚举，用户不该看到 "review" 这种原样字符串。
+ * 这里的 Record<NotifyKind, true> 是编译期穷举：往 NotifyKind 里加一个 kind
+ * 而忘了给中文标签，类型检查就红，而不是等到某天页面上冒出一个英文单词。
+ */
+const NOTIFY_KINDS: Record<NotifyKind, true> = {
+  rejection: true,
+  approval: true,
+  budget: true,
+  conflict: true,
+  review: true,
+};
 
 /**
  * The rule these tests defend: no screen may print a raw DTO enum at a person.
@@ -284,5 +301,14 @@ describe("task metadata reads as words", () => {
     for (const risk of Object.keys(RISK_LABELS)) {
       expect(riskLabel(risk), risk).not.toBe(risk);
     }
+  });
+
+  it("each notification kind has a word of its own", () => {
+    for (const kind of Object.keys(NOTIFY_KINDS)) {
+      expect(NOTIFY_KIND_LABEL[kind], kind).toBeTruthy();
+      expect(notifyKindLabel(kind), kind).not.toBe(kind);
+    }
+    // 待判定与驳回必须是两个词：一个请你判断，一个已经有结论了。
+    expect(notifyKindLabel("review")).not.toBe(notifyKindLabel("rejection"));
   });
 });

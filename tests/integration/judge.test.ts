@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import {
@@ -429,5 +429,85 @@ describe("audit + judge", () => {
     const after = await latestAuditEvent(taskId, "audit.needs_review");
     expect(after?.verdict).toBe("needs_review");
     expect(after?.judge?.reason).toBe("provider_error");
+  });
+
+  it("判卷在事务外跑，模型调用期间不占任务行锁", async () => {
+    const { taskId } = await setupJudgeTask();
+
+    // 判卷曾经在审计事务里调模型，整段时间任务行都被锁着：这期间用户提交、
+    // 取消、改派都在排队等一个远程调用。这里用 NOWAIT 直接证明"调用模型时
+    // 那一行是自由的"——如果判卷又搬回事务里，这条会以 55P03 变红。
+    let lockFreeDuringJudge = false;
+    let statusDuringJudge: string | null = null;
+    const judge: JudgeFn = async () => {
+      await db.execute(
+        sql`select id from tasks where id = ${taskId} for update nowait`,
+      );
+      lockFreeDuringJudge = true;
+      const [row] = await db
+        .select({ status: tasks.status })
+        .from(tasks)
+        .where(eq(tasks.id, taskId));
+      statusDuringJudge = row.status;
+      return {
+        status: "success",
+        text: verdictReply(true, "答案解释了词法环境"),
+        model: "fake-judge",
+        tokensIn: 10,
+        tokensOut: 5,
+      };
+    };
+
+    const result = await auditTask(taskId, DEMO_USER_ID, { judge });
+
+    expect(lockFreeDuringJudge).toBe(true);
+    // 判卷时任务还没被改成 auditing：状态锁是事务里才拿的。
+    expect(statusDuringJudge).toBe("submitted");
+    expect(result.decision).toBe("accepted");
+  });
+
+  it("判卷期间产物被换掉时不复用结论，落回待你判定", async () => {
+    const { taskId, artifactId } = await setupJudgeTask();
+
+    // 读产物与拿行锁之间有窗口。这里在判卷时补交一份新产物，模拟那个窗口：
+    // 事务外那份判卷说的是旧内容，不能拿来给新产物下结论。
+    const judge: JudgeFn = async () => {
+      await db.insert(artifacts).values({
+        id: "art_swapped_midjudge",
+        taskId,
+        type: "draft",
+        title: "换掉的产物",
+        content: "这是判卷开始之后才提交的另一份答案，内容完全不同。",
+        submittedBy: "user",
+        sourceType: "user_submitted",
+      });
+      return {
+        status: "success",
+        text: verdictReply(true, "旧答案解释了词法环境"),
+        model: "fake-judge",
+        tokensIn: 10,
+        tokensOut: 5,
+      };
+    };
+
+    const result = await auditTask(taskId, DEMO_USER_ID, { judge });
+
+    // 新产物有内容、清单里只有 judge 项，但那一项没有被判过（判的是旧产物）。
+    expect(result.decision).toBe("needs_review");
+    const [row] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+    expect(row.status).toBe("needs_review");
+    expect(row.acceptanceReport?.[0].undetermined).toBe(true);
+
+    const after = await latestAuditEvent(taskId, "audit.needs_review");
+    // 判过，但判的不是这份：judgedBy 必须为空，理由写明为什么没结论。
+    expect(after?.judge?.judgedBy).toBeNull();
+    expect(after?.judge?.reason).toBe("artifact_changed");
+    // 判卷行记的是被真正判过的那份答案，且没有因此被标成"已接受"。
+    const [attempt] = await db
+      .select()
+      .from(learningAttempts)
+      .where(eq(learningAttempts.taskId, taskId));
+    expect(attempt.artifactId).toBe(artifactId);
+    expect(attempt.accepted).toBe(false);
   });
 });
