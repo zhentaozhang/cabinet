@@ -53,7 +53,8 @@ function replay(stored: StoredKey, requestHash: string): Response {
  * - No header: execute normally (backwards compatible).
  * - Same key + same request hash: return the first response.
  * - Same key + different hash: 409 conflict.
- * - Concurrent same key: one wins, the other gets 409 in-progress.
+ * - Concurrent same key: one wins; the other gets 409 in-progress, or the
+ *   winner's response if it finished before the loser read the row.
  */
 export async function withIdempotency(input: {
   request: Request;

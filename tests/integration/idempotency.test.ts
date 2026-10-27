@@ -98,7 +98,7 @@ describe("withIdempotency", () => {
     expect(calls).toBe(2);
   });
 
-  it("does not execute the handler twice under concurrent replay", async () => {
+  it("executes the handler at most once when the same key arrives concurrently", async () => {
     let calls = 0;
     const handler = async () => {
       calls += 1;
@@ -123,9 +123,30 @@ describe("withIdempotency", () => {
       }),
     ]);
 
+    // 真正要守的只有一条：handler 只跑一次。后到者拿到什么取决于它读行的
+    // 时机——键还在 processing 就 409「稍后重试」，赢家已经写完就重放同一份响应。
+    // 两种都对，断言"必须恰好一个 rejected"其实是把测试押在时序上。
     expect(calls).toBe(1);
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+
+    const fulfilled = results.flatMap((r) =>
+      r.status === "fulfilled" ? [r.value] : [],
+    );
+    const rejected = results.flatMap((r) =>
+      r.status === "rejected" ? [r.reason] : [],
+    );
+
+    // 没有 Idempotency-Replayed 头的那个才是真执行，恰好一个。
+    const executed = fulfilled.filter(
+      (response) => response.headers.get("Idempotency-Replayed") !== "true",
+    );
+    expect(executed).toHaveLength(1);
+    expect(executed[0].status).toBe(200);
+    for (const response of fulfilled) expect(response.status).toBe(200);
+    for (const reason of rejected) {
+      expect(reason).toBeInstanceOf(ConflictError);
+      expect((reason as Error).message).toMatch(/still in progress/);
+    }
+    expect(fulfilled.length + rejected.length).toBe(2);
   });
 
   it("re-executes once the stored record has expired", async () => {
