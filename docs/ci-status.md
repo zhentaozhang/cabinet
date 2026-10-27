@@ -154,3 +154,12 @@ $ gh api 'repos/zhentaozhang/cabinet/actions/runs?per_page=10' --jq '.total_coun
 - 15:24Z 手动 `gh workflow run ci.yml --ref main` → run `40530678279`（headSha `36ff2a02`，event `workflow_dispatch`）→ **completed / success**：`install` → `doc:facts:check` → `migrate` → `typecheck` → `lint` → `test` → `build` 全部 success。
 - 这是 main 第一次在云端全绿：上一次的 8 条 outbox 失败是时钟依赖（见上节根因），本次跑在同一时间窗却通过，说明修复真的消除了时间依赖，而不是碰巧。
 - `doc:facts:check` 在云端通过也说明 `.github/workflows/ci.yml` 新加的那一步可用（`pnpm doc:facts:check` 依赖 devDependencies 里的 tsx，`pnpm install --frozen-lockfile` 之后即可运行）。
+
+## 2026-10-28 第三次 push 实验（36ff2a0 → ff4c8e9）
+
+- 推的是 3 个本地提交：`7678b8b`（记录第二次 push 实验与 outbox 根因）、`91b423c`（预演与执行共用 policy 取数等五个修复）、`ff4c8e9`（判卷移出审计事务），`git push origin main` 报告 `7678b8b..ff4c8e9  main -> main`，exit 0。
+- 推送后 25 秒查 `gh run list --limit 3`：仍只有历史 run，最新一条是 `40532066501`（`workflow_dispatch`，headSha `7678b8b`，success）。**第三次真实 push 依旧不产生 run**。
+- 至此连续三次 push（不同提交数、不同时间点）都没有 `push` 事件 run，而每次同分支 dispatch 都能跑通，「分支过滤 / 没人推 / Actions 被禁」全部不成立，只剩两条无法从本地判定的假设：
+  1. 账号级 Actions 准入限制；
+  2. 本地 push 用的凭据（HTTPS + keyring，`gh auth status` 报 keyring token invalid）不产生 workflow 事件。
+- 唯一能区分二者的实验仍未做：在 GitHub 网页端对 main 做一次提交（网页凭据必然产生 push 事件）。若网页提交能触发、本地 push 不能，则假设 2 成立。
