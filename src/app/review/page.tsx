@@ -43,6 +43,7 @@ import {
   WeeklyReviewButton,
 } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
+import { MasteryCard } from "./mastery-card";
 
 export const metadata: Metadata = {
   title: "Review · Cabinet",
@@ -606,6 +607,12 @@ export default async function ReviewPage({
             </div>
           </div>
         </Card>
+        {/* 掌握度挂在 03 里而不是新开一段：它回答的是"哪种东西该复习了"，
+            和"下周做哪一件事"同属下一步动作；单独开一段会把这个只有一张
+            卡片的东西，抬成和"本周结论"同级的主题。 */}
+        <div className="mt-5">
+          <MasteryCard timezone={tz} />
+        </div>
       </Section>
 
       {/* 04 — 回溯原始记录 */}
