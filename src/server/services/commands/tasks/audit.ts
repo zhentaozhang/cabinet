@@ -29,7 +29,7 @@ import {
 } from "@/lib/domain/acceptance";
 import { isEligibleAuditSample } from "@/lib/domain/provenance";
 import { recalculateGoalProgress } from "../progress";
-import { recordOutcome } from "../learning/mastery";
+import { recordMasteryOutcome } from "./mastery-outcome";
 import { recordTaskLesson } from "../memory/task-lesson";
 import { logEvent } from "@/lib/observability/log";
 import type { Tx } from "@/server/services/shared/tx";
@@ -200,10 +200,6 @@ async function auditTaskInner(
   }
 
   assertTransition("task", task.status, "auditing");
-
-  // 只有学习模板的验收才推进掌握度：其余任务即便手写了 topicKey 也与复习无关。
-  const isLearningTask =
-    task.template === "learning" || task.template === "learning_retest";
 
   const taskRuns = await db
     .select()
@@ -479,44 +475,26 @@ async function auditTaskInner(
       }
     }
 
-    // 掌握度是审计结论的派生数据，写在这里的 savepoint 里：验收已经确定，
-    // 掌握度写失败只回滚这一小段，不会因为排期出错而丢掉一条有效验收；
-    // 反过来把它留在事务外（旧写法），一旦这里报错就再没有任何东西会补上
-    // 这一次复习——验收提交了、掌握度却没发生，且无法事后发现。
-    // 只认带 topicKey 的学习任务模板：其余任务就算有人手写了 topicKey，
-    // 也不该往掌握度表里灌一条没有教学意义的记录。
+    // 未判定条目的摘要同时供掌握度日志与审计行使用：审计行里只说"有一条没判"
+    // 还不够，看不到是哪一条，就没法判断这条待判定值不值得自己接手。
     const pendingRequired = (acceptanceReport ?? []).filter(
       (entry) => entry.item.required && entry.undetermined,
     );
-    if (isLearningTask && task.topicKey) {
-      // 没有结论时既不加也不减：没有结论≠答错，记成错答会把复习间隔压回一天，
-      // 记成答对又会凭空翻倍，比不记更失真。
-      if (verdict === "needs_review") {
-        logEvent("info", "mastery.skipped_needs_review", {
-          taskId,
-          topicKey: task.topicKey,
-          unjudged: pendingRequired.length,
-        });
-      } else {
-        try {
-          await tx.transaction(async (savepoint) => {
-            await recordOutcome({
-              userId,
-              topicKey: task.topicKey as string,
-              goalId: task.goalId,
-              correct: verdict === "pass",
-              tx: savepoint,
-            });
-          });
-        } catch (error) {
-          // 走到这里说明 savepoint 已回滚，验收本身仍然成立。
-          logEvent("error", "mastery.record_failed", {
-            taskId,
-            topicKey: task.topicKey,
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+
+    // 掌握度是审计结论的派生数据；实现与用户亲手判定共用一处
+    // （mastery-outcome.ts），否则两条链路迟早对"什么时候推进排期"给出不同答案。
+    const mastery = await recordMasteryOutcome({
+      tx,
+      userId,
+      task,
+      verdict,
+      source: "audit",
+    });
+    if (mastery === "skipped_undetermined") {
+      logEvent("info", "mastery.undetermined_detail", {
+        taskId,
+        unjudged: pendingRequired.length,
+      });
     }
 
     // 验收结论也要能被之后的检索找到：留下的是"什么算通过、为什么不通过"，

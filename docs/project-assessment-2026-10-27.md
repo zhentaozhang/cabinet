@@ -237,3 +237,99 @@ submitted → auditing → accepted | rejected
 | `vitest run tests/integration/task-lifecycle.test.ts` | 5 passed |
 | 全量 `vitest run` | 本次会话 13 分钟未跑完（串行 + 每轮克隆库）；仓库文档记录为 1,255 passed，未在本次复核 |
 | `gh api .../actions/runs` | 最近 5 条均为 `workflow_dispatch`，无 `push` |
+
+---
+
+# 2026-10-28 复核：上一轮清单的落地情况
+
+> 复核基线：`main@bfde7e9`（已推送，工作区干净）。本次只读复核 + 抽样跑测试，不改业务逻辑。
+> 结论先行：**上一轮 P0 的三条语义问题已全部修好，P1 的「已实现无入口」也大部分接上了；剩下的是三处新暴露的语义缺口，以及原清单里未动的四项。**
+
+## 8.1 状态总表
+
+| 上轮建议 | 状态 | 证据 |
+|---|---|---|
+| `needs_review` 状态 + 用户覆盖入口 | ✅ 已完成 | `state.ts` 新增 `auditing → needs_review → accepted/rejected`；`override.ts` 理由 5–500 字、条件写回 409、`audit.override`、不动信任分；`POST /api/tasks/[id]/override`；任务页 `decision-card.tsx`；`tests/integration/audit-override.test.ts` 455 行 |
+| `checklistPassed` 不把 undetermined 当通过 | ✅ 已完成 | `acceptance.ts:206 auditVerdict` 三值；`checklistPassed` 改为 `=== "pass"`；无清单分支改为 `needs_review`（空产物/缺 rubric 仍判 `fail`） |
+| 角色卡改能力矩阵 | ✅ 已完成 | `tool-plan.ts` 每个工具带 `implemented`；`/cabinet` 用实线/虚线/红色区分「已实现 / 声明未接 / 未注册」；`tests/unit/capability.test.ts` 180 行 |
+| 推送 + CI 实验 | 🟡 部分 | 已推送 3 次（`1565102 → 36ff2a0 → ff4c8e9`）；**push 仍不触发 workflow**，手动 dispatch 在 `36ff2a0` 全绿；`docs/ci-status.md` 记录三次实验与两条未定因 |
+| 掌握度 API + 页面 | ✅ 已完成 | `GET /api/learning/mastery` + `/review` 的 `mastery-card.tsx`；到期数单独 count，`isDue` 用数据库时钟；`tests/integration/mastery-api.test.ts` 161 行 |
+| 任务经验写记忆 | ✅ 已完成 | `task-lesson.ts`：`factKey=task:<id>:lesson`、同值只刷新、结论变化走 supersede；验收与 override 都写 |
+| `rerank` 生产调用方 | ❌ 未做 | `retrieval.ts` 仍有钩子，`run.ts` 仍不传；无本地重排 |
+| 非学习目标度量 | ❌ 未做 | `progress.ts` 仍对非 `learning` 直接 return；健康目标仍无度量 |
+| `calendar_read`（MCP） | ❌ 未做 | 注册表把它标成 `implemented: false`，至少现在**诚实**了 |
+| 文档事实门禁 | ✅ 已完成 | `scripts/doc-facts.ts --check` 通过（routes=51, tables=40, testFiles=142, testCases=1233）；已进 `verify.sh` 与 CI |
+| 策略 dry-run | ✅ 提前完成 | `policy-explain.ts` 331 行；`GET /api/tasks/[id]/policy-preview` 与执行共用 `run-context.ts`；守卫测试防止两边重新分叉 |
+| 验收标准回放 / 单位经济学 / Auditor 记分卡 / 可问责交接 / E2E | ❌ 未做 | 仍在上轮 P2 |
+
+## 8.2 这一轮新暴露的三个语义缺口
+
+### (a) 用户判定没有回写到验收报告，页面仍说「需人工复核」 [已修，见 8.6]
+
+`override.ts` 只改了 `tasks.status` / `acceptedAt` 并写 `audit.override`，**没有动 `acceptanceReport`**。任务页的清单仍按 `acceptanceReport[index]` 渲染（`page.tsx:123`），所以一个已经被用户判定为 `accepted` 的任务，验收卡片仍会显示「需人工复核 (1 项)」，理由也不在页面上——只能去 `/review/audit` 里翻。
+
+这不是「报告造假」，而是**同一个任务有两套说法**：状态说通过，报告说没人判。建议二选一：
+
+1. **不改报告，加一条人判记录**：任务查询读该任务最新的 `audit.override`，在验收卡片上方渲染「Auditor 未给出结论；用户于 X 判定通过，理由：…」。保留 Auditor 报告的原始性，同时让页面只有一个故事。
+2. **改报告，但标明作者**：给 `AcceptanceResult` 加 `decidedBy: "auditor" | "user"`，override 时把 required 且 undetermined 的行替换成 `passed: decision==="accepted"`、`decidedBy: "user"`、`reason: note`。报告仍是「逐条」，但每条都说得清是谁判的。
+
+推荐 1，成本更低，且不触碰 Auditor 报告的语义。
+
+### (b) 用户判定不推掌握度，离线学习闭环仍然不排期 [已修，见 8.6]
+
+`audit.ts` 在 `needs_review` 时跳过 `recordOutcome`（这是对的：没有结论不能假装复习过）。但 `override.ts` 也只写任务记忆、不写掌握度。于是：
+
+- 到期复习题一定带 `judge` 项（`learning.ts:95-99`）；
+- 没配模型时判卷项永远 `undetermined` → `needs_review`；
+- 用户判定通过后，掌握度仍不前进，`due_at` 不变。
+
+结果是：**没有 API key 的用户，到期复习的间隔永远不会前进**——`due_at` 停在过去，同一主题会被反复判定为「到期」，SM-2 的阶梯对离线用户完全失效。这与「模型调用可选」的产品承诺冲突。
+
+关键区分：信任分是 **Agent 的证据**，掌握度是 **学习者的状态**。人的判定不该给 Agent 加分，但它恰恰是学习者最权威的结论。建议在 `override.ts` 里对 `isLearningTask && task.topicKey` 调用 `recordOutcome`，并给掌握度行加 `source: "user"`（或复用现有字段标注），让离线路径也能推进 SM-2。
+
+### (c) 判卷的模型调用不进预算台账
+
+`judgeAnswer` 返回 `tokensIn/tokensOut`（`llm.ts:318-319`），但 `JudgeOutcome` 没有 usage 字段，`audit.ts` 的审计 run 固定写 `costCents: 0`、`tokensIn: null`。也就是说：**一次真实的模型调用，在「预留式预算」的账本上完全不存在**。
+
+这正好落在产品最在意的语义上：预算闸门只覆盖 Agent 运行，不覆盖判卷。建议：
+
+1. `JudgeOutcome` 增加 `usage`，`audit.ts` 把它写到审计 run 的 `tokensIn/tokensOut/costCents`（按现有单价换算）；
+2. 更彻底：判卷前从 Auditor 的周预算预留，失败按未知用量结算，与 `run.ts` 同构。
+
+## 8.3 其他仍然开放的点
+
+- **Chief 的 charter 与运行时仍矛盾**：`seed.ts:206` 写「我不亲自执行」，但内阁跟进任务的 `assigneeId` 就是 Chief（`council/decide.ts:99`）。要么改文案（「我不执行具体任务，但内阁决议的跟进由我牵头」），要么改指派。
+- **步骤 token 是编造的**：`audit.ts` 的 `addStep` 固定写 80/40，`run.ts` 的 context/plan 步骤写 220/380/120；run 级 usage 是真实的（或 null），step 级不是。建议确定性步骤写 0 并加 `measured: false`，或在 UI 标注「估算」。
+- **任务记忆的兜底领域是 `learning`**：`task-lesson.ts` 对没有目标的任务写 `domain: "learning"`，会让通用任务的教训进入学习记忆范围。建议兜底为 `task` 或 `general`。
+- **README 的「1335 passed」已过期**：最新提交记录 1347；doc-facts 只校验声明数（1233），不校验 passed，这是刻意取舍，但这句话本身仍在漂移。
+- **`date-fns` 仍零引用**；**Agent 创建入口仍不存在**；**「生活」域仍无度量**；**浏览器 E2E 仍没有**。
+
+## 8.4 本轮验证
+
+| 命令 | 结果 |
+|---|---|
+| `tsx scripts/doc-facts.ts --check` | ok（routes=51, tables=40, testFiles=142, testCases=1233） |
+| `vitest run`（8 个新测试文件） | 8 files / 72 passed（needs-review、audit-override、mastery-api、task-lesson、policy-preview、capability、doc-facts、policy-explain） |
+| `tsc --noEmit` | exit 0 |
+| `gh` 最近 run | `40532066501`（workflow_dispatch，headSha `7678b8b`，success）；三次真实 push 均未产生 `push` run |
+
+## 8.5 更新后的优先级
+
+| 优先级 | 事项 | 理由 |
+|---|---|---|
+| P0 | (a) 用户判定回写/展示 + (b) 掌握度在 override 时推进 | 两者都是「结论已经给出，系统却不认」；修完这一轮才算真正闭环 |
+| P0 | (c) 判卷用量记账 | 预算台账是护城河，不能对一次真实模型调用视而不见 |
+| P1 | 非学习目标度量、`calendar_read`、`rerank` 调用方 | 仍是「已实现无入口/无对象」的三处 |
+| P1 | 浏览器 E2E（3 条主路径） | 142 个测试文件仍没有一条穿过真实 UI |
+| P2 | criteria drift、单位经济学、Auditor 记分卡、可问责交接 | 上轮亮点，仍未动 |
+
+## 8.6 本轮修复：(a) 与 (b) 已落地
+
+采用 (a) 推荐方案 1：不改 Auditor 的报告，另给人判一条记录。
+
+- **数据**：`getTaskData` 单独查一条 `audit.override`（`src/server/services/queries/task.ts`，按 `seq desc` 取最新），而不是从任务页那 10 条审计时间线里筛——人判之后再记任何事件，判定记录都会掉出窗口。DTO 新增 `TaskPageDto.override`（`{decision, reason, artifactId, decidedAt}`，`src/contracts/dto/entities.ts` 的 `taskOverrideRecordSchema`）。
+- **映射不许猜**：`toOverrideRecord`（`src/server/mappers.ts`）读不懂的 `after` 一律返回 `null`，不在页面上凭空显示"已通过"。
+- **页面**：任务页验收卡片上方渲染一张「你的判定」卡（结论徽章 + 理由 + 判定时间 + 被判产物），并写明下面的清单仍是 Auditor 当时的结论、这次判定不计入 Agent 信任分。
+- **(b)**：`overrideAudit` 现在调用 `recordMasteryOutcome`（`src/server/services/commands/tasks/mastery-outcome.ts`，由 `audit.ts` 与 `override.ts` 共用同一处实现）——通过/驳回都会推进 SM-2 排期，信任分仍不动。抽成共享函数的原因是：分成两份时两条链路迟早对"什么时候推进排期"给出不同答案，而这次分叉的代价是离线用户的复习间隔永久停摆。
+- **测试**：`tests/integration/audit-override.test.ts` 增 7 例（人判通过/驳回推进排期、非学习模板不写、无主题不造主题、页面带上判定、没判过是 null、追加 12 条审计事件后记录仍在），`tests/unit/override-record.test.ts` 5 例守"读不懂不猜"。
+- **(c) 判卷用量记账仍未做**，仍按 §8.2(c) 的建议排期。

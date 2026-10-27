@@ -67,7 +67,7 @@ Cabinet 把「目标 → 任务 → 执行 → 验收 → 复盘 → 记忆」�
 
 - 外部动作和花钱：`external_action` / `spend` 会进入审批；批准后仍只执行同一套产物生成，不会真的预订或支付。
 - 三个结论，不是两个：`accepted`（通过）、`rejected`（明确不合格）、`needs_review`（清单里必须判定的条目没有人能给出结论，例如没配模型的 `judge` 项、或者根本没有清单）。第三种既不是通过也不是驳回，任务停在「待你判定」，不动执行者的信任分、不加掌握度、不发驳回邮件。
-- 人给的结论：`needs_review` 的任务只能由用户在任务页判定（`POST /api/tasks/:id/override`，`audit.override`）。理由必填（5–500 字），结论按条件写回（并发时后到的那次得到 409）。用户的判定**不**改变 Agent 的信任分，也不推知识点掌握度——人的覆盖不是 Agent 自己的证据。
+- 人给的结论：`needs_review` 的任务只能由用户在任务页判定（`POST /api/tasks/:id/override`，`audit.override`）。理由必填（5–500 字），结论按条件写回（并发时后到的那次得到 409）。用户的判定**不**改变 Agent 的信任分——人的覆盖不是 Agent 自己的证据；但它会推进知识点掌握度并留一条任务记忆：掌握度记的是学习者的状态，人给出的结论恰恰是它最可信的输入（不推的后果很具体：没接模型时到期复习题永远停在"待你判定"，判通过后 due_at 仍留在过去，同一主题天天被判为到期）。
 - 驳回：执行者的 `reject_streak` 加一；达到阈值（默认 2）自动暂停，恢复由用户操作。
 - 通过：Agent 执行者的信任分 +1；驳回 -2。用户自己提交的验收不改变信任分，只有“真实模型运行 + Agent 产物 + 任务已验收”同时成立才计入晋升证据。
 - 关键写操作在事务里完成；写请求支持 `Idempotency-Key` 去重。
@@ -93,7 +93,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 - 学习目标进度（默认权重）= 学习任务验收比例 × 0.5 + 最近回忆分 × 0.3 + min(本周打卡次数 / 5, 1) × 0.2；权重和目标打卡数在 `policy_config.learning`。
 - 知识点掌握度：每道学习任务绑定一个知识点（`tasks.topic_key`），验收结论回写 `learning_mastery`，用 SM-2 变体排下次复习——答对走 1 → 3 → round(间隔 × ease) 递增（ease 从 2.5 起，每次 +0.1、夹在 1.3–2.8，间隔上限 60 天），答错把间隔压回 1 天且 ease −0.2。出题时**到期的知识点优先**，标题写成「复习：<知识点>」。
 - 重测：上次学习任务验收通过 ≥ 3 天，且最近 Check-in 有错题标签时，下一题标记为 `learning_retest`。
-- 判卷：清单里的 `judge` 项（"能用自己的话解释 X"）在验收时交给模型判定；没有配 `OPENAI_API_KEY` 时保持"未判定"而不是自动通过，超时/解析失败同样降级为未判定并写明原因。未判定的条目不算失败（任务仍可验收），但审计结论会写明"另有 N 项未判定，未计入本次结论"，学习任务在判卷项未判定时也不推进知识点掌握度——没有结论就不假装复习了一次。
+- 判卷：清单里的 `judge` 项（"能用自己的话解释 X"）在验收时交给模型判定；没有配 `OPENAI_API_KEY` 时保持"未判定"而不是自动通过，超时/解析失败同样降级为未判定并写明原因。未判定的条目不算失败（任务仍可验收），但审计结论会写明"另有 N 项未判定，未计入本次结论"，学习任务在判卷项未判定时也不推进知识点掌握度——没有结论就不假装复习了一次；之后由用户判定时再补这一次（见上文"人给的结论"）。
 - 早报和周复盘是确定性模板，不调用模型。
 - 反思从审计驳回、晚间完成率、低精力、预算压力和暂停 Agent 中找信号；一次生成一条洞察，可采纳或回滚。驳回率过高时会提出真实的策略变更（`set_policy`），采纳后立刻改变后续任务的判定阈值；回滚把阈值恢复成 `policy_config` 里的默认值（同一 (用户, 键) 只保留一条 active 覆盖，历次改动留在审计链里）。
 
@@ -104,8 +104,8 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | 任务状态机 | planned → assigned → running → submitted → auditing → accepted / rejected / needs_review → done；外部动作走 awaiting_approval | 条件更新 + 409 冲突；needs_review 只能由用户判定带走 |
 | 策略门禁 | 状态、生命周期、自主等级、grant、周预算台账、审批 | 阈值来自 `policy_config`（可按用户被 `policy_overrides` 覆盖），缺失时 fail-closed |
 | 审批 | 外部动作 / 超预算进入审批；批准后消费一次 | 不执行真实外部动作 |
-| 验收 | 清单项：section / min_words / min_sources / min_evidence / contains / claims_table / manual / judge | 除 judge 外都是确定性检查；judge 未配模型时保持"未判定" |
-| 用户判定 | `needs_review` → 用户在任务页给出 accepted/rejected（`audit.override`，理由必填） | 不改信任分、掌握度、目标进度；不写 `approvals`（那是执行授权，不是判定记录） |
+| 验收 | 清单项：section / min_words / min_sources / min_evidence / contains / claims_table / manual / judge | 除 judge 外都是确定性检查；required 项未判定时进入 `needs_review`，不冒充通过 |
+| 用户判定 | `needs_review` → 用户在任务页给出 accepted/rejected（`audit.override`，理由必填） | 不改信任分与目标进度；推进知识点掌握度并写一条任务记忆；不写 `approvals`（那是执行授权，不是判定记录） |
 | 运行前预演 | 任务页的只读面板：把 `decideRun` 的结论翻成「允许 / 需审批 / 拒绝 + 还缺什么」 | 与真实执行读同一份基础策略；不建预算周期行、不写任何状态 |
 | 分离职责 | 只有 auditor 角色、且不是 assignee，才能验收 | Auditor 放弃判定时由用户判定（`audit.override`），但用户的判定不进 Agent 的绩效 |
 | 审计链 | 每个用户一条 SHA-256 前向哈希链 | Review 页可验证 |
@@ -136,7 +136,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | Today | `/` | 今天有什么事、需要我决定什么 |
 | Cabinet | `/cabinet` | 有哪些 Agent、状态/预算/授权如何；能力矩阵（声明了哪些工具、哪些真能执行） |
 | Agent 详情 | `/cabinet/[id]` | 这个 Agent 的宪章、绩效、运行、技能、记忆 |
-| Task 详情 | `/tasks/[id]` | 验收标准、运行轨迹、产物、审批、审计；运行前策略预演（只读）；待判定时的判定卡 |
+| Task 详情 | `/tasks/[id]` | 验收标准、运行轨迹、产物、审批、审计；运行前策略预演（只读）；待判定时的判定卡与判定后的人判记录 |
 | Review | `/review` | 本周指标、复盘、洞察、异议、审计日志 |
 | Memory | `/memory` | 记住了什么、证据在哪、是否冲突、能否删除 |
 | Council | `/council` | 这次高风险决策各方怎么说、怎么定 |
@@ -255,7 +255,7 @@ app/api/**（route handler）
 
 状态机：
 
-- Task：`planned → assigned → running → submitted → auditing → accepted / rejected → done`（正常执行路径；外部动作先走 `awaiting_approval`）
+- Task：`planned → assigned → running → submitted → auditing → accepted / rejected / needs_review → done`（`needs_review` 只能由用户判定带走；外部动作先走 `awaiting_approval`）
 - Run：`running → succeeded / failed`（状态机也定义了 `queued`，当前任务运行直接从 `running` 开始）
 - Goal：`active → paused / completed / archived`；`paused / completed / archived → active`（重新打开）
 - Agent：`probation → active → paused → retired`
@@ -275,7 +275,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->142<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1233<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->143<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1245<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 
@@ -296,7 +296,7 @@ gh run watch
 
 - **只有检索是真的**：`web_search` 接了 Brave（Tavily 作为可重试的兜底），命中的来源落库为 `evidence` 行，产物必须用 `[cite:evd_x]` 引用它们。日历、预订、支付仍然没有连接器，这些工具步骤会记 `not_connected` 或 `unauthorized`。
 - **不是自治多 Agent**：没有 Agent 间消息、协商或自动委派；内阁由用户发起，立场由规则生成。
-- **用户判定只带出状态，不带出别的**：`needs_review` 由用户判成 accepted/rejected，会写任务状态、审计行和一条任务记忆，但不会补算 Agent 绩效、掌握度或目标进度——那些只认 Auditor 给出的结论。
+- **用户判定带出状态、记忆和复习排期，但不动 Agent 绩效**：`needs_review` 由用户判成 accepted/rejected，会写任务状态、审计行、一条任务记忆，并推进该知识点的复习排期（学习任务）；不会补算 Agent 绩效或目标进度——那些只认 Auditor 给出的结论。判定记录会显示在任务页验收卡片上方（`audit.override` 单独取一条，不受审计时间线 10 条窗口影响）。
 - **学徒考试是模拟**：考试产物由确定性模板生成；5 条验收项必须全部通过；考试前需要 5 条显式记录的观摩证据（只有 mentor 的真实模型运行、且任务已验收才算）。练习通过只把阶段推进到 `practice_passed`，不授予生产技能、不加信任分、不提等级。
 - **早报、周复盘、反思候选是规则/模板**：不调用模型。反思能提出真实的策略覆盖（`set_policy`，16 个白名单键，可回滚），但"要不要提出"本身是规则判断，不是模型分析。
 - **记忆检索没有 embedding**：排序是词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度；本机 Postgres 没有 `vector` 扩展，所以没有向量检索。`retrieveMemories` 留了 `rerank` 钩子，接外部重排模型不需要改调用方。

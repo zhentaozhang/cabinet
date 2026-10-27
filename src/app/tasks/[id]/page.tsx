@@ -81,7 +81,7 @@ export default async function TaskPage({
   const data = await fetchTaskPage(id);
   if (!data) notFound();
   const tz = data.timezone;
-  const { task, goal, assignee, auditor, runs, steps, artifacts, evidence, approvals, audit, actions } = data;
+  const { task, goal, assignee, auditor, runs, steps, artifacts, evidence, approvals, audit, override, actions } = data;
 
   const stepsByRun = new Map<string, typeof steps>();
   for (const step of steps) {
@@ -827,6 +827,61 @@ export default async function TaskPage({
           {/* 人拍板：审计说"没有结论"时，只有人能给出结论 */}
           {task.status === "needs_review" ? (
             <TaskDecisionCard taskId={task.id} items={pendingDecisions} />
+          ) : null}
+
+          {/*
+            人拍板的结论写在 Auditor 的报告之前，而不是改写报告：下面的清单是
+            "机器判了什么、哪几条它判不出"，这张卡是"最后是谁、凭什么拍板"。
+            混写会让事后无法回答"这个任务当初到底有没有被自动判过"。
+            放在验收卡片上方，是因为已 accepted 的任务若只在下方清单里留着
+            几行"需人工复核"，页面读起来像还没人管。
+          */}
+          {override ? (
+            <Card>
+              <CardHeader
+                eyebrow="Human Decision"
+                title="你的判定"
+                right={
+                  <Badge tone={override.decision === "accepted" ? "teal" : "danger"}>
+                    {override.decision === "accepted" ? (
+                      <CheckCircle2 className="size-3" />
+                    ) : (
+                      <XCircle className="size-3" />
+                    )}
+                    {override.decision === "accepted" ? "你判定通过" : "你判定驳回"}
+                  </Badge>
+                }
+              />
+              <div className="px-5 py-4">
+                <div className="mb-1 text-eyebrow font-medium uppercase tracking-wider text-faint">
+                  判定理由
+                </div>
+                <p className="text-label leading-relaxed text-ink-soft">
+                  {override.reason || "（这条判定没有留下理由）"}
+                </p>
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-label text-faint">
+                  <span>判定于 {dateTime(override.decidedAt, tz)}</span>
+                  {override.artifactId ? (
+                    <>
+                      <span>·</span>
+                      <span>
+                        针对产物{" "}
+                        <span className="mono text-muted">{override.artifactId}</span>
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>·</span>
+                      <span>没有对应产物</span>
+                    </>
+                  )}
+                </div>
+                <p className="mt-2.5 text-label leading-relaxed text-faint">
+                  下面的清单仍是 Auditor 当时写下的结论，没有因为你这次判定被改写；
+                  这次判定不计入 Agent 的信任分——它是你的判断，不是它自己跑出来的成绩。
+                </p>
+              </div>
+            </Card>
           ) : null}
 
           {/* ④ 验收标准：契约规则与判定结果 */}

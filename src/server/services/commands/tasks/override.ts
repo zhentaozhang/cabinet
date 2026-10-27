@@ -6,6 +6,7 @@ import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
 import { logEvent } from "@/lib/observability/log";
 import { recordTaskLesson } from "../memory/task-lesson";
+import { recordMasteryOutcome } from "./mastery-outcome";
 
 /** 判定理由的长度约束：太短等于没写，太长是没人会读完的流水账。 */
 const REASON_MIN = 5;
@@ -25,10 +26,13 @@ export type OverrideDecision = "accepted" | "rejected";
  * 2. 按 reads 到的状态条件写回，零行就冲突。同一个人在两台设备上同时点
  *    "通过"和"驳回"，不能变成"后点的那个生效"——那会把一条互相矛盾的
  *    判定悄悄写进历史。
- * 3. 不碰 agents 的 successCount / failCount / trustScore，也不推掌握度。
- *    人的覆盖不是 Agent 的证据：通过不能证明它做对了，驳回也不能证明它
- *    做错了。若这两处联动，用户只要亲手覆盖几次，就能把任意 Agent 的信任
- *    分刷上去，信任分也就不再是"它自己干出来的成绩"。
+ * 3. 不碰 agents 的 successCount / failCount / trustScore，但要推掌握度。
+ *    两个数字记的不是同一件事：信任分是 Agent 自己干出来的成绩，人的覆盖
+ *    不是它的证据（通过不能证明它做对了，驳回也不能证明它做错了），一旦联动，
+ *    用户随手覆盖几次就能把任意 Agent 的信任分刷上去；掌握度是学习者的状态，
+ *    人的结论恰恰是它最可信的那份输入。不推进掌握度的后果很具体：到期复习题
+ *    必带模型判卷项，没接模型时必然停在 needs_review，人判通过后 due_at 却
+ *    留在过去，同一主题每天都会被判为"到期"，间隔重复对离线用户彻底失效。
  *
  * 判定的记录落在 audit_events（action "audit.override"），不落 approvals：
  * approvals 里的 pending/approved 行是运行时的执行授权（execution.ts 取最新
@@ -102,6 +106,15 @@ export async function overrideAudit({
       .where(eq(artifacts.taskId, taskId))
       .orderBy(desc(artifacts.createdAt))
       .limit(1);
+
+    // 人判的结果对该主题的复习排期同样有效（理由见函数头第 3 条）。
+    await recordMasteryOutcome({
+      tx,
+      userId,
+      task: updated,
+      verdict: decision === "accepted" ? "pass" : "fail",
+      source: "audit.override",
+    });
 
     // 人给的结论同样是这个任务留下的"经验"，要让之后的检索看得见。
     // 仍然放在 savepoint 里：判定已经写进任务行，一条记忆写失败不该把

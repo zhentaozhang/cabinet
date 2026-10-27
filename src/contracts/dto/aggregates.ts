@@ -23,6 +23,7 @@ import {
   skillDtoSchema,
   stepDtoSchema,
   taskDtoSchema,
+  taskOverrideRecordSchema,
   userDtoSchema,
 } from "./entities";
 
@@ -317,6 +318,12 @@ export const taskPageSchema = z.object({
   evidence: z.array(retrievedEvidenceDtoSchema),
   approvals: z.array(approvalDtoSchema),
   audit: z.array(auditEventDtoSchema),
+  /**
+   * 最近一次人工判定；没有则是 null。单独取一条而不是从 audit 里筛：
+   * 页面只拉最近 10 条审计行，而人判之后还可能追加其他审计事件，
+   * 靠窗口筛会让"曾经判过"的记录随事件增多悄悄消失。
+   */
+  override: taskOverrideRecordSchema.nullable(),
 });
 export type TaskPageDto = z.infer<typeof taskPageSchema>;
 

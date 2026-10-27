@@ -45,6 +45,7 @@ import type {
   SkillDto,
   StepDto,
   TaskDto,
+  TaskOverrideRecordDto,
   UserDto,
 } from "@/contracts";
 
@@ -264,6 +265,24 @@ export function toAuditEventDto(
     ...row,
     createdAt: toIso(row.createdAt),
   };
+}
+
+/**
+ * 人工判定行 → 记录。读不懂的形态返回 null 而不是填一个默认结论：
+ * 一条 after 被改坏或格式不符的审计行，宁可显示"没有记录"，
+ * 也不能在页面上凭空显示一个"已通过"。
+ */
+export function toOverrideRecord(
+  row: typeof auditEvents.$inferSelect | null,
+): TaskOverrideRecordDto | null {
+  if (!row) return null;
+  const after = row.after as Record<string, unknown> | null;
+  const status = after?.status;
+  if (status !== "accepted" && status !== "rejected") return null;
+  const reason = typeof after?.reason === "string" ? after.reason : "";
+  const artifactId =
+    typeof after?.artifactId === "string" ? after.artifactId : null;
+  return { decision: status, reason, artifactId, decidedAt: toIso(row.createdAt) };
 }
 
 export function toSkillDto(row: typeof skills.$inferSelect): SkillDto {

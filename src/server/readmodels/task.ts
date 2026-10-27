@@ -8,6 +8,7 @@ import {
   toRetrievedEvidenceDto,
   toAuditEventDto,
   toGoalDto,
+  toOverrideRecord,
   toRunDto,
   toStepDto,
   toTaskDto,
@@ -40,6 +41,7 @@ export async function loadTask(
     evidence: data.evidence.map(toRetrievedEvidenceDto),
       approvals: data.approvals.map(toApprovalDto),
       audit: data.audit.map(toAuditEventDto),
+      override: toOverrideRecord(data.override),
     },
     "TaskPage",
   );

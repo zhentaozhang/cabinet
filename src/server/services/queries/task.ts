@@ -29,6 +29,7 @@ export async function getTaskData(taskId: string, userId: string) {
     taskApprovals,
     taskAudit,
     userRows,
+    overrideRows,
     taskEvidence,
   ] = await Promise.all([
     db
@@ -63,6 +64,20 @@ export async function getTaskData(taskId: string, userId: string) {
       .select({ timezone: users.timezone })
       .from(users)
       .where(eq(users.id, userId)),
+    // 人工判定单独取一条：audit 数组只拉最近 10 行，人判之后还能追加别的
+    // 审计事件，靠窗口筛会让"曾经判过"的记录随事件增多而消失。
+    db
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.userId, userId),
+          eq(auditEvents.target, taskId),
+          eq(auditEvents.action, "audit.override"),
+        ),
+      )
+      .orderBy(desc(auditEvents.seq))
+      .limit(1),
     db
       .select()
       .from(evidence)
@@ -91,5 +106,6 @@ export async function getTaskData(taskId: string, userId: string) {
     evidence: taskEvidence,
     approvals: taskApprovals,
     audit: taskAudit,
+    override: overrideRows[0] ?? null,
   };
 }

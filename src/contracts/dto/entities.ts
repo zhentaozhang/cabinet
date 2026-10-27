@@ -373,6 +373,22 @@ export const approvalDtoSchema = z.object({
 });
 export type ApprovalDto = z.infer<typeof approvalDtoSchema>;
 
+/**
+ * 用户亲手下的验收结论（audit_events 里 action = "audit.override" 的那条）。
+ *
+ * 与任务状态并存而不是替代 Auditor 的报告：报告记录"机器判了什么、为什么
+ * 判不出"，这条记录"最后是谁、凭什么拍板"。两者混写会让事后无法回答
+ * "这个任务当初到底有没有被自动判过"。
+ */
+export const taskOverrideRecordSchema = z.object({
+  decision: z.enum(["accepted", "rejected"]),
+  reason: z.string(),
+  /** 判定所针对的产物；没有产物时是 null，不指向上一条别人的产物。 */
+  artifactId: z.string().nullable(),
+  decidedAt: isoDateTime,
+});
+export type TaskOverrideRecordDto = z.infer<typeof taskOverrideRecordSchema>;
+
 export const auditEventDtoSchema = z.object({
   id: z.string(),
   seq: z.number(),

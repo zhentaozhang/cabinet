@@ -21,9 +21,16 @@ vi.mock("@/lib/auth/context", async (importOriginal) => {
 });
 
 import { POST } from "@/app/api/tasks/[id]/override/route";
-import { verifyAuditChain } from "@/lib/audit";
+import { logAuditTx, verifyAuditChain } from "@/lib/audit";
 import { db } from "@/lib/db";
-import { agents, artifacts, auditEvents, tasks } from "@/lib/db/schema";
+import {
+  agents,
+  artifacts,
+  auditEvents,
+  learningMastery,
+  learningTopics,
+  tasks,
+} from "@/lib/db/schema";
 import type { AcceptanceResult } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import {
@@ -31,6 +38,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "@/lib/domain/errors";
+import { loadTask } from "@/server/readmodels";
 import { overrideAudit } from "@/server/services/commands/tasks/override";
 import { resetDb } from "../helpers/db";
 
@@ -451,5 +459,200 @@ describe("覆盖判定的 HTTP 入口", () => {
     });
 
     expect(response.status).toBe(404);
+  });
+});
+
+/**
+ * 人判的两个方向要分清楚：它不该动 Agent 的信任分（上面那一条），
+ * 但它必须动学习者的掌握度。
+ *
+ * 不推进掌握度的后果很具体：到期复习题必带模型判卷项，没接模型时必然停在
+ * needs_review；人判通过后任务变成 accepted，而 due_at 留在过去，同一主题
+ * 每天都会被判为"到期"，SM-2 阶梯对不接模型的用户等于不存在。
+ */
+describe("人判推进掌握度", () => {
+  const TOPIC = "闭包";
+
+  /**
+   * 造一个停在待判定的学习任务。
+   *
+   * 直接改行而不是跑一遍 Auditor：这个入口的前提只有"任务停在 needs_review
+   * 且带着主题"，至于它是怎么停进来的与这里无关。
+   */
+  async function parkLearningTask(input: {
+    taskId?: string;
+    topicKey?: string | null;
+    template?: string;
+  } = {}) {
+    const taskId = input.taskId ?? "tsk_read";
+    await parkTask(taskId);
+    await db
+      .update(tasks)
+      .set({
+        template: input.template ?? "learning",
+        topicKey: input.topicKey === undefined ? TOPIC : input.topicKey,
+      })
+      .where(eq(tasks.id, taskId));
+  }
+
+  async function masteryOf(topicKey: string) {
+    const [row] = await db
+      .select({
+        attempts: learningMastery.attempts,
+        correct: learningMastery.correct,
+        mastery: learningMastery.mastery,
+        intervalDays: learningMastery.intervalDays,
+        easeFactor: learningMastery.easeFactor,
+        dueAt: learningMastery.dueAt,
+      })
+      .from(learningMastery)
+      .innerJoin(learningTopics, eq(learningTopics.id, learningMastery.topicId))
+      .where(
+        and(
+          eq(learningMastery.userId, DEMO_USER_ID),
+          eq(learningTopics.key, topicKey),
+        ),
+      );
+    return row ?? null;
+  }
+
+  /** 明天的这个时候：排期写的是"现在 + N 天"，不是一个固定日期。 */
+  function inAboutDays(days: number): number {
+    return Date.now() + days * 86_400_000;
+  }
+
+  it("判定通过记一次答对，并把下次复习排到之后", async () => {
+    await parkLearningTask();
+    await addArtifact("tsk_read", "art_override_mastery_pass");
+
+    await overrideAudit({
+      taskId: "tsk_read",
+      userId: DEMO_USER_ID,
+      decision: "accepted",
+      reason: "答案能自己讲清楚，判通过。",
+    });
+
+    const mastery = await masteryOf(TOPIC);
+    expect(mastery).not.toBeNull();
+    expect(mastery).toMatchObject({ attempts: 1, correct: 1, intervalDays: 1 });
+    // 拉普拉斯平滑：(1+1)/(1+2)，不是 100%。
+    expect(mastery?.mastery).toBeCloseTo(0.6667, 3);
+    // 关键断言：due_at 必须离开过去，否则这个主题明天还会被判为"到期"。
+    expect(mastery?.dueAt?.getTime() ?? 0).toBeGreaterThan(inAboutDays(0.9));
+  });
+
+  it("判定驳回记一次答错，间隔压回一天并下调难度系数", async () => {
+    await parkLearningTask();
+    await addArtifact("tsk_read", "art_override_mastery_fail");
+
+    await overrideAudit({
+      taskId: "tsk_read",
+      userId: DEMO_USER_ID,
+      decision: "rejected",
+      reason: "解释里把作用域链说反了，判驳回。",
+    });
+
+    const mastery = await masteryOf(TOPIC);
+    expect(mastery).toMatchObject({ attempts: 1, correct: 0, intervalDays: 1 });
+    expect(mastery?.mastery).toBeCloseTo(0.3333, 3);
+    // 错答也要排下一次：忘掉的主题要便宜地再问一遍。
+    expect(mastery?.dueAt?.getTime() ?? 0).toBeGreaterThan(inAboutDays(0.9));
+  });
+
+  it("不是学习模板的任务不写掌握度", async () => {
+    // 有人手写了 topicKey，但模板不是学习任务：把它的成败记成一次复习
+    // 会让间隔重复凭空跳级。
+    await parkLearningTask({ template: "research", topicKey: TOPIC });
+    await addArtifact("tsk_read", "art_override_mastery_other");
+
+    await overrideAudit({
+      taskId: "tsk_read",
+      userId: DEMO_USER_ID,
+      decision: "accepted",
+      reason: "产物没问题，判通过。",
+    });
+
+    expect(await masteryOf(TOPIC)).toBeNull();
+  });
+
+  it("没有主题的任务不凭空造一个主题", async () => {
+    await parkLearningTask({ topicKey: null });
+    await addArtifact("tsk_read", "art_override_mastery_empty");
+
+    await overrideAudit({
+      taskId: "tsk_read",
+      userId: DEMO_USER_ID,
+      decision: "accepted",
+      reason: "产物没问题，判通过。",
+    });
+
+    const rows = await db
+      .select({ id: learningMastery.id })
+      .from(learningMastery)
+      .where(eq(learningMastery.userId, DEMO_USER_ID));
+    expect(rows).toHaveLength(0);
+  });
+});
+
+/**
+ * 判定要回到它被判的那个页面上。
+ *
+ * 只写状态不改报告是对的（报告记的是 Auditor 判了什么），但页面若只显示
+ * "需人工复核 (N 项)"，读起来就像这个人还没管过——理由得去 /review/audit 翻。
+ */
+describe("人判记录回到任务页", () => {
+  it("已判定的任务带上判定、理由与被判产物", async () => {
+    await parkTask();
+    await addArtifact("tsk_read", "art_override_view");
+
+    await overrideAudit({
+      taskId: "tsk_read",
+      userId: DEMO_USER_ID,
+      decision: "accepted",
+      reason: REASON,
+    });
+
+    const page = await loadTask("tsk_read", DEMO_USER_ID);
+    expect(page?.task.status).toBe("accepted");
+    expect(page?.override).toMatchObject({
+      decision: "accepted",
+      reason: REASON,
+      artifactId: "art_override_view",
+    });
+    // 报告没被改写：Auditor 当时判不出的那条仍然在清单里。
+    expect(page?.task.acceptanceReport?.[0]?.undetermined).toBe(true);
+  });
+
+  it("没判过的任务是 null", async () => {
+    const page = await loadTask("tsk_read", DEMO_USER_ID);
+    expect(page?.override).toBeNull();
+  });
+
+  it("之后又追加审计事件，判定记录不会掉出窗口", async () => {
+    await parkTask();
+    await overrideAudit({
+      taskId: "tsk_read",
+      userId: DEMO_USER_ID,
+      decision: "rejected",
+      reason: "第二条要点没有来源，驳回。",
+    });
+
+    // 页面的审计时间线只拉最近 10 条。人判之后再记 12 条事件，
+    // 如果判定是从那个窗口里筛出来的，这里就会变成 null。
+    for (let index = 0; index < 12; index += 1) {
+      await db.transaction(async (tx) => {
+        await logAuditTx(tx, {
+          userId: DEMO_USER_ID,
+          actor: "user",
+          action: "task.note",
+          target: "tsk_read",
+          before: null,
+          after: { index },
+        });
+      });
+    }
+
+    const page = await loadTask("tsk_read", DEMO_USER_ID);
+    expect(page?.override).toMatchObject({ decision: "rejected" });
   });
 });
