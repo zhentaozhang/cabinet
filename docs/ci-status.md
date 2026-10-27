@@ -128,6 +128,8 @@ $ gh api 'repos/zhentaozhang/cabinet/actions/runs?per_page=10' --jq '.total_coun
 
 **这不是 CI 环境独有的失败**：在本地用 `DATABASE_URL_TEST=postgres://localhost:5432/cabinet_test TZ=UTC ./node_modules/.bin/vitest run tests/integration/outbox.test.ts`（PostgreSQL 18.3 / Homebrew）复跑同样 8 条失败，`Tests 8 failed | 8 passed (16)`，失败断言行号 `outbox.test.ts:132,181,201,229,256,277,317,355`。因此 main@`1565102` 在本地和云端都是红的，红的是 outbox 投递这一套（claim 之后 `0` 次发送、状态停在 `pending`），与本次 push 无关。
 
+**根因（2026-10-27 当天查明）**：不是投递逻辑坏了，而是**测试依赖墙上时钟**。演示账号的时区是 `Asia/Shanghai`、静默时段 22:00–08:00（`src/lib/db/seed.ts:136`，`src/lib/domain/notify.ts:7` 的 `isQuietHour` 按半开区间 `[from, to)` 判定），而这次 CI 跑在 23:04 CST —— 每条通知都被正确地推迟到静默时段结束，于是"应该发出 1 条"变成 0 条。白天跑同样的代码是绿的，所以这个问题只在晚间出现。修复在 `tests/integration/outbox.test.ts`：delivery 分组先关掉静默窗口（`quietFrom: 0, quietTo: 0`），需要验证静默逻辑的那条用 `deliverOutbox({ now })` 注入一个明确落在 23:00 的时刻。
+
 ### 判定
 
 **push 不触发，但 dispatch 可用。**
@@ -141,6 +143,14 @@ $ gh api 'repos/zhentaozhang/cabinet/actions/runs?per_page=10' --jq '.total_coun
 1. 人工在网页端核对账号 Actions 准入状态（Settings → Actions → 是否有账号级限制提示），这是第 1 条假设唯一的验证入口。
 2. 若要验证第 2 条：在 GitHub 网页端对 main 做一次空提交（Web UI commit），它必然产生 push 事件且由网页凭据发起；若网页提交能触发 run、本地 push 不能，则假设 2 成立（本地 push 凭据不产生事件）。
 3. 在结论变化之前，云端门禁继续按上一节的方式手动 dispatch，并在触发后确认 run 真的出现（不要只看 exit 0）。
-4. 云端门禁要先修 outbox 投递那 8 条失败（`tests/integration/outbox.test.ts` delivery 分组，本地可复现），否则 dispatch 出来的 run 永远 `failure`，"CI 是否是绿的"这个问题会被这个已知红灯掩盖。
+4. ~~云端门禁要先修 outbox 投递那 8 条失败~~ —— 2026-10-27 已修（见上文根因：晚间跑测试撞上演示账号的静默时段，测试改为关闭静默窗口 + 注入时钟）。云端 run 40530678279 在 `36ff2a0` 上全绿。
 5. 本仓库的 `.gitignore` 已补上 `.archify/` 与 `.workbuddy-ai/`（299 个文件 / 7.3M 的工具产物），避免下次 `git add -A` 把它们卷进来。
 
+
+## 2026-10-27 第二次 push 实验（1565102 → 36ff2a0）
+
+- 推的是 5 个本地提交（`3943c11` 三值验收与用户判定、`f0e0b69` 掌握度与任务记忆、`8581571` 运行前预演、`35185ef` 工具能力注册表、`36ff2a0` doc-facts 门禁），`git push origin main` 报告 `1565102..36ff2a0  main -> main`。
+- 推后 `gh run list` 仍只有 5 条历史 run，`40526610567`（15:00:07Z，`1565102`）之后**没有新的 push run**。第二次真实 push 依然不触发 → 「只是没推过」「分支过滤错」两个假设再次被证伪；剩下的仍是账号级准入或 push 凭据不产生事件两条。
+- 15:24Z 手动 `gh workflow run ci.yml --ref main` → run `40530678279`（headSha `36ff2a02`，event `workflow_dispatch`）→ **completed / success**：`install` → `doc:facts:check` → `migrate` → `typecheck` → `lint` → `test` → `build` 全部 success。
+- 这是 main 第一次在云端全绿：上一次的 8 条 outbox 失败是时钟依赖（见上节根因），本次跑在同一时间窗却通过，说明修复真的消除了时间依赖，而不是碰巧。
+- `doc:facts:check` 在云端通过也说明 `.github/workflows/ci.yml` 新加的那一步可用（`pnpm doc:facts:check` 依赖 devDependencies 里的 tsx，`pnpm install --frozen-lockfile` 之后即可运行）。
