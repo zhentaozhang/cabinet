@@ -12,7 +12,6 @@ import {
   skills as skillsTable,
   steps,
   tasks,
-  users,
 } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
@@ -24,7 +23,6 @@ import { retrievalBudgetState } from "@/server/services/connectors/ledger";
 import { fetchAndPersist } from "@/server/services/connectors/page";
 import { extractFirstUrl } from "@/lib/connectors/page";
 import { retrieveMemories } from "@/lib/memory/retrieval";
-import { getPolicyConfig } from "@/lib/policy/config";
 import {
   notConnectedReason,
   planTools,
@@ -34,7 +32,6 @@ import {
 } from "@/lib/domain/tool-plan";
 import { mergeTools, readRules } from "@/lib/domain/execution-context";
 import { decideRun } from "@/lib/domain/policy";
-import { usageCents } from "@/lib/domain/agent-budget";
 import { enqueueNotification, notices } from "../notify";
 import { assertTransition } from "@/lib/domain/state";
 import {
@@ -52,12 +49,8 @@ import {
   runMcpToolLoop,
   runModelToolLoop,
 } from "./tool-loop";
-import {
-  loadLatestApproval,
-  loadWeeklyUsage,
-  reserveBudget,
-  settleBudget,
-} from "./execution";
+import { reserveBudget, settleBudget } from "./execution";
+import { loadRunContext } from "./run-context";
 import { requestApproval } from "./approvals";
 
 /**
@@ -93,81 +86,15 @@ async function executeRun(taskId: string, userId: string) {
   // A failed/rejected run can be retried through the normal state machine.
   if (retrying) task = await resetForRetry(taskId, userId, task);
 
-  const [agent] = await db
-    .select()
-    .from(agents)
-    .where(eq(agents.id, task.assigneeId!));
-  if (!agent || agent.userId !== userId) {
-    throw new NotFoundError("Agent not found");
-  }
+  // 取数与判定输入只有一份（queries/run-context.ts）：预演面板读的是同一个
+  // loader，否则两边一处分叉，面板就会在用户点下去之后被现实打脸。
+  const context = await loadRunContext(task, {
+    clearConsumedApproval: retrying,
+  });
+  const { agent, timezone, config, grants, approval } = context;
   currentSpan()?.setAttribute("agent.id", agent.id);
 
-  const [user] = await db
-    .select({ timezone: users.timezone })
-    .from(users)
-    .where(eq(users.id, task.userId));
-  const timezone = user?.timezone ?? "UTC";
-  const config = await getPolicyConfig();
-  const grants = await db
-    .select()
-    .from(agentGrants)
-    .where(and(eq(agentGrants.agentId, agent.id), isNull(agentGrants.revokedAt)));
-  // One accounting authority: the persisted weekly period ledger.
-  const usage = await loadWeeklyUsage(agent.id, timezone);
-  let approval: Awaited<ReturnType<typeof loadLatestApproval>> =
-    await loadLatestApproval(taskId);
-  // A consumed approval is historical. A rejected task gets a fresh approval
-  // request instead of being locked out forever.
-  if (retrying && approval?.status === "approved" && approval.consumedAt) {
-    approval = null;
-  }
-
-  const decision = decideRun({
-    actor: {
-      id: agent.id,
-      role: agent.role,
-      status: agent.status,
-      lifecycleStage: agent.lifecycleStage,
-      autonomyLevel: agent.autonomyLevel,
-      trustScore: agent.trustScore,
-      successCount: agent.successCount,
-    },
-    task: {
-      assigneeId: task.assigneeId,
-      auditorId: task.auditorId,
-      actionType: task.actionType,
-      resource: task.resource,
-      requiresApproval: task.requiresApproval,
-      estimatedCostCents: task.estimatedCostCents,
-      approvalThresholdCents: task.approvalThresholdCents,
-      status: task.status,
-    },
-    grants: grants.map((grant) => ({
-      resource: grant.resource,
-      scope: grant.scope,
-      revokedAt: grant.revokedAt,
-    })),
-    standingGrants: grants.map((grant) => ({
-      id: grant.id,
-      resource: grant.resource,
-      action: grant.action,
-      createdByApprovalId: grant.createdByApprovalId,
-      expiresAt: grant.expiresAt,
-      maxCents: grant.maxCents,
-      maxRuns: grant.maxRuns,
-      useCount: grant.useCount,
-      revokedAt: grant.revokedAt,
-    })),
-    budget: {
-      limitCents: usage.limitCents,
-      spentCents: usageCents(usage),
-    },
-    approval: approval
-      ? { status: approval.status, consumedAt: approval.consumedAt }
-      : null,
-    timeZone: timezone,
-    config,
-  });
+  const decision = decideRun(context.policyInput);
 
   if (decision.effect === "deny") {
     throw new PolicyDenied(decision.reason);

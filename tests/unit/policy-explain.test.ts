@@ -230,3 +230,140 @@ describe("explainRunPolicy", () => {
     }
   });
 });
+
+/**
+ * 规则身份来自 decideRun 的措辞（policy-explain.ts 用正则回溯理由文案），
+ * 所以措辞一改就可能静默退化成 "unrecognized" —— 用户看到的就是
+ * 「这条理由还没有对应的中文解释」。这张场景矩阵把它钉住：每个 decideRun
+ * 能产出的理由都必须落到具体 rule，反过来每个 rule 也必须有场景能命中，
+ * 这样删映射或多写一条映射都会变红。
+ */
+describe("规则表覆盖 decideRun 的每一种理由", () => {
+  const scenario = (
+    name: string,
+    overrides: Partial<PolicyExplainInput>,
+  ): { name: string; input: PolicyExplainInput } => ({
+    name,
+    input: {
+      actor: actor(),
+      task: task(),
+      grants,
+      budget,
+      approval: null,
+      config,
+      ...overrides,
+    },
+  });
+
+  const scenarios = [
+    scenario("agent_not_active", { actor: actor({ status: "paused" }) }),
+    scenario("agent_lifecycle", {
+      actor: actor({ lifecycleStage: "onboarding" }),
+    }),
+    scenario("not_assignee", { task: task({ assigneeId: "ag_other" }) }),
+    scenario("auditor_cannot_run", { task: task({ auditorId: "ag_agent" }) }),
+    scenario("approval_rejected", {
+      approval: { status: "rejected", consumedAt: null },
+    }),
+    scenario("approval_pending", {
+      approval: { status: "pending", consumedAt: null },
+    }),
+    // gate() 只被「本该要审批」的分支调用：等级够高时 approval 根本不会被读到，
+    // 所以这里必须同时造出需要审批的动作，否则这条场景测的是别的东西。
+    scenario("approval_consumed", {
+      actor: actor({ autonomyLevel: 2 }),
+      task: task({ actionType: "external" }),
+      approval: { status: "approved", consumedAt: new Date("2026-01-01T00:00:00Z") },
+    }),
+    scenario("unknown_action", { task: task({ actionType: "teleport" }) }),
+    scenario("missing_grant", { grants: [] }),
+    scenario("admin_action", { task: task({ actionType: "admin" }) }),
+    scenario("audit_action", { task: task({ actionType: "audit" }) }),
+    scenario("internal_read", { task: task({ actionType: "internal_read" }) }),
+    scenario("internal_write_allow", {}),
+    scenario("internal_write_suggest", { actor: actor({ autonomyLevel: 1 }) }),
+    scenario("external_action_suggest", {
+      actor: actor({ autonomyLevel: 1 }),
+      task: task({ actionType: "external" }),
+    }),
+    scenario("external_action_approval", {
+      actor: actor({ autonomyLevel: 2 }),
+      task: task({ actionType: "external" }),
+    }),
+    scenario("spend_l1", {
+      actor: actor({ autonomyLevel: 1 }),
+      task: task({ actionType: "spend" }),
+    }),
+    scenario("spend_l2", {
+      actor: actor({ autonomyLevel: 2 }),
+      task: task({ actionType: "spend" }),
+    }),
+    scenario("spend_threshold", {
+      actor: actor({ autonomyLevel: 3 }),
+      task: task({ actionType: "spend", estimatedCostCents: 25000 }),
+    }),
+    scenario("requires_approval", {
+      actor: actor({ autonomyLevel: 3 }),
+      task: task({ actionType: "external", requiresApproval: true }),
+    }),
+    scenario("budget_exceeded", {
+      actor: actor({ autonomyLevel: 3 }),
+      task: task({ actionType: "spend" }),
+      budget: { limitCents: 100_00, spentCents: 9_995 },
+    }),
+    scenario("default_allow", {
+      actor: actor({ autonomyLevel: 3 }),
+      task: task({ actionType: "external", estimatedCostCents: 0 }),
+    }),
+    // 覆盖层不是另一条规则：命中规则不变，只是 effect 被抬成 allow。
+    scenario("standing_grant", {
+      actor: actor({ autonomyLevel: 2 }),
+      task: task({ actionType: "external" }),
+      standingGrants: [standing()],
+    }),
+    scenario("approval_override", {
+      actor: actor({ autonomyLevel: 3 }),
+      task: task({ actionType: "external", requiresApproval: true }),
+      approval: { status: "approved", consumedAt: null },
+    }),
+  ];
+
+  it("没有一条理由退化成 unrecognized", () => {
+    const broken = scenarios
+      .map((entry) => ({
+        name: entry.name,
+        rule: explainRunPolicy(entry.input).rule,
+        reason: decideRun(entry.input).reason,
+      }))
+      .filter((entry) => entry.rule === "unrecognized")
+      .map((entry) => `${entry.name}: ${entry.reason}`);
+    expect(broken).toEqual([]);
+  });
+
+  it("每个规则身份都有场景能命中", () => {
+    const expected = [
+      "admin_action",
+      "agent_lifecycle",
+      "agent_not_active",
+      "approval_consumed",
+      "approval_pending",
+      "approval_rejected",
+      "audit_action",
+      "auditor_cannot_run",
+      "budget_exceeded",
+      "default_allow",
+      "external_action",
+      "internal_read",
+      "internal_write",
+      "missing_grant",
+      "not_assignee",
+      "requires_approval",
+      "spend",
+      "spend_threshold",
+      "unknown_action",
+    ];
+    const produced = scenarios.map((entry) => explainRunPolicy(entry.input).rule);
+    expect([...new Set(produced)].sort()).toEqual(expected);
+  });
+});
+

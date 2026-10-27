@@ -118,6 +118,8 @@ export default async function ReviewPage({
     (agent) => (data.auditStats[agent.id]?.total ?? 0) === 0,
   ).length;
   const auditSamplesThisWeek = metrics.sample.accepts + metrics.sample.rejects;
+  // 待判定既不在分子也不在分母：它是"还没判"，不是"判过了"。
+  const pendingReview = metrics.sample.pendingReview;
   const decisions = data.weekly?.decisions ?? [];
 
   const metricCards: Array<{ label: string; value: string; hint: string }> = [
@@ -160,8 +162,11 @@ export default async function ReviewPage({
           : `${metrics.auditRejectRate.toFixed(0)}%`,
       hint:
         metrics.auditRejectRate === null
-          ? "本周没有审计样本，暂不计算。"
-          : `驳回 ${metrics.sample.rejects} / 审计 ${auditSamplesThisWeek} 条。`,
+          ? pendingReview > 0
+            ? `本周有 ${pendingReview} 条停在你这里，还没有可计算的样本。`
+            : "本周没有审计样本，暂不计算。"
+          : `驳回 ${metrics.sample.rejects} / 审计 ${auditSamplesThisWeek} 条` +
+            (pendingReview > 0 ? `，另有 ${pendingReview} 条待你判定。` : "。"),
     },
   ];
 

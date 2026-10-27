@@ -51,6 +51,9 @@ describe("weekly metrics sample semantics", () => {
       completed: 0,
       accepts: 0,
       rejects: 0,
+      // 一条待判定都没有：0 是真实计数（而不是"没样本"），因为它统计的是
+      // 本周发生过多少次 needs_review，没发生就是 0。
+      pendingReview: 0,
     });
   });
 
@@ -123,6 +126,14 @@ describe("weekly metrics sample semantics", () => {
         target: "tsk_metrics_retest_fail",
         hash: "hash-c",
       },
+      {
+        id: "aud_metrics_needs_review",
+        userId,
+        actor: "agent",
+        action: "audit.needs_review",
+        target: "tsk_metrics_pending",
+        hash: "hash-d",
+      },
     ]);
 
     await db.insert(userActions).values({
@@ -159,7 +170,11 @@ describe("weekly metrics sample semantics", () => {
       completed: 1,
       accepts: 1,
       rejects: 2,
+      // 待判定不进分子也不进分母：驳回率仍是 2/3，而这条记录单独可见，
+      // 否则"没人判过"在复盘页上等于没发生。
+      pendingReview: 1,
     });
+    expect(metrics.auditRejectRate).toBeCloseTo((2 / 3) * 100);
   });
 
   it("estimates management from decisions and keeps a sampled zero reject rate", async () => {

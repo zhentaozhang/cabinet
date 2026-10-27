@@ -41,7 +41,6 @@ export type PolicyRuleId =
   | "spend_threshold"
   | "requires_approval"
   | "budget_exceeded"
-  | "budget_exceeded_l1"
   | "default_allow"
   | "unrecognized";
 
@@ -100,13 +99,6 @@ const RULES: ReadonlyArray<{ pattern: RegExp; rule: PolicyRuleId }> = [
   {
     pattern: /^Task is marked as requiring approval\.$/,
     rule: "requires_approval",
-  },
-  // policy.ts:458-460 的 L1 超预算分支目前不可达：level <= 1 的每种 actionType
-  // 都在到达预算检查之前就 return 了。这里保留映射，是因为 reason 文本是唯一的
-  // 规则身份 —— 哪天那条分支变得可达，解释层不需要跟着改。
-  {
-    pattern: /^Estimated spend exceeds budget at L1\.$/,
-    rule: "budget_exceeded_l1",
   },
   {
     pattern: /^Estimated spend exceeds remaining budget\.$/,
@@ -188,8 +180,7 @@ function describe(
     }
     case "requires_approval":
       return "这条任务被标记为必须审批。";
-    case "budget_exceeded":
-    case "budget_exceeded_l1": {
+    case "budget_exceeded": {
       const { limitCents, spentCents } = input.budget;
       return `本周预算 ${yuan(limitCents)} 已用 ${yuan(spentCents)}，再花 ${yuan(
         task.estimatedCostCents,
@@ -242,11 +233,6 @@ function missingFor(
       return [
         `给该 Agent 提高周预算：现在还差 ${yuan(deficit)}`,
         "预算不足靠批准解决不了，即使批准也会被这条挡住",
-      ];
-    case "budget_exceeded_l1":
-      return [
-        `给该 Agent 提高周预算：现在还差 ${yuan(deficit)}`,
-        "L1 即使被批准也不能超预算执行，需要同时把自治等级提到 L2",
       ];
     case "missing_grant": {
       const scope = normalizeAction(task.actionType) === "internal_read" ? "read" : "write";

@@ -12,7 +12,11 @@ import type { Tx } from "../shared/tx";
  * Enqueue is idempotent. The dedupe key defaults to "one row per event per UTC
  * day", so a retried mutation or a re-audited task cannot mail the user twice.
  */
-export type NotifyKind = "rejection" | "approval" | "budget" | "conflict";
+/**
+ * "review" 是 needs_review 的通知：没有结论本身就是一件要用户动手的事，
+ * 而且它不会自己变好——只有用户判定之后任务才会离开这个状态。
+ */
+export type NotifyKind = "rejection" | "approval" | "budget" | "conflict" | "review";
 
 export type NotifyInput = {
   userId: string;
@@ -78,6 +82,26 @@ export const notices = {
         `理由：${input.reason}`,
         "",
         "执行者不能给自己盖章。打开任务页可以看到每一条验收项的判定，以及缺了什么。",
+      ].join("\n"),
+    };
+  },
+
+  reviewNeeded(input: {
+    taskId: string;
+    taskTitle: string;
+    reason: string;
+    pending: number;
+  }): { subject: string; body: string; href: string } {
+    return {
+      subject: `待你判定：${input.taskTitle}`,
+      href: `/tasks/${input.taskId}`,
+      body: [
+        `任务：${input.taskTitle}`,
+        `判定：没有结论（${input.pending} 条待判）`,
+        `理由：${input.reason}`,
+        "",
+        "这一条不是驳回：执行本身可能没问题，只是有验收项没人能自动判定。",
+        "在你判定之前，它不会算通过，也不会扣执行者的信任分。",
       ].join("\n"),
     };
   },

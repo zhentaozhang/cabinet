@@ -455,9 +455,9 @@ export function decideRun(input: {
     task.estimatedCostCents > 0 &&
     budget.spentCents + task.estimatedCostCents > budget.limitCents
   ) {
-    if (level <= 1) {
-      return deny("Estimated spend exceeds budget at L1.");
-    }
+    // 这里不分等级：能走到预算检查的只有 external_action / spend 且
+    // autonomyLevel >= 3（L1 在 432/439 行就 return 了，L2 在 433/440 行
+    // 就 return 了），所以曾经写在这里的 "L1 超预算" 分支永远不可达，已删除。
     // Deliberately NOT gated: a standing policy is "the same action as last
     // time", never "more money than the budget allows". This is the one check
     // that must always surface to the user.

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { desc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { agents, auditEvents, tasks } from "@/lib/db/schema";
+import { agents, auditEvents, outbox, tasks } from "@/lib/db/schema";
 import type { AcceptanceItem } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { auditTask, createTask, runTask } from "@/server/services/engine";
@@ -113,6 +113,30 @@ describe("审计没有给出结论时停在 needs_review", () => {
     // 确定性的那条是通过的：待人判定的是另一条，两者不能混为一谈。
     expect(row.acceptanceReport?.[0].passed).toBe(true);
     expect(row.acceptanceReport?.[1].undetermined).toBe(true);
+  });
+
+  it("待判定会发出一条 review 通知，而不是驳回", async () => {
+    const taskId = await setupTask();
+
+    await auditTask(taskId, DEMO_USER_ID);
+
+    const rows = await db.select().from(outbox).where(eq(outbox.targetId, taskId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("review");
+    expect(rows[0].subject).toContain("待你判定");
+    expect(rows[0].href).toBe(`/tasks/${taskId}`);
+    // 通知正文必须把"没有结论"和"执行有问题"分开，否则用户会去修一个没坏的东西。
+    expect(rows[0].body).toContain("不是驳回");
+    expect(rows[0].body).toContain("不会扣执行者的信任分");
+  });
+
+  it("有结论的验收不发 review 通知", async () => {
+    const taskId = await setupTask([{ type: "min_words", value: 1, required: true }]);
+
+    await auditTask(taskId, DEMO_USER_ID);
+
+    const rows = await db.select().from(outbox).where(eq(outbox.targetId, taskId));
+    expect(rows).toEqual([]);
   });
 
   it("所有 required 项都通过 → accepted", async () => {

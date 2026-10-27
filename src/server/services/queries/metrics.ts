@@ -115,6 +115,9 @@ export async function getWeeklyMetrics(userId: string) {
       .select({
         accepts: sql<number>`count(*) filter (where ${auditEvents.action} = 'audit.accept')`,
         rejects: sql<number>`count(*) filter (where ${auditEvents.action} = 'audit.reject')`,
+        // 待判定单独计数：它既不是通过也不是驳回，把它算进任何一边都会
+        // 让通过率说谎（算进分母像是判过了，算进分子像是在变好）。
+        pendingReview: sql<number>`count(*) filter (where ${auditEvents.action} = 'audit.needs_review')`,
       })
       .from(auditEvents)
       .where(
@@ -239,6 +242,7 @@ export async function getWeeklyMetrics(userId: string) {
         : null;
   const accepts = Number(auditRow?.accepts ?? 0);
   const rejects = Number(auditRow?.rejects ?? 0);
+  const pendingReview = Number(auditRow?.pendingReview ?? 0);
   const auditTotal = accepts + rejects;
   const retestTotal = Number(retestRow?.total ?? 0);
 
@@ -271,7 +275,7 @@ export async function getWeeklyMetrics(userId: string) {
     },
     goalProgress: goal?.progress ?? 0,
     auditRejectRate: auditTotal > 0 ? (rejects / auditTotal) * 100 : null,
-    sample: { planned, completed, accepts, rejects },
+    sample: { planned, completed, accepts, rejects, pendingReview },
   };
 }
 /**

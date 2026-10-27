@@ -91,6 +91,11 @@ export const weeklyMetricsSchema = z.object({
     completed: z.number(),
     accepts: z.number(),
     rejects: z.number(),
+    /**
+     * 停在 needs_review 的审计条数：没有结论，因此既不进通过率的分母，
+     * 也不进分子。单独报出来，否则"没判过"在复盘页上等于不存在。
+     */
+    pendingReview: z.number(),
   }),
 });
 export type WeeklyMetricsDto = z.infer<typeof weeklyMetricsSchema>;

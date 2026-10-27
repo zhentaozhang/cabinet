@@ -480,6 +480,26 @@ async function auditTaskInner(
       );
     }
 
+    // 待判定不是失败，但它同样需要用户动手，而且不会自己变好：任务停在这个
+    // 状态等一个人给出结论。只发驳回通知的版本里，用户永远收不到这封信。
+    if (verdict === "needs_review") {
+      await enqueueNotification(
+        {
+          userId,
+          kind: "review",
+          targetType: "task",
+          targetId: taskId,
+          ...notices.reviewNeeded({
+            taskId,
+            taskTitle: task.title,
+            reason,
+            pending: undeterminedCount(acceptanceReport ?? []),
+          }),
+        },
+        tx,
+      );
+    }
+
     let pausedInfo:
       | {
           executorId: string;
