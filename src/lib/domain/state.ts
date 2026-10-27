@@ -54,7 +54,13 @@ export const TRANSITIONS: Record<
     // `recoverStaleRuns`), so the machine stays the single source of truth.
     running: ["submitted", "failed", "cancelled", "planned"],
     submitted: ["auditing", "rejected"],
-    auditing: ["accepted", "rejected"],
+    // auditing → needs_review：验收已经跑完，但清单里存在"必须判定却无人判定"
+    // 的条目（模型未配置、判卷超时、人工项）。这条边让"没有结论"停在状态机里，
+    // 而不是被 accepted 吞掉。
+    auditing: ["accepted", "rejected", "needs_review"],
+    // 只有用户能从这里走出去：覆盖 Auditor 只能由人做，且必须留理由（见
+    // commands/tasks/override.ts 的 audit.override 审计行）。
+    needs_review: ["accepted", "rejected", "cancelled"],
     // Cancelling a rejected task is giving up on it, which must be possible.
     rejected: ["running", "failed", "planned", "submitted", "cancelled"],
     failed: ["planned", "cancelled"],

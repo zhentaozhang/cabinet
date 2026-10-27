@@ -95,6 +95,9 @@ async function seedSubmission(input: {
     auditorId: auditor.id,
     status: "submitted",
     acceptanceCriteria: "产物存在并通过验收标准。",
+    // A definite rule, so the seeded submission reaches a real verdict instead
+    // of stopping at "needs_review" (which would not count as a sample).
+    acceptanceChecklist: [{ type: "min_words", value: 1, required: true }],
     estimateMin: 10,
     actionType: "internal",
     resource: "task",
@@ -127,10 +130,10 @@ async function auditOne(
   taskId: string,
   agentId: string,
   provenance: Provenance,
-): Promise<"accepted" | "rejected"> {
+): Promise<"accepted" | "rejected" | "needs_review"> {
   await seedSubmission({ taskId, agentId, provenance });
   const result = await auditTask(taskId, DEMO_USER_ID);
-  return result.decision === "accepted" ? "accepted" : "rejected";
+  return result.decision;
 }
 
 async function agentByRole(role: string) {

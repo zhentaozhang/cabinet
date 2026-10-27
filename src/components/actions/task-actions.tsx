@@ -73,13 +73,23 @@ export function TaskActions({
       return;
     }
     if (label === "audit") {
-      const isAccepted = data.decision === "accepted";
-      const txt = `验收结果：${isAccepted ? "通过" : "驳回"}`;
-      setMsg(txt);
-      if (isAccepted) {
-        toast.success(txt);
+      // Three outcomes: a pass, a rejection, and "no verdict" (needs_review).
+      // Reporting the last one as a rejection would tell the user the Auditor
+      // decided something it explicitly did not decide.
+      const verdict = data.verdict ?? data.decision;
+      if (verdict === "needs_review") {
+        const txt = "验收没有给出结论，等你判定";
+        setMsg(txt);
+        toast.info(txt);
       } else {
-        toast.error(txt);
+        const isAccepted = verdict === "accepted";
+        const txt = `验收结果：${isAccepted ? "通过" : "驳回"}`;
+        setMsg(txt);
+        if (isAccepted) {
+          toast.success(txt);
+        } else {
+          toast.error(txt);
+        }
       }
     } else if (data.queued) {
       setMsg("已排队，后台 worker 会执行");
@@ -101,8 +111,10 @@ export function TaskActions({
   const canMarkDone = status === "accepted";
   const runLabel = finished
     ? "已完成"
-    : status === "submitted" || status === "auditing"
-      ? "待验收"
+    : status === "needs_review"
+      ? "待你判定"
+      : status === "submitted" || status === "auditing"
+        ? "待验收"
       : status === "suggested"
         ? "待采纳"
         : status === "awaiting_approval"

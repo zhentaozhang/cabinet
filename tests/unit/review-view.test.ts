@@ -280,6 +280,8 @@ describe("dissent and open-task vocabulary", () => {
       "running",
       "submitted",
       "auditing",
+      // 待判定仍然是"还能往下推"的任务，只是推它的人从 Agent 变成了用户。
+      "needs_review",
       "rejected",
     ];
     expect([...open].sort()).toEqual([...expected].sort());

@@ -177,6 +177,7 @@ export const STATUS_LABELS: Record<string, string> = {
   running: "执行中",
   submitted: "待验收",
   auditing: "验收中",
+  needs_review: "待你判定",
   accepted: "已通过",
   rejected: "已驳回",
   done: "完成",
@@ -242,6 +243,8 @@ export function statusTone(status: string): BadgeTone {
     [
       "submitted",
       "auditing",
+      // 待人判定用 accent（琥珀色）：既不是完成也不是失败，是"还在等人"。
+      "needs_review",
       "awaiting_approval",
       "suggested",
       "probation",

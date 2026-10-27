@@ -11,6 +11,7 @@ import {
   getCitationRelationship,
   getCurrentAttempt,
   getNextActionCopy,
+  pendingDecisionItems,
   getStatusBannerInfo,
   getStatusNextAction,
   getStatusSummary,
@@ -168,6 +169,7 @@ describe("every persisted task status states its next action", () => {
     running: "wait",
     submitted: "wait_audit",
     auditing: "wait_audit",
+    needs_review: "review_decision",
     rejected: "fix_and_resubmit",
     failed: "inspect_failure",
     accepted: "mark_done",
@@ -688,5 +690,112 @@ describe("a task that never ran is not described as a run", () => {
     const attempt = getCurrentAttempt([], []);
     expect(attempt.latestRun).toBeUndefined();
     expect(attempt.toolReason).toBe("这个任务还没有运行记录。");
+  });
+});
+
+describe("pendingDecisionItems lists only what a person still has to settle", () => {
+  it("states an undetermined required item exactly as the checklist does", () => {
+    // 卡片上的文字必须和验收区那一行一致，否则人去清单里找不到正在判的那一条。
+    const pending = pendingDecisionItems([
+      {
+        item: { type: "contains", value: "结论", required: true },
+        passed: true,
+        reason: "正文包含「结论」。",
+      },
+      {
+        item: { type: "manual", note: "例子的来源是否真实", required: true },
+        passed: false,
+        reason: "人工核验项没有判定人。",
+        undetermined: true,
+      },
+    ]);
+
+    expect(pending).toEqual([
+      { statement: "人工核验项：例子的来源是否真实", reason: "人工核验项没有判定人。" },
+    ]);
+  });
+
+  it("keeps the judge wording distinguishable from a manual item", () => {
+    const pending = pendingDecisionItems([
+      {
+        item: { type: "judge", value: "解释为什么闭包能捕获变量", required: true },
+        passed: false,
+        reason: "没有配置判卷模型。",
+        undetermined: true,
+      },
+    ]);
+    expect(pending).toEqual([
+      { statement: "模型判卷：解释为什么闭包能捕获变量", reason: "没有配置判卷模型。" },
+    ]);
+  });
+
+  it("leaves out an optional item nobody judged", () => {
+    // 可选条目缺席本来就不挡判定，把它列进"待你判定"是在替清单加要求。
+    const pending = pendingDecisionItems([
+      {
+        item: { type: "manual", note: "有时间可以核一下", required: false },
+        passed: false,
+        reason: "人工核验项没有判定人。",
+        undetermined: true,
+      },
+    ]);
+    expect(pending).toEqual([]);
+  });
+
+  it("does not ask for a verdict on an item the auditor already failed", () => {
+    // passed=false 而 undetermined 不为真：结论已经有了（不通过），
+    // 需要的是改产物，不是人再判一次。
+    const pending = pendingDecisionItems([
+      {
+        item: { type: "min_words", value: 300, required: true },
+        passed: false,
+        reason: "正文 120 字，少于 300 字。",
+      },
+    ]);
+    expect(pending).toEqual([]);
+  });
+
+  it("does not re-open a judge item that already got a ruling", () => {
+    const pending = pendingDecisionItems([
+      {
+        item: { type: "judge", value: "结论有来源支撑", required: true },
+        passed: true,
+        reason: "判卷模型给出通过。",
+        undetermined: false,
+      },
+    ]);
+    expect(pending).toEqual([]);
+  });
+
+  it("returns nothing for a task that has no report at all", () => {
+    expect(pendingDecisionItems(null)).toEqual([]);
+    expect(pendingDecisionItems(undefined)).toEqual([]);
+    expect(pendingDecisionItems([])).toEqual([]);
+  });
+
+  it("keeps the report's order so the card matches the checklist below it", () => {
+    const pending = pendingDecisionItems([
+      {
+        item: { type: "manual", note: "第一项", required: true },
+        passed: false,
+        reason: "没人判。",
+        undetermined: true,
+      },
+      {
+        item: { type: "min_words", value: 10, required: true },
+        passed: true,
+        reason: "字数够。",
+      },
+      {
+        item: { type: "manual", note: "第二项", required: true },
+        passed: false,
+        reason: "也没人判。",
+        undetermined: true,
+      },
+    ]);
+    expect(pending.map((entry) => entry.statement)).toEqual([
+      "人工核验项：第一项",
+      "人工核验项：第二项",
+    ]);
   });
 });

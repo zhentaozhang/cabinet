@@ -129,7 +129,9 @@ describe("research scenario", () => {
     expect(artifact.content).toMatch(CITED);
 
     const audit = await auditTask(task.id, DEMO_USER_ID);
-    expect(audit.decision).toBe("accepted");
+    // The claims table is structurally fine but its content is not machine
+    // checkable, so the verdict is "needs_review" — not a free pass.
+    expect(audit.decision).toBe("needs_review");
 
     // The report is persisted on the task, which is what the page reads.
     const [graded] = await db.select().from(tasks).where(eq(tasks.id, task.id));

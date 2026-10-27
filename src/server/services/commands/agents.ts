@@ -113,6 +113,7 @@ export async function updateAgent(
               "running",
               "submitted",
               "auditing",
+              "needs_review",
               "rejected",
               "suggested",
             ]),

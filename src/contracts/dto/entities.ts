@@ -25,6 +25,10 @@ export const TASK_STATUSES = [
   "running",
   "submitted",
   "auditing",
+  // 验收跑完了，但清单里还有"必须判定却没人判定"的条目（模型没配、判卷超时、
+  // 或者干脆是人工项）。它既不是通过也不是驳回：结论还没有，只能停在等人。
+  // 之前这种情况写的是 accepted，等于把"没有结论"读成了"通过"。
+  "needs_review",
   "accepted",
   "rejected",
   "done",

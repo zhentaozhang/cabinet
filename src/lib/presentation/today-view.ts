@@ -88,7 +88,14 @@ export function pickLearningTask<
  * the list short is deliberate — a task in `running` or `planned` needs nothing
  * from the reader and belongs in the secondary list instead.
  */
-const ATTENTION_TASK_STATUSES = ["awaiting_approval", "rejected", "failed"];
+const ATTENTION_TASK_STATUSES = [
+  // 待判定排在最前：它是唯一一件"不处理就永远停在这里"的事，
+  // 驳回和失败至少已经给出了一个结论。
+  "needs_review",
+  "awaiting_approval",
+  "rejected",
+  "failed",
+];
 
 /**
  * Fixed order inside the queue; index is the rank.
@@ -101,6 +108,7 @@ const ATTENTION_TASK_ORDER: readonly string[] = [...ATTENTION_TASK_STATUSES];
 
 /** What each attention status asks the reader to do, in one line. */
 const ATTENTION_TASK_HINTS: Record<string, string> = {
+  needs_review: "验收没有给出结论，需要你判定通过或驳回。",
   awaiting_approval: "需要你批准后才会真正执行。",
   rejected: "被驳回，需要你查看原因并修改或重试。",
   failed: "执行失败，需要你判断是否重试。",

@@ -43,6 +43,7 @@ import {
   getStatusBannerInfo,
   getNextActionCopy,
   getStatusSummary,
+  pendingDecisionItems,
   resolveFailurePresentation,
   summarizeTaskCitations,
 } from "@/lib/presentation/task-view";
@@ -60,6 +61,8 @@ import {
   TaskActions,
 } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
+import { TaskDecisionCard } from "./decision-card";
+import { PolicyPreviewPanel } from "./policy-preview-panel";
 import { VerifiabilityPanel } from "./verifiability-panel";
 
 export const metadata: Metadata = {
@@ -138,6 +141,15 @@ export default async function TaskPage({
   const totalChecklistCount = checklistRows.length;
   const allPassed =
     totalChecklistCount > 0 && passedCount === totalChecklistCount;
+  /*
+    审计没有给出结论时，光有横幅上的"待你判定"是不够的：用户还得自己往
+    下翻清单、猜哪一条没人判。这里把"必须判却没有判定人"的条目先摘出来，
+    卡片列的就是他要点"通过/驳回"所依据的那几条。
+  */
+  const pendingDecisions =
+    task.status === "needs_review"
+      ? pendingDecisionItems(task.acceptanceReport)
+      : [];
 
   // One failure verdict for the whole page. The banner and the reason panel
   // used to test different conditions, so a run that failed while recovery
@@ -812,6 +824,11 @@ export default async function TaskPage({
             )}
           </Card>
 
+          {/* 人拍板：审计说"没有结论"时，只有人能给出结论 */}
+          {task.status === "needs_review" ? (
+            <TaskDecisionCard taskId={task.id} items={pendingDecisions} />
+          ) : null}
+
           {/* ④ 验收标准：契约规则与判定结果 */}
           <Card>
             <CardHeader
@@ -983,6 +1000,18 @@ export default async function TaskPage({
                   <span>截止 {dateTime(task.dueAt, tz)}</span>
                 </div>
               </div>
+            </div>
+          </Card>
+
+          {/* 运行前预演：决策由 decideRun 给出，这里只把它翻成人话，不另算一遍 */}
+          <Card>
+            <CardHeader
+              eyebrow="Policy"
+              title="运行前预演"
+              right={<Badge tone="neutral">只读</Badge>}
+            />
+            <div className="px-5 py-4">
+              <PolicyPreviewPanel taskId={task.id} hasAssignee={Boolean(task.assigneeId)} />
             </div>
           </Card>
 

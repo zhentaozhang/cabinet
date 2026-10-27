@@ -45,9 +45,10 @@ describe("outbox enqueue", () => {
   });
 
   it("records a rejected audit, and nothing else", async () => {
-    // A task that demands persisted evidence can never pass in demo mode (no
-    // connector is called), so the Auditor must reject it — and that rejection
-    // is the notifiable event.
+    // The checklist asks for far more words than the artifact has, so the
+    // Auditor has a definite failure to report — and a rejection is the
+    // notifiable event. (A rule that cannot be judged would end in
+    // "needs_review" instead, which nobody is notified about.)
     const task = await createTask(
       {
         title: "整理检索证据",
@@ -57,8 +58,8 @@ describe("outbox enqueue", () => {
         actionType: "internal",
         resource: "task",
         estimatedCostCents: 0,
-        acceptanceCriteria: "至少一条已落库证据。",
-        acceptanceChecklist: [{ type: "min_evidence", value: 1, required: true }],
+        acceptanceCriteria: "至少 5000 字的正文。",
+        acceptanceChecklist: [{ type: "min_words", value: 5000, required: true }],
         estimateMin: 10,
         createdBy: "agent",
       },
@@ -114,6 +115,22 @@ describe("outbox enqueue", () => {
 });
 
 describe("delivery", () => {
+  /*
+   * These cases are about the delivery mechanics — claiming, retry, lease,
+   * dedupe — not about what o'clock it is. The demo account is quiet from
+   * 22:00 to 08:00 Asia/Shanghai, so running the suite in the evening deferred
+   * every row and turned the whole block into a coin flip on the wall clock.
+   * Close the window here (from === to means "no window" in isQuietHour); the
+   * cases that are about quiet hours open it again themselves.
+   */
+  beforeEach(async () => {
+    await updateNotifyPrefs(DEMO_USER_ID, {
+      notifyEnabled: true,
+      quietFrom: 0,
+      quietTo: 0,
+    });
+  });
+
   it("sends a due row and marks it sent", async () => {
     await enqueueNotification({
       userId: DEMO_USER_ID,
@@ -163,8 +180,8 @@ describe("delivery", () => {
     // A window covering the whole day: everything is quiet, always.
     await updateNotifyPrefs(DEMO_USER_ID, {
       notifyEnabled: true,
-      quietFrom: 0,
-      quietTo: 23,
+      quietFrom: 22,
+      quietTo: 8,
     });
     await enqueueNotification({
       userId: DEMO_USER_ID,
@@ -175,8 +192,12 @@ describe("delivery", () => {
       body: "b",
     });
 
+    // Pin the instant instead of hoping it is quiet: 15:00Z is 23:00 in
+    // Asia/Shanghai, inside the 22:00–08:00 window of the demo account.
+    // A window like 0–23 would look "all day" but leave hour 23 outside it.
     const before = new Date();
-    const report = await deliverOutbox({ sender: okSender });
+    const at = new Date("2030-01-01T15:00:00Z");
+    const report = await deliverOutbox({ sender: okSender, now: at });
 
     expect(report.deferred).toBe(1);
     const [row] = await db.select().from(outbox);

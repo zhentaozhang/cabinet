@@ -185,11 +185,42 @@ export function evaluateAcceptance(
   });
 }
 
-/** Undetermined items are excluded: they are pending, not failed. */
+/**
+ * 一张验收清单的三种结论。之所以不是布尔："没有结论"既不是通过也不是驳回，
+ * 把两种否定折叠成 false 会让"没人判过"和"判过但没过"在页面上长得一样。
+ *
+ * - pass：所有 required 项都有结论且都通过；
+ * - fail：至少一个 required 项有明确的否定结论；
+ * - needs_review：没有失败项，但有 required 项没结论（模型没配、判卷超时、人工项）。
+ */
+export type AuditVerdict = "pass" | "fail" | "needs_review";
+
+/**
+ * 审计结论的唯一判定入口。undetermined 在这里既不等于通过也不等于失败：
+ * 它让整张清单停在 needs_review，等一个真正给出结论的人（模型或用户）。
+ *
+ * 空清单返回 pass 只是逻辑上的平凡通过——没有 required 项，就不存在"有项没结论"。
+ * "任务根本没有验收清单"不是这里能回答的问题：那种任务的结论由审计命令单独写一条
+ * 人工待判项得出，见 commands/tasks/audit.ts 的无清单分支。
+ */
+export function auditVerdict(results: AcceptanceResult[]): AuditVerdict {
+  const required = results.filter((result) => result.item.required);
+  // 明确失败优先于待判：一条 required 项已被判否，就没必要再等另一条待判项，
+  // 否则一份明显不合格的产物会因为"还有项没判"而停在待判定。
+  if (required.some((result) => !result.passed && !result.undetermined)) {
+    return "fail";
+  }
+  if (required.some((result) => result.undetermined)) return "needs_review";
+  return "pass";
+}
+
+/**
+ * 语义已收紧：存在未判定的 required 项时返回 false（从前返回 true，等于让
+ * "判卷没有结论"冒充通过）。保留这个导出只为兼容既有的布尔调用方，
+ * 新代码请用 auditVerdict 区分"驳回"和"待判定"。
+ */
 export function checklistPassed(results: AcceptanceResult[]): boolean {
-  return results.every(
-    (result) => !result.item.required || result.passed || result.undetermined,
-  );
+  return auditVerdict(results) === "pass";
 }
 
 export function undeterminedCount(results: AcceptanceResult[]): number {

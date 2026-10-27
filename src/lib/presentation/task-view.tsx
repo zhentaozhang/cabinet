@@ -14,6 +14,7 @@ import {
 
 import type {
   AcceptanceItemDto,
+  AcceptanceResultDto,
   RetrievedEvidenceDto,
   RunDto,
   StepDto,
@@ -188,6 +189,32 @@ export function getChecklistRuleLabel(item: AcceptanceItemDto): string {
   }
 }
 
+/**
+ * 清单里"必须判、却没有人能判"的条目。
+ *
+ * 页面在 needs_review 时要在验收标准之上给出一张卡片，用户第一个问题是
+ * "我到底在替谁判？"。答案只能是清单本身：把 required 且 undetermined 的
+ * 条目原样列出来，比让他自己往下翻一遍清单再回来点按钮要诚实得多。
+ *
+ * 文案复用 getChecklistRuleLabel，卡片和下方清单说的是同一句话，不会出现
+ * "卡片说人工核验、清单说模型判卷"的分叉。reason 也照抄审计给的理由：那是
+ * 它为什么没能判的唯一记录。
+ *
+ * passed=false 而 undetermined 不为真的条目不算在这里——那种条目已经有结论
+ * （不通过），要改的是产物，不是再判一次。
+ */
+export function pendingDecisionItems(
+  report: AcceptanceResultDto[] | null | undefined,
+): { statement: string; reason: string }[] {
+  if (!report) return [];
+  return report
+    .filter((entry) => entry.undetermined === true && entry.item.required)
+    .map((entry) => ({
+      statement: getChecklistRuleLabel(entry.item),
+      reason: entry.reason,
+    }));
+}
+
 export function getChecklistTypeTag(type: AcceptanceItemDto["type"]) {
   switch (type) {
     case "contains":
@@ -297,6 +324,7 @@ export type TaskNextActionCategory =
   | "wait_audit"
   | "fix_and_resubmit"
   | "inspect_failure"
+  | "review_decision"
   | "mark_done"
   | "none"
   | "unknown";
@@ -328,6 +356,8 @@ const TASK_STATUS_META: Record<
   running: { nextActionCategory: "wait" },
   submitted: { nextActionCategory: "wait_audit" },
   auditing: { nextActionCategory: "wait_audit" },
+  // 验收已经跑完但结论缺一块时，下一步动作是"人来判"，不是"等"也不是"通过"。
+  needs_review: { nextActionCategory: "review_decision" },
   rejected: { nextActionCategory: "fix_and_resubmit" },
   failed: { nextActionCategory: "inspect_failure" },
   accepted: { nextActionCategory: "mark_done" },
@@ -349,6 +379,12 @@ const NEXT_ACTION_COPY: Record<
   },
   wait: { label: "等待执行", hint: "执行正在进行，完成后会自动送审。" },
   wait_audit: { label: "等待验收", hint: "Auditor 正在对照验收标准裁定，此时无需操作。" },
+  review_decision: {
+    label: "需要你判定",
+    // 说明为什么轮到你：清单里存在"必须判定却没人判定"的条目，Auditor 不代判，
+    // 所以结论只能由人给出，并且要留下理由。
+    hint: "清单里有必须判定却没人能判的条目（模型没配、判卷超时或人工项）；请给出结论并写明理由。",
+  },
   fix_and_resubmit: {
     label: "修改后重交",
     hint: "按驳回原因调整产物，再重新提交或重新执行。",
@@ -645,6 +681,21 @@ export function getStatusBannerInfo(
       bannerBorderClass: "border-line",
       bannerBgClass: "bg-panel2/40",
       nextActionCategory: "run",
+    };
+  }
+
+  // 验收跑完了，但结论缺一块：清单里有"必须判定却没人判定"的条目。
+  // 这条横幅不能借 success 语气：没有结论 ≠ 通过，下一步是人给结论。
+  if (status === "needs_review") {
+    return {
+      badgeLabel: "待你判定",
+      badgeTone: "accent",
+      title: "验收缺少结论，需要你判定",
+      description:
+        "Auditor 已完成能自动判定的部分；清单里还有必须判定却没有结论的条目（模型未配置、判卷超时或人工项）。请查看产物后给出结论并写明理由。",
+      bannerBorderClass: "border-accent/35",
+      bannerBgClass: "bg-accent/[0.05]",
+      nextActionCategory: "review_decision",
     };
   }
 

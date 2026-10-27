@@ -53,6 +53,9 @@ export async function getTodayData(userId: string) {
             // meant Today could never answer "what went wrong". This is a
             // read-model widening only — no new domain status is introduced.
             "failed",
+            // 同理：验收说"没有结论"的任务最需要人出现，漏掉它，
+            // Today 就会在一个任务明确等人时显示"没有需要你处理的事"。
+            "needs_review",
           ]),
         ),
       )

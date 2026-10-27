@@ -308,8 +308,8 @@ describe("acceptance 对 judge 项", () => {
     expect(results[0].passed).toBe(false);
     expect(results[0].undetermined).toBe(true);
     expect(results[0].reason).toBe("需要模型判定：解释闭包为什么能捕获变量");
-    // undetermined 是待判，不是失败：没有模型时不该因此驳回任务。
-    expect(checklistPassed(results)).toBe(true);
+    // 待判不是失败，但也不是通过：整份清单停在"需要人判定"，不驳回也不放行。
+    expect(checklistPassed(results)).toBe(false);
     expect(undeterminedCount(results)).toBe(1);
   });
 

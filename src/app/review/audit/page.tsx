@@ -17,10 +17,13 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 40;
 
-/** Colour the two verdicts that carry meaning; everything else stays neutral. */
+/** Colour the three verdicts that carry meaning; everything else stays neutral. */
 function actionTone(action: string) {
   if (action === "audit.accept") return "teal" as const;
   if (action === "audit.reject") return "danger" as const;
+  // needs_review is neither: it is a hand-off to the user, so it gets the
+  // attention colour the task banner uses.
+  if (action === "audit.needs_review") return "accent" as const;
   if (action.startsWith("council.")) return "violet" as const;
   if (action.startsWith("autonomy.")) return "accent" as const;
   return "neutral" as const;

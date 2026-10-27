@@ -76,10 +76,10 @@ describe("structured acceptance", () => {
     await auditTask(task.id, DEMO_USER_ID);
 
     const [row] = await db.select().from(tasks).where(eq(tasks.id, task.id));
-    // Without a checklist there is nothing to compare, so the verdict may still
-    // be "accepted" — but the report has to say so instead of claiming a
+    // Without a checklist nothing was compared, so there is no verdict to give:
+    // the task stops at "needs_review" for the user instead of reporting a
     // line-by-line pass that never ran.
-    expect(row.status).toBe("accepted");
+    expect(row.status).toBe("needs_review");
     expect(row.acceptanceReport).toHaveLength(1);
     expect(row.acceptanceReport?.[0].item.type).toBe("manual");
     expect(row.acceptanceReport?.[0].undetermined).toBe(true);
@@ -90,7 +90,7 @@ describe("structured acceptance", () => {
       .from(auditEvents)
       .where(
         and(
-          eq(auditEvents.action, "audit.accept"),
+          eq(auditEvents.action, "audit.needs_review"),
           eq(auditEvents.target, task.id),
         ),
       )

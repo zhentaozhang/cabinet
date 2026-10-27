@@ -76,17 +76,20 @@ function verdictReply(pass: boolean, reason: string): string {
   });
 }
 
-async function latestAuditEvent(taskId: string) {
+async function latestAuditEvent(
+  taskId: string,
+  action: "audit.accept" | "audit.needs_review" = "audit.accept",
+) {
   const [event] = await db
     .select()
     .from(auditEvents)
-    .where(
-      and(eq(auditEvents.action, "audit.accept"), eq(auditEvents.target, taskId)),
-    )
+    .where(and(eq(auditEvents.action, action), eq(auditEvents.target, taskId)))
     .orderBy(desc(auditEvents.seq))
     .limit(1);
   return event?.after as
     | {
+        status?: string;
+        verdict?: string;
         artifactId?: string | null;
         judge?: {
           judgedBy: string | null;
@@ -104,10 +107,14 @@ describe("no model configured", () => {
 
     const result = await auditTask(taskId, DEMO_USER_ID);
 
-    // undetermined 是待判不是失败：没有模型时任务仍可验收。
-    expect(result.decision).toBe("accepted");
+    // 待判不是失败，但也绝不是通过：没有模型时任务停在 needs_review，
+    // 等一个真正给出结论的人。旧断言是 accepted，那正是"没有结论=通过"。
+    expect(result.decision).toBe("needs_review");
+    expect(result.verdict).toBe("needs_review");
     const [row] = await db.select().from(tasks).where(eq(tasks.id, taskId));
-    expect(row.status).toBe("accepted");
+    expect(row.status).toBe("needs_review");
+    // 没有结论就没有"被接受的时间"。
+    expect(row.acceptedAt).toBeNull();
     expect(row.acceptanceReport).toHaveLength(1);
     expect(row.acceptanceReport?.[0].item.type).toBe("judge");
     expect(row.acceptanceReport?.[0].passed).toBe(false);
@@ -116,7 +123,10 @@ describe("no model configured", () => {
 
     expect(await db.select().from(learningAttempts)).toHaveLength(0);
 
-    const after = await latestAuditEvent(taskId);
+    // 待判定不能写成 audit.accept：那会让审计日志读起来像"验收通过"。
+    expect(await latestAuditEvent(taskId, "audit.accept")).toBeUndefined();
+    const after = await latestAuditEvent(taskId, "audit.needs_review");
+    expect(after?.verdict).toBe("needs_review");
     // 判卷没有发生，报告必须说清楚是"没有模型"而不是"判过了没通过"。
     expect(after?.judge?.judgedBy).toBeNull();
     expect(after?.judge?.reason).toBe("no_model");
@@ -392,7 +402,7 @@ describe("audit + judge", () => {
     expect(after?.artifactId).toBe(artifactId);
   });
 
-  it("判卷失败时任务不因此被驳回，但仍留下尝试记录", async () => {
+  it("判卷失败时任务既不驳回也不通过，停在待你判定，但仍留下尝试记录", async () => {
     const { taskId } = await setupJudgeTask();
     const judge: JudgeFn = async () => ({
       status: "provider_error",
@@ -404,8 +414,9 @@ describe("audit + judge", () => {
 
     const result = await auditTask(taskId, DEMO_USER_ID, { judge });
 
-    expect(result.decision).toBe("accepted");
+    expect(result.decision).toBe("needs_review");
     const [row] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+    expect(row.status).toBe("needs_review");
     expect(row.acceptanceReport?.[0].undetermined).toBe(true);
     expect(row.acceptanceReport?.[0].reason).toContain("判卷未完成");
     const [attempt] = await db
@@ -413,8 +424,10 @@ describe("audit + judge", () => {
       .from(learningAttempts)
       .where(eq(learningAttempts.taskId, taskId));
     expect(attempt.judgedBy).toBe("model");
-    expect(attempt.accepted).toBe(true);
-    const after = await latestAuditEvent(taskId);
+    // 判卷没出结论，学习历史里也不能写着"这份答案被接受了"。
+    expect(attempt.accepted).toBe(false);
+    const after = await latestAuditEvent(taskId, "audit.needs_review");
+    expect(after?.verdict).toBe("needs_review");
     expect(after?.judge?.reason).toBe("provider_error");
   });
 });

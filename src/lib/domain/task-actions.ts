@@ -50,6 +50,9 @@ const CANCELLABLE = new Set([
   "rejected",
   "failed",
   "running",
+  // 待判定也允许放弃：状态图里 needs_review → cancelled 是合法边，
+  // 否则一个"没人给结论"的任务会永远卡在队列里，既不能验收也不能关掉。
+  "needs_review",
 ]);
 
 const CANCEL_REASON: Record<string, string> = {
@@ -61,6 +64,7 @@ const CANCEL_REASON: Record<string, string> = {
 };
 
 const RUN_REASON: Record<string, string> = {
+  needs_review: "验收缺少结论，先做判定，再决定是否重跑",
   awaiting_approval: "等待你批准这次外部动作",
   submitted: "已提交，等待验收",
   auditing: "正在验收",
@@ -71,6 +75,7 @@ const RUN_REASON: Record<string, string> = {
 };
 
 const AUDIT_REASON: Record<string, string> = {
+  needs_review: "验收没有给出结论，等你判定后才谈得上重新验收",
   planned: "还没有执行，没有可验收的产物",
   assigned: "还没有执行，没有可验收的产物",
   awaiting_approval: "先批准这次外部动作",

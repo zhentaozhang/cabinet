@@ -140,7 +140,7 @@ describe("审计结论推进掌握度", () => {
     expect(await masteryFor("确定性项")).toBeDefined();
   });
 
-  it("判卷没跑出结论 → 不算这次复习，报告也不写「逐项通过」", async () => {
+  it("判卷没跑出结论 → 任务停在待你判定，也不算这次复习", async () => {
     const taskId = await setupLearningTask({
       topicKey: "闭包捕获的是变量",
       checklist: [
@@ -156,11 +156,13 @@ describe("审计结论推进掌握度", () => {
     // 测试环境没有 OPENAI_API_KEY，判卷必然停在 undetermined。
     const result = await auditTask(taskId, DEMO_USER_ID);
 
-    // 未判定不是失败，任务照样能验收——但结论必须承认有一项没被判过。
-    expect(result.decision).toBe("accepted");
-    expect(result.reason).toBe(
-      "验收清单里能自动判定的条目全部通过；另有 1 项未判定（模型判卷），未计入本次结论。",
-    );
+    // 未判定不是失败，但也绝不是通过：没有结论的任务不能写成 accepted。
+    expect(result.decision).toBe("needs_review");
+    expect(result.verdict).toBe("needs_review");
+    const [row] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+    expect(row.status).toBe("needs_review");
+    expect(result.reason).toContain("没有结论");
+    expect(result.reason).toContain("模型判卷");
     expect(result.reason).not.toContain("逐项通过");
 
     // 没有结论就不推进掌握度：把"没判"当成"答对"会让复习间隔凭空翻倍，

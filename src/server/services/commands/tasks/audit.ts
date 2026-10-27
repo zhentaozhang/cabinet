@@ -21,10 +21,16 @@ import {
   NotFoundError,
   PolicyDenied,
 } from "@/lib/domain/errors";
-import { checklistPassed, evaluateAcceptance, undeterminedCount } from "@/lib/domain/acceptance";
+import {
+  auditVerdict,
+  evaluateAcceptance,
+  undeterminedCount,
+  type AuditVerdict,
+} from "@/lib/domain/acceptance";
 import { isEligibleAuditSample } from "@/lib/domain/provenance";
 import { recalculateGoalProgress } from "../progress";
 import { recordOutcome } from "../learning/mastery";
+import { recordTaskLesson } from "../memory/task-lesson";
 import { logEvent } from "@/lib/observability/log";
 import { judgeSubmission, type JudgeFn } from "./judge";
 
@@ -170,7 +176,9 @@ async function auditTaskInner(
       output: { found: Boolean(artifact) },
     });
 
-    let pass = Boolean(artifact);
+    // 三种结论而不是一个布尔：通过、被驳回、以及"根本没人给出结论"是三个不同的
+    // 事实，落库时也走三条不同的边（accepted / rejected / needs_review）。
+    let verdict: AuditVerdict = "fail";
     let reason = "没有找到可验收的产物。";
     let acceptanceReport: AcceptanceResult[] | null = null;
     // 判卷是否发生、为什么没发生，都要能从事后记录里读出来：
@@ -227,7 +235,11 @@ async function auditTaskInner(
         };
       }
 
-      pass = checklistPassed(acceptanceReport);
+      verdict = auditVerdict(acceptanceReport);
+      // 必须判定却没人判定的条目：needs_review 的理由就是它。
+      const pendingRequiredItems = acceptanceReport.filter(
+        (result) => result.item.required && result.undetermined,
+      );
       const failed = acceptanceReport.filter(
         (result) => result.item.required && !result.passed && !result.undetermined,
       );
@@ -245,13 +257,18 @@ async function auditTaskInner(
             ),
         ),
       );
-      reason = pass
-        ? pending > 0
-          ? `验收清单里能自动判定的条目全部通过；另有 ${pending} 项未判定（${pendingKinds.join("、")}），未计入本次结论。`
-          : "验收清单逐项通过。"
-        : `验收清单未通过：${failed
-            .map((result) => result.reason)
-            .join("；")}`;
+      reason =
+        verdict === "pass"
+          ? pending > 0
+            ? `验收清单里能自动判定的条目全部通过；另有 ${pending} 项未判定（${pendingKinds.join("、")}），未计入本次结论。`
+            : "验收清单逐项通过。"
+          : verdict === "needs_review"
+            ? // 这里不许出现"通过"二字：清单里躺着必须判定却没人判定的条目，
+              // 除非把"没判"读成"过了"。结论只能停在待你判定。
+              `验收清单没有结论：${pendingRequiredItems.length} 项必须判定的条目未判定（${pendingKinds.join("、")}），也没有明确的失败项。这不是通过，也不是驳回，等你判定。`
+            : `验收清单未通过：${failed
+                .map((result) => result.reason)
+                .join("；")}`;
     } else if (artifact) {
       // No checklist: the criteria are prose, so nothing was compared line by
       // line. This branch used to report "验收标准逐条对照通过" while comparing
@@ -277,12 +294,20 @@ async function auditTaskInner(
             "本任务没有验收清单，Auditor 只确认了产物存在；「逐条对照」没有发生，需要你人工判定",
         },
       ];
-      pass = artifact.content.trim().length > 0 && !missingRubric;
-      reason = missingRubric
-        ? "缺少评分标准（rubric），无法判断题目质量。请补充后重新提交。"
-        : pass
-          ? "产物已提交；任务没有验收清单，验收没有逐条对照，结论待你确认。"
-          : "产物是空的，没有可验收的内容。";
+      // 空产物与明确缺失的评分标准是确定性结论（驳回）；其余情形里"逐条对照"
+      // 根本没有发生过，那是没有结论——从前这里写成 accepted，等于把
+      // "没人判过"升级成"验收通过"。
+      if (!artifact.content.trim().length) {
+        verdict = "fail";
+        reason = "产物是空的，没有可验收的内容。";
+      } else if (missingRubric) {
+        verdict = "fail";
+        reason = "缺少评分标准（rubric），无法判断题目质量。请补充后重新提交。";
+      } else {
+        verdict = "needs_review";
+        reason =
+          "产物已提交，但任务没有验收清单，没有人逐条对照过，所以验收没有结论。请你判定通过或驳回。";
+      }
     }
 
     await addStep({
@@ -291,7 +316,7 @@ async function auditTaskInner(
         acceptanceCriteria: task.acceptanceCriteria,
         checklist: task.acceptanceChecklist ?? null,
       },
-      output: { pass, reason, checklist: acceptanceReport },
+      output: { verdict, reason, checklist: acceptanceReport },
     });
 
     await tx
@@ -320,14 +345,17 @@ async function auditTaskInner(
           .limit(1)
       : [];
 
-    const nextStatus = pass ? "accepted" : "rejected";
+    const nextStatus: "accepted" | "rejected" | "needs_review" =
+      verdict === "pass" ? "accepted" : verdict === "fail" ? "rejected" : "needs_review";
+    // 结论也是状态迁移：走同一张表，非法边在这里就炸，而不是写进一个状态机不认的状态。
+    assertTransition("task", "auditing", nextStatus);
     const [decided] = await tx
       .update(tasks)
       .set({
         status: nextStatus,
         acceptanceReport,
         updatedAt: new Date(),
-        ...(pass
+        ...(verdict === "pass"
           ? {
               acceptedAt: new Date(),
               acceptedAutonomyLevel: userSubmitted
@@ -351,7 +379,8 @@ async function auditTaskInner(
     if (judgeTrace?.judgedBy === "model") {
       const settled = await tx
         .update(learningAttempts)
-        .set({ accepted: pass })
+        // needs_review 时保持 false：判卷行本来就写 false，待判不是"被接受"。
+        .set({ accepted: verdict === "pass" })
         .where(
           and(
             eq(learningAttempts.userId, userId),
@@ -372,24 +401,17 @@ async function auditTaskInner(
     // 这一次复习——验收提交了、掌握度却没发生，且无法事后发现。
     // 只认带 topicKey 的学习任务模板：其余任务就算有人手写了 topicKey，
     // 也不该往掌握度表里灌一条没有教学意义的记录。
-    const unjudgedRequired = (acceptanceReport ?? []).reduce(
-      (acc, entry) => {
-        if (entry.item.required && entry.undetermined) {
-          if (entry.item.type === "judge") acc.judge += 1;
-          else acc.other += 1;
-        }
-        return acc;
-      },
-      { judge: 0, other: 0 },
+    const pendingRequired = (acceptanceReport ?? []).filter(
+      (entry) => entry.item.required && entry.undetermined,
     );
     if (isLearningTask && task.topicKey) {
-      // 有待判的判卷项时既不加也不减：没有结论≠答错，记成错答会把复习间隔
-      // 压回一天，比不记更失真。
-      if (unjudgedRequired.judge > 0) {
-        logEvent("info", "mastery.skipped_unjudged", {
+      // 没有结论时既不加也不减：没有结论≠答错，记成错答会把复习间隔压回一天，
+      // 记成答对又会凭空翻倍，比不记更失真。
+      if (verdict === "needs_review") {
+        logEvent("info", "mastery.skipped_needs_review", {
           taskId,
           topicKey: task.topicKey,
-          unjudged: unjudgedRequired.judge,
+          unjudged: pendingRequired.length,
         });
       } else {
         try {
@@ -398,7 +420,7 @@ async function auditTaskInner(
               userId,
               topicKey: task.topicKey as string,
               goalId: task.goalId,
-              correct: nextStatus === "accepted",
+              correct: verdict === "pass",
               tx: savepoint,
             });
           });
@@ -413,10 +435,35 @@ async function auditTaskInner(
       }
     }
 
+    // 验收结论也要能被之后的检索找到：留下的是"什么算通过、为什么不通过"，
+    // 而不是这次产物本身。needs_review 不写——没有结论时写一条"通过/驳回"
+    // 的记忆就是替 Auditor 编了一个它没做出的判断；等用户判定时由
+    // override.ts 补这一条。
+    // 与掌握度同样放进 savepoint：验收已经确定，记忆写失败不该把它一起回滚。
+    if (verdict !== "needs_review") {
+      try {
+        await tx.transaction(async (savepoint) => {
+          await recordTaskLesson({
+            userId,
+            taskId,
+            artifactId: artifact?.id ?? null,
+            accepted: verdict === "pass",
+            reason,
+            tx: savepoint,
+          });
+        });
+      } catch (error) {
+        logEvent("error", "task_lesson.record_failed", {
+          taskId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     // Only failures are mailed. A rejected task is the one thing the user must
     // look at today, and the mail must be enqueued in the same transaction so a
     // rollback cannot leave a promise in the outbox.
-    if (!pass) {
+    if (verdict === "fail") {
       await enqueueNotification(
         {
           userId,
@@ -441,7 +488,10 @@ async function auditTaskInner(
         }
       | null = null;
 
-    if (executor && !userSubmitted) {
+    // needs_review 一律不写计数：成功和失败都是结论，没有人给出结论时
+    // 两个方向都会失真——+1 会让 Agent 靠"未判定的产物"晋升，-2 会在
+    // 没人判过的情况下扣信任分并推高连续驳回。
+    if (executor && !userSubmitted && verdict !== "needs_review") {
       // Only real model execution counts as performance. A demo, rule-generated
       // or provider-less submission is still audited and recorded, but it must
       // not move the counters that unlock autonomy.
@@ -467,20 +517,23 @@ async function auditTaskInner(
         .set({
           ...(countsAsEvidence
             ? {
-                successCount: sql`${agents.successCount} + ${pass ? 1 : 0}`,
+                successCount: sql`${agents.successCount} + ${
+                  verdict === "pass" ? 1 : 0
+                }`,
                 trustScore: sql`least(100, greatest(0, ${agents.trustScore} + ${
-                  pass ? 1 : -2
+                  verdict === "pass" ? 1 : -2
                 }))`,
               }
             : {}),
-          failCount: sql`${agents.failCount} + ${pass ? 0 : 1}`,
-          rejectStreak: pass ? 0 : sql`${agents.rejectStreak} + 1`,
+          failCount: sql`${agents.failCount} + ${verdict === "fail" ? 1 : 0}`,
+          rejectStreak:
+            verdict === "pass" ? 0 : sql`${agents.rejectStreak} + 1`,
         })
         .where(and(eq(agents.id, executor.id), eq(agents.userId, userId)))
         .returning();
 
       const shouldPause =
-        !pass &&
+        verdict === "fail" &&
         afterCounters !== undefined &&
         afterCounters.rejectStreak >= config.audit.rejectStreakLimit &&
         ["active", "probation"].includes(afterCounters.status);
@@ -510,7 +563,7 @@ async function auditTaskInner(
       }
     }
 
-    if (pass && task.goalId) {
+    if (verdict === "pass" && task.goalId) {
       await recalculateGoalProgress(
         tx,
         userId,
@@ -530,30 +583,58 @@ async function auditTaskInner(
       });
     }
 
+    // 待判定绝不能写成 audit.accept：审计日志是给人读的，那一行读起来就是
+    // "验收通过"，而实际上没有人给出过结论。
+    const auditAction =
+      verdict === "pass"
+        ? "audit.accept"
+        : verdict === "fail"
+          ? "audit.reject"
+          : "audit.needs_review";
+
     await logAuditTx(tx, {
       userId,
       actor: `agent:${auditor.id}`,
-      action:
-        nextStatus === "accepted" ? "audit.accept" : "audit.reject",
+      action: auditAction,
       target: taskId,
       before: { status: "auditing" },
       after: {
         status: nextStatus,
+        // 三值结论留在审计行里：只看 status 时，"待你判定"与"通过"的区别
+        // 还要再推一遍，事后核对报告的人未必知道状态机的细节。
+        verdict,
         reason,
         // Which draft was judged. Without it a report could never be tied back
         // to the content it describes once a newer artifact exists.
         artifactId: artifact?.id ?? null,
+        // 未判定条目的摘要：看审计行的人能知道"有一条没判"，但看不到是哪一条，
+        // 也就没法判断这条待判定值不值得自己接手。
+        ...(verdict === "needs_review"
+          ? {
+              pending: pendingRequired.map((entry) => ({
+                type: entry.item.type,
+                criterion:
+                  entry.item.type === "manual"
+                    ? entry.item.note
+                    : entry.item.value,
+                reason: entry.reason,
+              })),
+            }
+          : {}),
         // 只有清单里真有 judge 项时才追加这个字段：没有判卷的任务，
         // 审计行必须与引入判卷之前逐字一致。
         ...(judgeTrace ? { judge: judgeTrace } : {}),
       },
     });
 
-    return { runId, nextStatus, reason, pausedInfo };
+    return { runId, nextStatus, verdict, reason, pausedInfo };
   });
 
   return {
+    /** 任务写回后的状态，调用方跟的字段。 */
     decision: result.nextStatus,
+    /** 三值结论：pass / fail / needs_review，与 decision 一一对应。 */
+    verdict: result.verdict,
     reason: result.reason,
     runId: result.runId,
   };

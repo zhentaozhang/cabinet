@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  auditVerdict,
   checklistPassed,
   evaluateAcceptance,
   undeterminedCount,
@@ -99,7 +100,10 @@ describe("undetermined rules", () => {
       { type: "manual", note: "引用是否支持结论", required: true },
     ]);
 
-    expect(checklistPassed(results)).toBe(true);
+    // 旧断言是 checklistPassed === true，那正是这次要修的病：required 的人工项
+    // 没人判过，却让整张清单算通过。
+    expect(auditVerdict(results)).toBe("needs_review");
+    expect(checklistPassed(results)).toBe(false);
     const manual = results[1];
     expect(manual.undetermined).toBe(true);
     expect(manual.passed).toBe(false);
@@ -114,7 +118,8 @@ describe("undetermined rules", () => {
     expect(results[0].undetermined).toBe(true);
     expect(results[0].passed).toBe(false);
     expect(results[0].reason).toContain("人工复核");
-    expect(checklistPassed(results)).toBe(true);
+    expect(auditVerdict(results)).toBe("needs_review");
+    expect(checklistPassed(results)).toBe(false);
   });
 
   it("still fails an evidence rule when the artifact came from a run", () => {
@@ -169,8 +174,10 @@ describe("judge items", () => {
     expect(judge.passed).toBe(false);
     expect(judge.undetermined).toBe(true);
     expect(judge.reason).toBe("需要模型判定：解释闭包为什么能捕获变量");
-    // 待判不是失败：没有模型的环境不该因为"判不了"就把任务驳回。
-    expect(checklistPassed([judge])).toBe(true);
+    // 待判不是失败，但也绝不是通过：没有模型的环境不该因为"判不了"就驳回，
+    // 同样不该因为"判不了"就把任务算成验收合格。
+    expect(auditVerdict([judge])).toBe("needs_review");
+    expect(checklistPassed([judge])).toBe(false);
     expect(undeterminedCount([judge])).toBe(1);
   });
 
@@ -182,6 +189,50 @@ describe("judge items", () => {
 
     expect(results[0].undetermined).toBe(true);
     expect(results[1].undetermined).toBeFalsy();
+    expect(auditVerdict(results)).toBe("fail");
     expect(checklistPassed(results)).toBe(false);
+  });
+});
+
+// 三值判定是这次改动的核心：从前只有一个布尔，"没有结论"被折叠进"通过"。
+describe("audit verdict", () => {
+  it("只会在一张清单的所有 required 项都有结论且都通过时给 pass", () => {
+    const results = evaluateAcceptance("有内容。", [
+      { type: "min_words", value: 1, required: true },
+      { type: "contains", value: "内容", required: true },
+    ]);
+    expect(auditVerdict(results)).toBe("pass");
+  });
+
+  it("有 required 项被明确判否就是 fail，哪怕同时还有待判的条目", () => {
+    const results = evaluateAcceptance("短", [
+      { type: "min_words", value: 500, required: true },
+      { type: "judge", value: "解释闭包", required: true },
+    ]);
+    expect(auditVerdict(results)).toBe("fail");
+  });
+
+  it("没有失败但有 required 项没结论时是 needs_review，不是 pass", () => {
+    const results = evaluateAcceptance("产物内容足够长，足以通过字数检查。", [
+      { type: "min_words", value: 5, required: true },
+      { type: "manual", note: "引用是否支持结论", required: true },
+    ]);
+    expect(auditVerdict(results)).toBe("needs_review");
+  });
+
+  it("空的清单没有可判定项，判定为 pass（无清单分支由审计命令单独给出待判定）", () => {
+    // 空清单是逻辑上的平凡通过：没有 required 项，就没有"有项没结论"这件事。
+    // "没有验收清单"这种任务不从这里拿结论，而是由 audit.ts 的无清单分支
+    // 明写一条人工待判项，再由 auditVerdict 判成 needs_review。
+    expect(auditVerdict([])).toBe("pass");
+    expect(checklistPassed([])).toBe(true);
+  });
+
+  it("非 required 的待判条目不阻塞结论", () => {
+    const results = evaluateAcceptance("有内容。", [
+      { type: "min_words", value: 1, required: true },
+      { type: "manual", note: "可选复核", required: false },
+    ]);
+    expect(auditVerdict(results)).toBe("pass");
   });
 });

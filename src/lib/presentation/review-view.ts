@@ -146,6 +146,9 @@ export const OPEN_TASK_STATUS: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
   "running",
   "submitted",
   "auditing",
+  // 待判定是"还活着、等人推一把"的任务：从周目标里去掉它，
+  // 等于让一次没给出结论的验收把这件事从下周计划里抹掉。
+  "needs_review",
   "rejected",
 ]);
 
