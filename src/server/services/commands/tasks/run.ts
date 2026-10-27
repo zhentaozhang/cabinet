@@ -26,6 +26,7 @@ import { extractFirstUrl } from "@/lib/connectors/page";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { getPolicyConfig } from "@/lib/policy/config";
 import {
+  notConnectedReason,
   planTools,
   REJECTION_STATUS,
   selectableTools,
@@ -629,8 +630,12 @@ async function executeRun(taskId: string, userId: string) {
       // friends are local, and this runtime simply has no executor for them.
       // Calling that "no external connector configured" would blame a setting
       // that does not exist.
-      toolReason =
-        "No executor is wired for this tool in this runtime; nothing was sent anywhere.";
+      //
+      // 文案交给注册表而不是在这里再写一句：能力矩阵（/cabinet）和这条运行日志
+      // 必须说同一件事，否则"页面显示已接入、运行显示未接入"两个都自称有据。
+      // notConnectedReason 还会区分"声明未接入"和"注册表说能跑、分发链却没有"，
+      // 后者是代码 bug，藏进"环境没配"里就再也查不出来了。
+      toolReason = notConnectedReason(toolPlan.planned.tool);
     }
 
     // An MCP-only Agent gets no built-in step at all: the planner saw no

@@ -3,6 +3,8 @@ import Link from "next/link";
 import {
   ArrowRight,
   Brain,
+  CheckCircle2,
+  CircleSlash,
   Gavel,
   Lightbulb,
   ShieldCheck,
@@ -10,6 +12,11 @@ import {
   Users,
 } from "lucide-react";
 import { fetchCabinetPage } from "@/lib/api/pages";
+import {
+  capabilitySummary,
+  isImplemented,
+  toolPlanRegistry,
+} from "@/lib/domain/tool-plan";
 import { AUTONOMY_LABELS, roleMeta, statusLabel } from "@/lib/agents";
 import { money } from "@/lib/format";
 import {
@@ -72,6 +79,118 @@ function KnowledgeCell({
         {detail}
       </div>
     </Link>
+  );
+}
+
+/**
+ * 「声明了」曾被画成「能用」：注册表里有 18 个工具，可执行链只有 web_search /
+ * web_fetch 两个分支，其余 16 个跑到就记 not_connected。页面不写清这一层，
+ * 用户会以为自己授权的能力真的在跑。
+ *
+ * 分组只问注册表（isImplemented），不在这里另建一份"已接入"清单——两份清单
+ * 迟早分叉，然后页面写"已接入"、运行日志写 not_connected，两个都自称有据。
+ */
+function capabilityBucket(tool: string): "implemented" | "declared" | "mcp" | "unknown" {
+  if (isImplemented(tool)) return "implemented";
+  // MCP 工具由运行期发现，静态注册表没有资格替它回答"能不能执行"。
+  if (tool.startsWith("mcp:")) return "mcp";
+  // 名字不在注册表里就是拼错了/拼漏了，不能混进"声明未接入"——那会让一个
+  // 从未存在过的工具看起来像"以后会接上"。
+  if (!(tool in toolPlanRegistry())) return "unknown";
+  return "declared";
+}
+
+/** 能力矩阵的一行：一个 Agent 声明了什么，这个运行时能执行什么。 */
+function CapabilityRow({
+  agent,
+  budget,
+}: {
+  agent: {
+    id: string;
+    name: string;
+    title: string;
+    role: string;
+    avatar: string;
+    autonomyLevel: number;
+    tools: string[];
+    memoryScope: string[];
+  };
+  budget: {
+    limitCents: number;
+    settledCents: number;
+    unknownCents: number;
+  };
+}) {
+  const meta = roleMeta(agent.role);
+  const buckets = { implemented: [] as string[], declared: [] as string[], mcp: [] as string[], unknown: [] as string[] };
+  for (const tool of agent.tools) buckets[capabilityBucket(tool)].push(tool);
+  const usedCents = budget.settledCents + budget.unknownCents;
+
+  return (
+    <div className="bg-panel px-5 py-3.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <Avatar initials={agent.avatar} accent={meta.accent} size={24} />
+          <Link
+            href={`/cabinet/${agent.id}`}
+            className="truncate text-label text-ink hover:text-accent focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:outline-none"
+          >
+            {agent.name}
+          </Link>
+          <span className="truncate text-label text-faint">{meta.objective}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-1.5 text-label text-faint">
+          <span className="text-accent">{AUTONOMY_LABELS[agent.autonomyLevel]}</span>
+          <span aria-hidden="true">·</span>
+          <span className="mono">
+            本周 {money(usedCents)}
+            {budget.limitCents > 0 ? ` / ${money(budget.limitCents)}` : " · 无预算"}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span className="truncate">
+            记忆 {agent.memoryScope.length > 0 ? agent.memoryScope.join("/") : "未设范围"}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {buckets.implemented.map((tool) => (
+          <Badge key={tool} tone="teal">
+            <CheckCircle2 className="size-2.5" aria-hidden="true" /> {tool}
+          </Badge>
+        ))}
+        {buckets.declared.map((tool) => (
+          // 弱化是刻意的：虚线 + faint，读起来是"这个名字在这里，但它跑不了"。
+          <span
+            key={tool}
+            className="inline-flex items-center gap-1 rounded-md border border-dashed border-line2 px-2 py-0.5 text-label text-faint"
+          >
+            <CircleSlash className="size-2.5" aria-hidden="true" /> {tool}
+          </span>
+        ))}
+        {buckets.mcp.map((tool) => (
+          <span
+            key={tool}
+            className="inline-flex items-center gap-1 rounded-md border border-line2 px-2 py-0.5 text-label text-muted"
+          >
+            {tool} · 运行期解析
+          </span>
+        ))}
+        {buckets.unknown.map((tool) => (
+          <span
+            key={tool}
+            className="inline-flex items-center gap-1 rounded-md border border-danger/40 px-2 py-0.5 text-label text-danger"
+          >
+            {tool} · 未登记
+          </span>
+        ))}
+        {buckets.implemented.length === 0 ? (
+          <span className="text-label text-faint">
+            这个 Agent 声明的工具一个都没接入，目前只能靠模型自身能力干活。
+          </span>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -283,6 +402,8 @@ export default async function CabinetPage() {
   }
 
   const knowledge = data.knowledge;
+  // 注册表是能力矩阵的唯一事实来源，见 capabilityBucket 的注释。
+  const capabilities = capabilitySummary();
   const byRole = (role: string) => data.agents.filter((a) => a.role === role);
   const chief = byRole("chief")[0];
   // One pass over tasks instead of one scan per agent card.
@@ -441,6 +562,47 @@ export default async function CabinetPage() {
               }
               href="/review"
             />
+          </div>
+        </Card>
+      </div>
+
+      <div className="mb-6">
+        <Card>
+          <CardHeader
+            eyebrow="Capabilities"
+            title="能力矩阵：声明 vs 能执行"
+            right={
+              <span className="text-label text-faint">
+                注册表 {capabilities.implemented.length + capabilities.declaredOnly.length} 个工具 ·{" "}
+                <span className="text-teal">{capabilities.implemented.length} 个真能执行</span>
+              </span>
+            }
+          />
+          <div className="border-b border-line px-5 py-3 text-label leading-relaxed text-muted">
+            工具名不是能力。下面每个 Agent 的工具分成两堆：实线的有执行器，调用会真的发出去；
+            虚线的只是声明，一步也执行不了，运行日志里记 <span className="mono">not_connected</span>。
+          </div>
+          <div className="grid gap-px bg-line/60">
+            {data.agents.map((agent) => (
+              <CapabilityRow
+                key={agent.id}
+                agent={agent}
+                budget={data.budgets[agent.id]}
+              />
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2 border-t border-line px-5 py-3 text-label text-faint">
+            <span className="inline-flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-teal" /> 已接入：真有执行器，会发出外部调用
+            </span>
+            <span aria-hidden="true" className="text-faint">·</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-line2" /> 声明未接入：注册表里有名字，执行链里没有分支
+            </span>
+            <span aria-hidden="true" className="text-faint">·</span>
+            <span className="inline-flex items-center gap-1">
+              <span className="size-1.5 rounded-full bg-danger" /> 未登记：名字打错了，连声明都不算
+            </span>
           </div>
         </Card>
       </div>

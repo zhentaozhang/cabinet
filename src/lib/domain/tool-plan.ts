@@ -11,28 +11,104 @@ export type ToolSpec = {
   scope: "read" | "write";
   /** `execute` tools change state outside Cabinet, so they need a real action. */
   kind: "read" | "write" | "execute";
+  /**
+   * 这个工具在本运行时有没有真的执行器。授权（能不能用）和执行（跑了没有）
+   * 是两个问题，注册表以前只回答第一个，于是界面把 18 个工具都画成可用，
+   * 而 `run.ts` 只有 `web_search`/`web_fetch` 两个分支。
+   *
+   * 用 boolean 而不是 executor 字符串：字符串会诱使填一个并不存在的执行器名
+   * （"connector:ledger" 之类），读起来像证据，其实只是另一个声明。真正执行
+   * 的那段代码在 `run.ts` 的分发链里，这里只记录它存在与否。
+   *
+   * 可选只为容纳运行期发现的 spec（MCP）：它们的执行器是 `tool-loop.ts`，
+   * 静态表没有资格替它们回答。静态注册表本身用下面的 `StaticToolSpec` 强制必填
+   * ——漏标必须是编译错误，不能默认成"未接入"，否则这一位会静悄悄地变成 false。
+   */
+  implemented?: boolean;
 };
 
-const TOOL_SPECS: Record<string, ToolSpec> = {
-  web_search: { resource: "web", scope: "read", kind: "read" },
-  web_fetch: { resource: "web", scope: "read", kind: "read" },
-  read_notes: { resource: "notes", scope: "read", kind: "read" },
-  quiz: { resource: "notes", scope: "read", kind: "read" },
-  write_task: { resource: "task", scope: "write", kind: "write" },
-  dispatch: { resource: "task", scope: "write", kind: "write" },
-  read_runs: { resource: "task", scope: "read", kind: "read" },
-  calendar_read: { resource: "calendar", scope: "read", kind: "read" },
-  ledger_read: { resource: "ledger", scope: "read", kind: "read" },
-  budget_veto: { resource: "ledger", scope: "write", kind: "write" },
-  read_artifacts: { resource: "artifacts", scope: "read", kind: "read" },
-  audit_decision: { resource: "artifacts", scope: "write", kind: "write" },
-  read_evidence: { resource: "artifacts", scope: "read", kind: "read" },
-  read_all: { resource: "plan", scope: "read", kind: "read" },
-  read_plan: { resource: "plan", scope: "read", kind: "read" },
-  write_plan: { resource: "plan", scope: "write", kind: "write" },
-  convene_council: { resource: "council", scope: "write", kind: "write" },
-  sandbox_execute: { resource: "sandbox", scope: "write", kind: "execute" },
+/**
+ * 静态注册表用的 spec：`implemented` 必填。
+ *
+ * 少写一个 bool 不是小事：它等于把"能不能执行"这个问题留给读者猜，
+ * 而能力矩阵正是靠这一位决定渲染成实线还是虚线。
+ */
+type StaticToolSpec = ToolSpec & { implemented: boolean };
+
+const TOOL_SPECS: Record<string, StaticToolSpec> = {
+  // 只有这两个在 run.ts 里有真实执行链（检索/抓取并落证据），其余 16 个到此为止。
+  web_search: { resource: "web", scope: "read", kind: "read", implemented: true },
+  web_fetch: { resource: "web", scope: "read", kind: "read", implemented: true },
+  read_notes: { resource: "notes", scope: "read", kind: "read", implemented: false },
+  quiz: { resource: "notes", scope: "read", kind: "read", implemented: false },
+  write_task: { resource: "task", scope: "write", kind: "write", implemented: false },
+  dispatch: { resource: "task", scope: "write", kind: "write", implemented: false },
+  read_runs: { resource: "task", scope: "read", kind: "read", implemented: false },
+  calendar_read: { resource: "calendar", scope: "read", kind: "read", implemented: false },
+  ledger_read: { resource: "ledger", scope: "read", kind: "read", implemented: false },
+  budget_veto: { resource: "ledger", scope: "write", kind: "write", implemented: false },
+  read_artifacts: { resource: "artifacts", scope: "read", kind: "read", implemented: false },
+  audit_decision: { resource: "artifacts", scope: "write", kind: "write", implemented: false },
+  read_evidence: { resource: "artifacts", scope: "read", kind: "read", implemented: false },
+  read_all: { resource: "plan", scope: "read", kind: "read", implemented: false },
+  read_plan: { resource: "plan", scope: "read", kind: "read", implemented: false },
+  write_plan: { resource: "plan", scope: "write", kind: "write", implemented: false },
+  convene_council: { resource: "council", scope: "write", kind: "write", implemented: false },
+  sandbox_execute: { resource: "sandbox", scope: "write", kind: "execute", implemented: false },
 };
+
+/**
+ * 注册表本身。界面和测试都读这一份：能力矩阵若自己维护一份"已接入"清单，
+ * 就会与 `run.ts` 的分发链悄悄分叉，于是页面写"已接入"、运行写
+ * not_connected——两个都说自己对。
+ */
+export function toolPlanRegistry(): Readonly<Record<string, ToolSpec>> {
+  return TOOL_SPECS;
+}
+
+/**
+ * 这个工具名在本运行时有没有真的执行器。
+ *
+ * 三个刻意的答案：
+ * - 注册表里标了 implemented 的 → true；
+ * - 注册表里声明但没接线的 → false（"声明了"不等于"能执行"，这正是要暴露的事）；
+ * - 注册表不认识的名字（含 `mcp:` 开头、运行期才发现的工具）→ false：静态注册表
+ *   没有资格替它们回答"能执行"，那是 `tool-loop.ts` 拿到服务端行之后的事。
+ */
+export function isImplemented(tool: string): boolean {
+  return TOOL_SPECS[tool]?.implemented === true;
+}
+
+/**
+ * 能力矩阵的两个分组，顺序 = 注册表的声明顺序，界面照抄即可。
+ * `declaredOnly` 这个名字是给读者看的：不是"还没做完"，是"根本执行不了"。
+ */
+export function capabilitySummary(): {
+  implemented: string[];
+  declaredOnly: string[];
+} {
+  const implemented: string[] = [];
+  const declaredOnly: string[] = [];
+  for (const [tool, spec] of Object.entries(TOOL_SPECS)) {
+    (spec.implemented ? implemented : declaredOnly).push(tool);
+  }
+  return { implemented, declaredOnly };
+}
+
+/**
+ * 写进 tool step 的 reason：为什么这个工具什么都没做。
+ *
+ * 两种失败必须读起来不一样。注册表说能跑、执行链却没有分发到它，那是代码 bug，
+ * 用"缺一个 connector"来描述它，bug 就会永久藏在"环境没配"里；反过来，把一个从未
+ * 接线的本地工具（read_notes）说成"没配外部连接器"，是在让用户去修一个并不存在的
+ * 设置。两句文案都明确写出"未发送"：用户最先担心的是有没有东西被偷偷发出去。
+ */
+export function notConnectedReason(tool: string): string {
+  if (isImplemented(tool)) {
+    return `工具 ${tool} 在注册表里标为已接入，但本运行时的执行链没有分发到它：注册表与执行链不一致，这一条要修代码，不是改配置。本次未执行、未发送任何请求。`;
+  }
+  return `工具 ${tool} 已声明但未接入（declared only，注册表 implemented: false）：本运行时没有它的执行器，所以它一步也执行不了。本次未执行、未发送任何请求，任务内容没有因此丢失。`;
+}
 
 export type ToolRejection = "unknown_tool" | "missing_grant" | "needs_action";
 
