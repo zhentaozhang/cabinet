@@ -23,6 +23,8 @@
     "preflight": "tsx scripts/preflight.ts",
     "bench:reads": "tsx scripts/bench-reads.ts",
     "e2e:probe": "tsx scripts/e2e-probe.ts",
+    "doc:facts": "tsx scripts/doc-facts.ts --write",
+    "doc:facts:check": "tsx scripts/doc-facts.ts --check",
     "verify": "bash scripts/verify.sh"
   },
   "dependencies": {

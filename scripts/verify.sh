@@ -11,8 +11,10 @@
 #   bash scripts/verify.sh                       # uses DATABASE_URL_TEST or a local default
 #   DATABASE_URL_TEST=postgres://user@localhost:5432/cabinet_test bash scripts/verify.sh
 #
-# Steps and flags mirror package.json exactly (typecheck / lint / test / build),
-# so a green run here means the same thing as a green run in Actions.
+# Steps mirror package.json (typecheck / lint / test / build) plus one step with no
+# checking npm script of its own: `doc:facts --check` (running `pnpm doc:facts` would
+# rewrite the README instead of failing), so a green run here still means what a
+# green run in Actions means.
 set -euo pipefail
 
 BIN="./node_modules/.bin"
@@ -25,8 +27,8 @@ export AUTH_REQUIRED="${AUTH_REQUIRED:-false}"
 export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-local-only-secret-not-for-production}"
 export BETTER_AUTH_URL="${BETTER_AUTH_URL:-http://localhost:3000}"
 
-if [ ! -x "$BIN/tsc" ]; then
-  echo "verify: $BIN/tsc is missing — run pnpm install first" >&2
+if [ ! -x "$BIN/tsc" ] || [ ! -x "$BIN/tsx" ]; then
+  echo "verify: $BIN/tsc or $BIN/tsx is missing — run pnpm install first" >&2
   exit 1
 fi
 
@@ -35,6 +37,12 @@ step() {
   shift
   "$@"
 }
+
+# README 里的数字（route 数、表数、测试文件/用例数）是 `doc-facts --write` 生成的。
+# 这里只比对不写：CI 里重写 README 等于把漂移藏起来，而数字过期是最便宜的一种失败
+# ——不碰数据库、不读 env、亚秒级——所以放在创建临时库和 migrate 之前，
+# 免得为了发现"README 说 47 个 route"先等一次 create database / drizzle migrate。
+step "doc:facts" "$BIN/tsx" scripts/doc-facts.ts --check
 
 # CI applies the migration chain to an empty postgres service container. A
 # long-lived local database is normally built by `drizzle-kit push` (see

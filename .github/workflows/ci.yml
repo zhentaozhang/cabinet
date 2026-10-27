@@ -46,6 +46,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Cheapest failure first: the README's generated numbers are compared
+      # against the tree before a database exists. Same order as
+      # scripts/verify.sh, so local and CI disagree about nothing.
+      - run: pnpm doc:facts:check
       - run: pnpm db:migrate
       - run: pnpm typecheck
       - run: pnpm lint

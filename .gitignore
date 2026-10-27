@@ -51,3 +51,10 @@ next-env.d.ts
 
 # editor settings (local preference, not project config)
 .vscode/
+
+# 工具产物目录（本机生成的图表/助手缓存，不属于源码）
+# 理由：.archify/ 有 299 个文件、约 12.8 万行，.workbuddy-ai/ 同理，
+# 一旦被 git add -A 卷进版本库，会让每次 diff/评审被生成物淹没，
+# 而它们随时可以从各自的工具重新生成，没有版本价值。
+.archify/
+.workbuddy-ai/
