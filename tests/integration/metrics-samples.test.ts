@@ -261,6 +261,39 @@ describe("weekly metrics sample semantics", () => {
     expect(metrics.auditRejectRate).toBeNull();
   });
 
+  it("does not count a cancelled plan against the week", async () => {
+    const userId = "usr_metrics_cancelled";
+    await createUser(userId);
+
+    const now = new Date();
+    await db.insert(tasks).values([
+      {
+        id: "tsk_cancelled_kept",
+        userId,
+        title: "done as planned",
+        description: "d",
+        status: "accepted",
+        dueAt: now,
+        acceptanceCriteria: "c",
+      },
+      {
+        id: "tsk_cancelled_withdrawn",
+        userId,
+        title: "withdrawn",
+        description: "d",
+        status: "cancelled",
+        dueAt: now,
+        acceptanceCriteria: "c",
+      },
+    ]);
+
+    const metrics = await getWeeklyMetrics(userId);
+
+    // 撤回的计划不算「没做到」：目标进度（commands/progress.ts）与复测通过率
+    // 都已经把 cancelled 排除在分母外，遵从率是同一个问题的第三个答案。
+    expect(metrics.sample.planned).toBe(1);
+    expect(metrics.adherence).toBe(100);
+  });
   it("estimates management from decisions and keeps a sampled zero reject rate", async () => {
     const userId = "usr_metrics_estimated";
     await createUser(userId);

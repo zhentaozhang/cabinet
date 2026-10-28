@@ -98,6 +98,9 @@ export async function getWeeklyMetrics(userId: string) {
           gte(tasks.acceptedAutonomyLevel, 2),
         ),
       ),
+    // 撤回的计划不算「没做到」。目标进度（commands/progress.ts）与复测通过率
+    // 都把 cancelled 排除在分母外；遵从率问的是同一件事（本周的计划做到没有），
+    // 留着这条任务就等于让一次主动撤回永久压低首页那个百分比。
     db
       .select({ count: sql<number>`count(*)` })
       .from(tasks)
@@ -106,6 +109,7 @@ export async function getWeeklyMetrics(userId: string) {
           eq(tasks.userId, userId),
           gte(tasks.dueAt, range.start),
           lte(tasks.dueAt, endOfToday),
+          ne(tasks.status, "cancelled"),
         ),
       ),
     db
