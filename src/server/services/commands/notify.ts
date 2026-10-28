@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { outbox, users } from "@/lib/db/schema";
+import { isValidTimeZone, localDateKey } from "@/lib/domain/time";
 import { newId } from "@/lib/ids";
 import type { Tx } from "../shared/tx";
 
@@ -9,7 +10,7 @@ import type { Tx } from "../shared/tx";
  * A notification is an outbox row, never a side effect of the request that
  * caused it: SMTP can be slow or down, and the causing mutation must not care.
  *
- * Enqueue is idempotent. The dedupe key defaults to "one row per event per UTC
+ * Enqueue is idempotent. The dedupe key defaults to "one row per event per local
  * day", so a retried mutation or a re-audited task cannot mail the user twice.
  */
 /**
@@ -30,8 +31,25 @@ export type NotifyInput = {
   now?: Date;
 };
 
-export function dayKey(at: Date): string {
-  return at.toISOString().slice(0, 10);
+/**
+ * 去重窗口是收件人自己的本地日，不是 UTC 日：页面上承诺的是「同一件事一天
+ * 最多发一次」，而用户读的是自己的一天。按 UTC 日算，Asia/Shanghai 的
+ * 07:50 与 09:10 属于两个 UTC 日期、同一个本地日，同一件事会发出两封；
+ * 反过来 23:30 与次日 00:10 只发一封，跨了两天。
+ */
+async function userDayKey(
+  client: Tx | typeof db,
+  userId: string,
+  at: Date,
+): Promise<string> {
+  const [row] = await client
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  const timezone =
+    row?.timezone && isValidTimeZone(row.timezone) ? row.timezone : "UTC";
+  return localDateKey(at, timezone);
 }
 
 export async function enqueueNotification(
@@ -40,7 +58,8 @@ export async function enqueueNotification(
 ): Promise<{ enqueued: boolean; id: string }> {
   const now = input.now ?? new Date();
   const dedupeKey =
-    input.dedupeKey ?? `${input.kind}:${input.targetId}:${dayKey(now)}`;
+    input.dedupeKey ??
+    `${input.kind}:${input.targetId}:${await userDayKey(client, input.userId, now)}`;
   const id = newId("obx");
 
   const inserted = await client

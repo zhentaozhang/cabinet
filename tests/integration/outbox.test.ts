@@ -44,6 +44,43 @@ describe("outbox enqueue", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("dedupes on the user's own day, not the UTC one", async () => {
+    // 07:50 与 09:10（Asia/Shanghai，演示账号的时区）落在两个 UTC 日期、
+    // 同一个本地日：按 UTC 日算，同一件事会在一个上午里发两封邮件。
+    const base = {
+      userId: DEMO_USER_ID,
+      kind: "rejection" as const,
+      targetType: "task",
+      targetId: "tsk_local_day",
+      subject: "s",
+      body: "b",
+    };
+
+    const first = await enqueueNotification({
+      ...base,
+      now: new Date("2026-02-28T23:50:00Z"),
+    });
+    const second = await enqueueNotification({
+      ...base,
+      now: new Date("2026-03-01T01:10:00Z"),
+    });
+    expect(first.enqueued).toBe(true);
+    expect(second.enqueued).toBe(false);
+
+    // 反过来：同一个 UTC 日、跨了本地午夜，是两天的事，各发一次。
+    const beforeMidnight = await enqueueNotification({
+      ...base,
+      targetId: "tsk_next_local_day",
+      now: new Date("2026-03-01T15:30:00Z"),
+    });
+    const afterMidnight = await enqueueNotification({
+      ...base,
+      targetId: "tsk_next_local_day",
+      now: new Date("2026-03-01T16:10:00Z"),
+    });
+    expect(beforeMidnight.enqueued).toBe(true);
+    expect(afterMidnight.enqueued).toBe(true);
+  });
   it("records a rejected audit, and nothing else", async () => {
     // The checklist asks for far more words than the artifact has, so the
     // Auditor has a definite failure to report — and a rejection is the

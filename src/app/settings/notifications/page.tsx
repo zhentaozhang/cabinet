@@ -171,7 +171,7 @@ export default async function NotificationsPage({
           </li>
           <li className="flex items-start gap-2">
             <Send className="mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden />
-            同一件事一天最多发一次；投递失败会按 1 分钟、5 分钟、15 分钟退避重试，四次后标记失败。
+            同一件事一天最多发一次（按你的时区算那一天）；投递失败会按 1 分钟、5 分钟、15 分钟退避重试，四次后标记失败。
           </li>
           <li className="flex items-start gap-2">
             <Clock className="mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden />
