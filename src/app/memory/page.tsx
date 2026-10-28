@@ -19,6 +19,10 @@ import {
 } from "@/components/ui";
 import { MemoryRow } from "@/components/memory-row";
 import { memoryTypeLabel } from "@/contracts/labels";
+import {
+  MEMORY_GOVERNANCE_LINES,
+  MEMORY_HEADER_BADGES,
+} from "@/lib/presentation/memory-view";
 
 export const metadata: Metadata = {
   title: "Memory · Cabinet",
@@ -85,10 +89,10 @@ export default async function MemoryPage({
         </div>
         <div className="flex items-center gap-2">
           <Badge tone="teal">
-            <ShieldCheck className="size-2.5" /> 无来源不写入
+            <ShieldCheck className="size-2.5" /> {MEMORY_HEADER_BADGES[0]}
           </Badge>
           <Badge tone="accent">
-            <Fingerprint className="size-2.5" /> 可编辑 / 可删除
+            <Fingerprint className="size-2.5" /> {MEMORY_HEADER_BADGES[1]}
           </Badge>
         </div>
       </div>
@@ -219,19 +223,19 @@ export default async function MemoryPage({
             <div className="space-y-3 px-5 py-4 text-label leading-relaxed text-muted">
               <div className="flex gap-2">
                 <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-teal" />
-                <p>没有来源事件的记忆不许写入，防止模型编造。</p>
+                <p>{MEMORY_GOVERNANCE_LINES[0]}</p>
               </div>
               <div className="flex gap-2">
                 <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-accent" />
-                <p>健康、财务、关系等高影响记忆必须由你确认。</p>
+                <p>{MEMORY_GOVERNANCE_LINES[1]}</p>
               </div>
               <div className="flex gap-2">
                 <Database className="mt-0.5 size-3.5 shrink-0 text-blue" />
-                <p>冲突时不静默覆盖：标记「待确认」，保留双方证据。</p>
+                <p>{MEMORY_GOVERNANCE_LINES[2]}</p>
               </div>
               <div className="flex gap-2">
                 <Brain className="mt-0.5 size-3.5 shrink-0 text-violet" />
-                <p>低置信、长期未确认的记忆自动降权，支持遗忘。</p>
+                <p>{MEMORY_GOVERNANCE_LINES[3]}</p>
               </div>
             </div>
           </Card>
