@@ -19,6 +19,7 @@ import {
 } from "@/lib/domain/tool-plan";
 import { AUTONOMY_LABELS, roleMeta, statusLabel } from "@/lib/agents";
 import { money } from "@/lib/format";
+import { tasksPerAgent } from "@/lib/presentation/cabinet-view";
 import {
   Avatar,
   Badge,
@@ -295,7 +296,7 @@ function AgentCard({
             metrics grid. */}
         <div className="space-y-1 border-t border-line px-5 py-3 text-label text-faint">
           <div>
-            {taskCount} 个任务 · {agent.successCount} 次通过 · {agent.failCount} 次驳回
+            共 {taskCount} 个任务 · {agent.successCount} 次通过 · {agent.failCount} 次驳回
           </div>
           <div className="flex flex-wrap items-center gap-x-1.5">
             <span className="mono">上限 {money(budget.limitCents)}</span>
@@ -407,12 +408,8 @@ export default async function CabinetPage() {
   const byRole = (role: string) => data.agents.filter((a) => a.role === role);
   const chief = byRole("chief")[0];
   // One pass over tasks instead of one scan per agent card.
-  const openTasksByAgent = new Map<string, number>();
-  for (const task of data.tasks) {
-    if (task.status === "done" || !task.assigneeId) continue;
-    openTasksByAgent.set(task.assigneeId, (openTasksByAgent.get(task.assigneeId) ?? 0) + 1);
-  }
-  const taskCount = (id: string) => openTasksByAgent.get(id) ?? 0;
+  const tasksByAgent = tasksPerAgent(data.tasks);
+  const taskCount = (id: string) => tasksByAgent.get(id) ?? 0;
 
   return (
     <div>
