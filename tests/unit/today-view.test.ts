@@ -413,12 +413,44 @@ describe("the action queue puts interventions first, in a fixed order", () => {
   });
 
   it("flags exactly the attention statuses and nothing else", () => {
-    for (const status of ["awaiting_approval", "rejected", "failed"]) {
+    for (const status of [
+      "needs_review",
+      "awaiting_approval",
+      "rejected",
+      "failed",
+      "suggested",
+    ]) {
       expect(needsAttention(status)).toBe(true);
     }
     for (const status of ["planned", "assigned", "running", "submitted", "done"]) {
       expect(needsAttention(status)).toBe(false);
     }
+  });
+
+  /*
+    A `suggested` task is not progress: the agent wrote a draft and stopped, and
+    the task page says so in as many words ("等待你审核…由主理人确认采纳后方可继续").
+    It used to be listed under "其他推进中的任务" while the header counted it as
+    neither 待处理 nor 推进中 — one task, three different claims.
+  */
+  it("queues a suggestion that is waiting to be adopted", () => {
+    const tasks = [
+      { id: "tsk_suggested", status: "suggested", title: "重写周报结构", dueAt: null },
+      { id: "tsk_running", status: "running", title: "整理笔记", dueAt: null },
+    ];
+    const queue = buildTodayActionQueue({
+      timeZone: TZ,
+      approvals: [],
+      council: null,
+      tasks,
+    });
+
+    expect(queue.items.map((item) => item.refId)).toEqual(["tsk_suggested"]);
+    expect(queue.items[0].hint).toContain("采纳或驳回");
+    expect(queue.items[0].href).toBe("/tasks/tsk_suggested");
+    expect(queue.counts.task).toBe(1);
+    expect(inFlightTasks(tasks).map((task) => task.id)).toEqual(["tsk_running"]);
+    expect(secondaryTasks(tasks, queue).map((task) => task.id)).toEqual(["tsk_running"]);
   });
 });
 

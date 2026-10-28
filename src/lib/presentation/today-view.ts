@@ -95,6 +95,12 @@ const ATTENTION_TASK_STATUSES = [
   "awaiting_approval",
   "rejected",
   "failed",
+  // 建议也等人：L1 的 Agent 跑完只会把方案写成 `suggested`，任务页自己的横幅
+  // 就写着"等待你审核 · 由主理人确认采纳后方可继续"。漏掉它，Today 会把这个
+  // 任务列在"其他推进中的任务"里冒充进展（卡片徽章还数成"进行中"），而页头的
+  // "待处理"是 0——同一件事在两处说两个数。它排最后：其他几件都是已经停下来
+  // 的结论，这一件至少还有一份草稿可看。
+  "suggested",
 ];
 
 /**
@@ -112,6 +118,7 @@ const ATTENTION_TASK_HINTS: Record<string, string> = {
   awaiting_approval: "需要你批准后才会真正执行。",
   rejected: "被驳回，需要你查看原因并修改或重试。",
   failed: "执行失败，需要你判断是否重试。",
+  suggested: "Agent 只交了建议，等你采纳或驳回，任务才不会停在这里。",
 };
 
 export type TodayActionKind = "approval" | "council" | "task";
@@ -166,7 +173,7 @@ const EMPTY_QUEUE_COPY = {
   title: "没有需要你处理的事",
   // A council meeting is always rendered when one is open, so the empty state
   // has to name it too - otherwise the copy contradicts the queue.
-  hint: "审批、内阁决议、被驳回与执行失败的任务会出现在这里；现在可以推进下一项任务。",
+  hint: "审批、内阁决议、待你审核的建议、被驳回与执行失败的任务会出现在这里；现在可以推进下一项任务。",
 };
 
 /** True when the task is blocked on a human decision rather than on an agent. */
