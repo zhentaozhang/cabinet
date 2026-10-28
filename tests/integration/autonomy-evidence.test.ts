@@ -117,6 +117,9 @@ async function seedSubmission(input: {
   await db.insert(artifacts).values({
     id: `art_${input.taskId}`,
     taskId: input.taskId,
+    // Eligibility is read off the run that produced the artifact, so the
+    // fixture has to link the two the way run.ts does.
+    runId: `run_${input.taskId}`,
     submittedBy: p.submittedBy,
     sourceType: p.sourceType,
     type: "note",
@@ -189,6 +192,39 @@ describe("autonomy evidence", () => {
     expect(decision.code).toBe("insufficient_samples");
   });
 
+  it("credits the run that produced the artifact, not a later failed retry", async () => {
+    const coach = await agentByRole("coach");
+    await raiseTrust(coach.id, 6, 95);
+    await seedSubmission({
+      taskId: "tsk_ev_retry",
+      agentId: coach.id,
+      provenance: "eligible",
+    });
+    // A rejected draft gets re-run, and that retry dies before it ever reaches
+    // the provider, so its run row carries no provider attempt. The audit must
+    // still read the live run that produced the artifact.
+    await db.insert(runs).values({
+      id: "run_tsk_ev_retry_failed",
+      taskId: "tsk_ev_retry",
+      agentId: coach.id,
+      status: "failed",
+      mode: "live",
+      sourceType: "model_generated",
+      providerAttemptId: null,
+      startedAt: new Date(),
+      createdAt: new Date(),
+    });
+
+    const verdict = await auditTask("tsk_ev_retry", DEMO_USER_ID);
+    expect(verdict.decision).toBe("accepted");
+
+    const [after] = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.id, coach.id));
+    expect(after.successCount).toBe(7);
+    expect(after.trustScore).toBe(96);
+  });
   it("promotes on five eligible distinct tasks at a passing rate", async () => {
     const coach = await agentByRole("coach");
     await raiseTrust(coach.id, 6, 95);

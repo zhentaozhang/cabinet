@@ -577,9 +577,18 @@ async function auditTaskInner(
       // Only real model execution counts as performance. A demo, rule-generated
       // or provider-less submission is still audited and recorded, but it must
       // not move the counters that unlock autonomy.
-      const executorRun = taskRuns.find(
-        (run) => run.agentId === executor.id,
-      );
+      // Eligibility belongs to the run that produced this artifact, not to the
+      // newest run the Agent happens to have on the task. After a rejected draft
+      // is re-run and the retry dies before reaching the provider, the newest run
+      // has no provider attempt — reading that one would stop a genuinely live
+      // submission from counting as the performance it was. A null link cannot be
+      // attributed to any run, so it is not evidence of one.
+      const producingRun =
+        artifact?.runId == null
+          ? undefined
+          : taskRuns.find((run) => run.id === artifact.runId);
+      const executorRun =
+        producingRun?.agentId === executor.id ? producingRun : undefined;
       const countsAsEvidence =
         artifact !== undefined &&
         executorRun !== undefined &&
