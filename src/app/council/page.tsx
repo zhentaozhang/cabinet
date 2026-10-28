@@ -152,7 +152,9 @@ export default async function CouncilPage() {
             <CardHeader
               eyebrow="Positions"
               title="各方立场"
-              right={<span className="text-label text-faint">每人 60 秒 · 最多 2 轮</span>}
+              right={
+                <span className="text-label text-faint">每位成员一条立场 · 一次生成</span>
+              }
             />
             <div className="divide-y divide-line">
               {positions.map((position) => {
