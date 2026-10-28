@@ -294,6 +294,32 @@ describe("weekly metrics sample semantics", () => {
     expect(metrics.sample.planned).toBe(1);
     expect(metrics.adherence).toBe(100);
   });
+  it("counts a learning task finished this week even if it was planned last week", async () => {
+    const userId = "usr_metrics_learning";
+    await createUser(userId);
+
+    const now = new Date();
+    const lastWeek = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
+    await db.insert(tasks).values({
+      id: "tsk_learning_carried",
+      userId,
+      title: "解释闭包",
+      description: "d",
+      template: "learning",
+      status: "accepted",
+      createdAt: lastWeek,
+      acceptedAt: now,
+      acceptanceCriteria: "c",
+    });
+
+    const metrics = await getWeeklyMetrics(userId);
+
+    // 完成发生在验收那一刻：按 created_at 归周，这道题上周那篇复盘写不出来
+    // （当时还没做完），这一周又被挡在窗外，两篇复盘都不提它。遵从率的分子
+    // 一直按 accepted_at 算，学习任务这个数没有理由换一个窗口。
+    expect(metrics.learningTasks).toBe(1);
+  });
+
   it("estimates management from decisions and keeps a sampled zero reject rate", async () => {
     const userId = "usr_metrics_estimated";
     await createUser(userId);

@@ -30,8 +30,11 @@ export async function regenerateWeeklyReview(userId: string) {
           eq(tasks.userId, userId),
           inArray(tasks.template, [...LEARNING_TEMPLATES]),
           inArray(tasks.status, ["accepted", "done"]),
-          gte(tasks.createdAt, range.start),
-          lt(tasks.createdAt, range.end),
+          // 与上面 getWeeklyMetrics 的 learningTasks 同一个窗口：数的是「这一周
+          // 验收通过」的任务，不是「这一周新建」的。按创建时间挑标题，跨周做完
+          // 的那道题就永远不出现在任何一篇复盘里。
+          gte(tasks.acceptedAt, range.start),
+          lt(tasks.acceptedAt, range.end),
         ),
       )
       .orderBy(sql`${tasks.acceptedAt} desc nulls last`, desc(tasks.id))

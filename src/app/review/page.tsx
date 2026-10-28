@@ -144,7 +144,7 @@ export default async function ReviewPage({
     {
       label: "学习任务",
       value: String(metrics.learningTasks),
-      hint: "已验收的学习类任务数。",
+      hint: "本周验收通过的学习类任务数。",
     },
     {
       label: "目标进度",

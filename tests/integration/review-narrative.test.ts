@@ -65,4 +65,35 @@ describe("weekly review narrative — 已验收名单", () => {
     expect(review.narrative).toContain("已验收：解释闭包");
     expect(review.narrative).not.toContain("本周还没有验收通过的学习任务");
   });
+
+  it("把上周布置、这一周才验收的学习任务算进这一周", async () => {
+    const goal = await createGoal(
+      {
+        title: "掌握 JS 运行时",
+        why: "想把异步这块补扎实",
+        target: "能讲清事件循环",
+        horizon: "3 个月",
+        domain: "learning",
+      },
+      DEMO_USER_ID,
+    );
+
+    const carried = await learningTask("解释事件循环", goal.id);
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    await db
+      .update(tasks)
+      .set({
+        status: "accepted",
+        createdAt: eightDaysAgo,
+        acceptedAt: new Date(),
+      })
+      .where(eq(tasks.id, carried.id));
+
+    const review = await regenerateWeeklyReview(DEMO_USER_ID);
+
+    // 按创建时间归周时，这道题上周那篇复盘写不出来（当时还没做完），这一周
+    // 又被挡在窗外：两篇复盘都不提它。「完成」发生在验收那一刻。
+    expect(review.narrative).toContain("完成 1 个学习任务");
+    expect(review.narrative).toContain("已验收：解释事件循环");
+  });
 });

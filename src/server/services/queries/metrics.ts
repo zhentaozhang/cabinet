@@ -211,6 +211,10 @@ export async function getWeeklyMetrics(userId: string) {
           lt(checkins.date, localDateKey(range.end, timezone)),
         ),
       ),
+    // 按 accepted_at 归周，不按 created_at：上周三布置、这一周才验收的学习任务，
+    // 上周那篇复盘生成时它还没做完，这一周又被 created_at 挡在窗外——两次复盘都
+    // 不提它。完成发生在验收那一刻，遵从率的分子（上面那条）也是这么算的。
+    // 状态条件留着：验收过又被撤回的异常行不该混进这个数。
     db
       .select({
         accepted: sql<number>`count(*) filter (where ${tasks.status} in ('accepted', 'done'))`,
@@ -220,8 +224,8 @@ export async function getWeeklyMetrics(userId: string) {
         and(
           eq(tasks.userId, userId),
           inArray(tasks.template, [...LEARNING_TEMPLATES]),
-          gte(tasks.createdAt, range.start),
-          lt(tasks.createdAt, range.end),
+          gte(tasks.acceptedAt, range.start),
+          lt(tasks.acceptedAt, range.end),
         ),
       ),
     db

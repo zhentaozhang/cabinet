@@ -435,7 +435,7 @@ export function weeklyMetricRows(
       key: "learning",
       label: "学习任务",
       value: String(weekly.learningTasks),
-      hint: "累计推进单元",
+      hint: "本周验收的学习任务",
     },
     {
       key: "retest",
