@@ -58,8 +58,18 @@ export default async function AgentPage({
   const data = await fetchAgentPage(id);
   if (!data) notFound();
   const tz = data.timezone;
-  const { agent, budget, apprenticeship, memoryTotal, runs, memories, skills, tasks, grants } =
-    data;
+  const {
+    agent,
+    budget,
+    apprenticeship,
+    memoryTotal,
+    taskTotal,
+    runs,
+    memories,
+    skills,
+    tasks,
+    grants,
+  } = data;
   // Base permissions describe what the agent may touch; standing policies are
   // the rules the user created by approving once, and can revoke here.
   const standingGrants = grants.filter((grant) => grant.state !== "base");
@@ -140,7 +150,11 @@ export default async function AgentPage({
                 value={money(weekUsedCents)}
                 hint={`上限 ${money(budget.limitCents)}`}
               />
-              <Stat label="Tasks" value={tasks.length} hint="最近任务" />
+              <Stat
+                label="Tasks"
+                value={taskTotal}
+                hint={`累计经手，下面列最近 ${tasks.length} 条`}
+              />
             </div>
             <div className="space-y-3 border-t border-line px-5 py-4">
               <div>

@@ -1,7 +1,7 @@
 import { and, count, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
-import { memories } from "@/lib/db/schema";
+import { memories, tasks } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { getAgentData } from "@/server/services/queries/agent";
 import { resetDb } from "../helpers/db";
@@ -62,5 +62,43 @@ describe("agent detail: how many memories the agent has", () => {
       .map((memory) => memory.id);
 
     expect(tied).toEqual(["mem_tie_01", "mem_tie_00"]);
+  });
+});
+
+describe("agent detail: the Tasks tile counts what the Agent carried", () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it("reports every task, not the eight-row window under it", async () => {
+    const later = new Date(Date.now() + 60_000);
+    await db.insert(tasks).values(
+      Array.from({ length: 12 }, (_, index) => ({
+        id: "tsk_tile_" + String(index).padStart(2, "0"),
+        userId: DEMO_USER_ID,
+        goalId: "goal_rag",
+        title: "第 " + (index + 1) + " 件经手的事",
+        description: "填满详情页窗口，看瓦片是否还在数这八条。",
+        acceptanceCriteria: "能被列出来", 
+        type: "research",
+        status: "done",
+        assigneeId: AGENT_ID,
+        auditorId: "ag_auditor",
+        updatedAt: later,
+      })),
+    );
+
+    const [row] = await db
+      .select({ total: count() })
+      .from(tasks)
+      .where(and(eq(tasks.assigneeId, AGENT_ID), eq(tasks.userId, DEMO_USER_ID)));
+    const data = await getAgentData(AGENT_ID, DEMO_USER_ID);
+    if (!data) throw new Error("Expected the seeded Agent to exist.");
+
+    // The list below the tile is capped at eight; the tile sits next to lifetime
+    // pass/reject counts, so it must be the lifetime number too.
+    expect(data.tasks.length).toBe(8);
+    expect(data.taskTotal).toBe(Number(row.total));
+    expect(data.taskTotal).toBeGreaterThan(data.tasks.length);
   });
 });

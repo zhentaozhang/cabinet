@@ -38,6 +38,7 @@ export async function loadAgent(
       memoryTotal: data.memoryTotal,
       memories: data.memories.map(toMemoryDto),
       skills: data.skills.map(toSkillDto),
+      taskTotal: data.taskTotal,
       tasks: data.tasks.map(toTaskDto),
     },
     "AgentPage",

@@ -19,8 +19,16 @@ export async function getAgentData(agentId: string, userId: string) {
     .where(and(eq(agents.id, agentId), eq(agents.userId, userId)));
   if (!agent) return null;
 
-  const [agentRuns, agentMemories, memoryTotal, agentSkills, assigned, userRows, grantRows] =
-    await Promise.all([
+  const [
+    agentRuns,
+    agentMemories,
+    memoryTotal,
+    agentSkills,
+    assigned,
+    taskTotal,
+    userRows,
+    grantRows,
+  ] = await Promise.all([
     // Every list here is a window, so the tie-break column matters: rows created
     // in one statement share a timestamp, and without an id the "latest run"
     // and the memory card would reshuffle between two identical requests.
@@ -49,6 +57,12 @@ export async function getAgentData(agentId: string, userId: string) {
       .where(and(eq(tasks.assigneeId, agentId), eq(tasks.userId, userId)))
       .orderBy(desc(tasks.updatedAt), desc(tasks.id))
       .limit(8),
+    // The Performance tile says "Tasks", next to lifetime pass/reject counts, so
+    // it must be every task this Agent carried — not the eight-row list below.
+    db
+      .select({ total: count() })
+      .from(tasks)
+      .where(and(eq(tasks.assigneeId, agentId), eq(tasks.userId, userId))),
     db
       .select({ timezone: users.timezone })
       .from(users)
@@ -81,6 +95,7 @@ export async function getAgentData(agentId: string, userId: string) {
     memories: agentMemories,
     memoryTotal: Number(memoryTotal[0]?.total ?? 0),
     skills: agentSkills,
+    taskTotal: Number(taskTotal[0]?.total ?? 0),
     tasks: assigned,
   };
 }

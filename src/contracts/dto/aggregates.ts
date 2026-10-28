@@ -306,6 +306,8 @@ export const agentPageSchema = z.object({
   memoryTotal: z.number().int().nonnegative(),
   memories: z.array(memoryDtoSchema),
   skills: z.array(skillDtoSchema),
+  // Every task this Agent carried; the tasks array above is the detail page's window.
+  taskTotal: z.number().int().nonnegative(),
   tasks: z.array(taskDtoSchema),
 });
 export type AgentPageDto = z.infer<typeof agentPageSchema>;
