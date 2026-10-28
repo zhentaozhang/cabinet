@@ -68,7 +68,9 @@ describe("buildManifest", () => {
     expect(manifest.steps.map((step) => step.idx)).toEqual(
       rows.map((row) => row.idx).sort((a, b) => a - b),
     );
-    expect(manifest.promptVersion).toBeGreaterThan(0);
+    // A demo draft never went through the prompt template, so the manifest
+    // records that rather than quoting whichever template this build ships.
+    expect(manifest.promptVersion).toBeNull();
     expect(manifest.merkleRoot).toMatch(/^[0-9a-f]{64}$/);
     expect(manifest.auditHead).not.toBeNull();
 
@@ -76,6 +78,20 @@ describe("buildManifest", () => {
     expect(result.mismatches).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.checks).toEqual(["structure", "digest", "merkle"]);
+  });
+
+  it("reports the prompt version the run recorded, not the one this build ships", async () => {
+    await runTask("tsk_read", DEMO_USER_ID);
+    const run = await latestRun("tsk_read");
+    // A run produced by an older build. Its row is the only place its template
+    // can come from, so re-exporting it must not adopt today's constant — that
+    // would also mint a new digest for an unchanged run.
+    await db.update(runs).set({ promptVersion: 7 }).where(eq(runs.id, run.id));
+
+    const manifest = await buildManifest(run.id, DEMO_USER_ID);
+    expect(manifest?.promptVersion).toBe(7);
+    if (!manifest) return;
+    expect(verifyManifest(manifest).ok).toBe(true);
   });
 
   it("carries a not-judged acceptance item as undetermined, not as a failure", async () => {

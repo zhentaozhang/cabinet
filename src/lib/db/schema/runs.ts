@@ -21,6 +21,11 @@ export const runs = pgTable(
     tokensOut: integer("tokens_out"),
     provider: text("provider"),
     model: text("model"),
+    // The prompt template the producing build used (src/lib/llm.ts). Stored on
+    // the run instead of read from the exporter: a constant read at export time
+    // would let the same unchanged run claim two different templates across
+    // deploys, and a verifier would read that as tampering.
+    promptVersion: integer("prompt_version"),
     // One id per real provider call, unique across retries of the same task.
     providerAttemptId: text("provider_attempt_id"),
     costSource: text("cost_source"),

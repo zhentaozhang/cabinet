@@ -6,6 +6,9 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/llm", () => ({
+  // run.ts imports this alongside generateArtifact to stamp live runs; a
+  // factory that omits it would silently write null prompt versions.
+  PROMPT_TEMPLATE_VERSION: 1,
   generateArtifact: (input: unknown) => harness.impl!(input),
 }));
 

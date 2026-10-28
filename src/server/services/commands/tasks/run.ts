@@ -15,7 +15,7 @@ import {
 } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
-import { generateArtifact } from "@/lib/llm";
+import { generateArtifact, PROMPT_TEMPLATE_VERSION } from "@/lib/llm";
 import { currentSpan, startSpan, withSpan } from "@/lib/observability/tracing";
 import { recordRetrievalCall } from "@/server/services/connectors/ledger";
 import { searchAndPersist } from "@/server/services/connectors/search";
@@ -293,6 +293,10 @@ async function executeRun(taskId: string, userId: string) {
   }
 
   let idx = 0;
+  // The prompt template this run ends up naming in its manifest (null until a
+  // live generation happens). Declared out here so the failure path can record
+  // it too: a run that drafted an artifact and then broke still used it.
+  let promptVersionUsed: number | null = null;
   // Whether a provider request may have happened; drives ledger settlement.
   let providerContact: "unknown" | "none" | "real" = "unknown";
   // Provider attempt identity for this run; set only after the model call.
@@ -716,6 +720,7 @@ async function executeRun(taskId: string, userId: string) {
     if (modelResult.status === "success") {
       draft = modelResult.draft;
       sourceMode = "live";
+      promptVersionUsed = PROMPT_TEMPLATE_VERSION;
     } else if (demoMode) {
       // Explicit demo mode is the only path that may use a template draft.
       draft = draftFor(agent.role, task.title, prior.length, Boolean(priorRejection));
@@ -820,6 +825,10 @@ async function executeRun(taskId: string, userId: string) {
           model: attempt?.model ?? null,
           providerAttemptId: attempt?.attemptId ?? null,
           costSource: attempt?.costSource ?? null,
+          // Only a live generation used the prompt template; a demo/rule draft
+          // under DEMO_MODE did not, and claiming a version for it would make
+          // the manifest describe a prompt nobody applied.
+          promptVersion: promptVersionUsed,
         })
         .where(eq(runs.id, runId));
 
@@ -865,6 +874,9 @@ async function executeRun(taskId: string, userId: string) {
           tokensOut: null,
           provider: attempt?.provider ?? null,
           model: attempt?.model ?? null,
+          // A run that failed before drafting has no template to name; one that
+          // failed later did use it, so record it the same way as success.
+          promptVersion: promptVersionUsed,
           providerAttemptId: attempt?.attemptId ?? null,
           costSource: attempt?.costSource ?? null,
         })

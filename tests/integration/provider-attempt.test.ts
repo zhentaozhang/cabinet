@@ -6,10 +6,14 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/llm", () => ({
+  // run.ts imports this alongside generateArtifact to stamp live runs; a
+  // factory that omits it would silently write null prompt versions.
+  PROMPT_TEMPLATE_VERSION: 1,
   generateArtifact: (input: unknown) => harness.impl!(input),
 }));
 
 import { db } from "@/lib/db";
+import { PROMPT_TEMPLATE_VERSION } from "@/lib/llm";
 import { runs, tasks } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { runTask } from "@/server/services/commands/tasks/run";
@@ -62,6 +66,7 @@ describe("provider attempt identity", () => {
     expect(run.tokensIn).toBe(111);
     expect(run.tokensOut).toBe(222);
     expect(run.costSource).toBe("actual");
+    expect(run.promptVersion).toBe(PROMPT_TEMPLATE_VERSION);
   });
 
   it("keeps the attempt id but stores unknown usage as null, not zero, on timeout", async () => {
@@ -82,6 +87,8 @@ describe("provider attempt identity", () => {
     expect(run.costSource).toBe("unknown");
     expect(run.tokensIn).toBeNull();
     expect(run.tokensOut).toBeNull();
+    // No draft was composed, so there is no template to name either.
+    expect(run.promptVersion).toBeNull();
   });
 
   it("records no attempt at all when the provider was never configured", async () => {
@@ -140,6 +147,9 @@ describe("provider attempt identity", () => {
     expect(run.tokensIn).toBeNull();
     expect(run.tokensOut).toBeNull();
     expect(run.costSource).not.toBe("actual");
+    // The demo draft never went through composeSystemPrompt, so claiming a
+    // prompt version here would describe a prompt nobody applied.
+    expect(run.promptVersion).toBeNull();
 
     const [task] = await db.select().from(tasks).where(eq(tasks.id, TASK_ID));
     expect(task.status).toBe("submitted");

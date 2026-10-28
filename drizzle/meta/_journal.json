@@ -253,6 +253,13 @@
       "when": 1792999904055,
       "tag": "0035_learning_attempts_verdicts_array",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793208363244,
+      "tag": "0036_prompt_version",
+      "breakpoints": true
     }
   ]
 }

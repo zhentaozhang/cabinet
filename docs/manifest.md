@@ -11,7 +11,7 @@
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "runId": "run_…", "taskId": "tsk_…", "agentId": "ag_…", "userId": "usr_…",
   "status": "succeeded", "createdAt": "…",
   "model": { "provider": "openai", "model": "gpt-4.1-mini" },
@@ -44,6 +44,11 @@ manifest 是要发给外部审计方的文件，带正文等于把工作区一�
 - `promptVersion` 是个**手动 bump 的整数常量**（`src/lib/llm.ts` 的 `PROMPT_TEMPLATE_VERSION`），
   不是 `Function.prototype.toString()` 的哈希——打包、压缩、dev overlay 都会改源码文本，
   同一份 prompt 会在 dev 和 prod 得出不同版本号，那样「版本」就失去了可比性。
+- 这个整数**记在 run 行上**（`runs.prompt_version`，产物生成时就写死），导出时从行里读，
+  不是从当前构建的常量读。第一版读的是常量，于是同一条没变过的 run 换一次构建重新导出就会
+  声称是另一个模板产出的，digest 也跟着变——验的人会把它当成篡改。没有走模板的 run
+  （规则稿、演示稿、审计）这里就是 `null`，含义是「没记录」，不是「版本 0」。
+  `MANIFEST_VERSION` 因此变成 3。
 
 ## 两类哈希：树根管 steps，digest 管其余
 

@@ -7,6 +7,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/llm", () => ({
+  // run.ts imports this alongside generateArtifact to stamp live runs; a
+  // factory that omits it would silently write null prompt versions.
+  PROMPT_TEMPLATE_VERSION: 1,
   generateArtifact: () =>
     Promise.resolve({
       status: "success",

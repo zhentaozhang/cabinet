@@ -62,11 +62,13 @@ describe("GET /api/tasks/[id]/manifest", () => {
       runId: string;
       taskId: string;
       steps: unknown[];
-      promptVersion: number;
+      promptVersion: number | null;
     };
     expect(manifest.taskId).toBe("tsk_read");
     expect(manifest.steps.length).toBeGreaterThan(0);
-    expect(manifest.promptVersion).toBeGreaterThan(0);
+    // The route exports what the run recorded: this demo draft used no
+    // template, so the field is null instead of the build's constant.
+    expect(manifest.promptVersion).toBeNull();
 
     // The prompt is what leaks the workspace, so the export must carry hashes
     // only. composeSystemPrompt opens with this exact phrase (src/lib/llm.ts).

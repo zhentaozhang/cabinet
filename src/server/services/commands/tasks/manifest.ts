@@ -19,7 +19,6 @@ import {
   type RunManifest,
 } from "@/lib/domain/manifest";
 import { canonicalJson, sha256 } from "@/lib/ids";
-import { PROMPT_TEMPLATE_VERSION } from "@/lib/llm";
 
 function hashValue(value: unknown): string {
   return sha256(canonicalJson(value ?? null));
@@ -155,7 +154,11 @@ export async function buildManifest(
     status: run.status,
     createdAt: run.createdAt.toISOString(),
     model: { provider: run.provider, model: run.model },
-    promptVersion: PROMPT_TEMPLATE_VERSION,
+    // Whatever template produced this run, from the run's own row. Reading the
+    // constant here instead made the manifest disagree with itself: a run
+    // recorded last month would claim whichever template this build happens to
+    // ship, and re-exporting it would mint a new digest for an unchanged run.
+    promptVersion: run.promptVersion ?? null,
     steps: manifestSteps,
     artifacts: artifactRows.map((artifact) => ({
       id: artifact.id,

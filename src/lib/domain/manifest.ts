@@ -9,7 +9,10 @@ import { canonicalJson, sha256 } from "@/lib/ids";
  * the workspace, and one that can only be checked against our database is not
  * evidence for anyone else.
  */
-export const MANIFEST_VERSION = 2;
+// 3: `promptVersion` now records the template that produced the run (read from
+// the run row) and is null when no template was involved, so its absence and
+// its value mean something a verifier can act on.
+export const MANIFEST_VERSION = 3;
 
 export type ManifestStep = {
   idx: number;
@@ -56,8 +59,13 @@ export type RunManifest = {
   status: string;
   createdAt: string;
   model: { provider: string | null; model: string | null };
-  /** Bumped by hand when the prompt template changes (see llm.ts). */
-  promptVersion: number;
+  /**
+   * The prompt template the run was produced with (see llm.ts), read from the
+   * run row rather than from this build. Null when no model prompt was used:
+   * a rule draft, a demo fixture, an audit run. A consumer that needs the
+   * template must treat null as "not recorded", never as "version 0".
+   */
+  promptVersion: number | null;
   steps: ManifestStep[];
   artifacts: ManifestArtifact[];
   evidence: ManifestEvidence[];
