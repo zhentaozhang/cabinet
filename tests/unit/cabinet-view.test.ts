@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   agentHeadcount,
+  agentPassRate,
   escalationPolicyLine,
   tasksPerAgent,
   upgradeRequirementsLine,
@@ -108,3 +109,27 @@ describe("upgradeRequirementsLine", () => {
     expect(line).toContain("信任分 ≥0");
   });
 });
+
+describe("agentPassRate", () => {
+  it("prints an em dash instead of 0% when nothing has been judged", () => {
+    // 同一个 0/0 在复盘页写的是「还没有验收记录」（src/app/review/page.tsx），
+    // Agent 详情页却印成「0%」，读起来像「验收全都没过」。没有判定过就没有通过率。
+    const empty = agentPassRate({ successCount: 0, failCount: 0 });
+    expect(empty.value).toBe("—");
+    expect(empty.hint).toBe("还没有验收记录");
+  });
+
+  it("rounds a real verdict history to a whole percent", () => {
+    const rate = agentPassRate({ successCount: 3, failCount: 1 });
+    expect(rate.value).toBe("75%");
+    expect(rate.hint).toBe("验收通过率");
+    expect(agentPassRate({ successCount: 2, failCount: 1 }).value).toBe("67%");
+  });
+
+  it("treats a broken counter as no evidence, not as a pass rate", () => {
+    const broken = agentPassRate({ successCount: Number.NaN, failCount: -3 });
+    expect(broken.value).toBe("—");
+    expect(broken.hint).toBe("还没有验收记录");
+  });
+});
+

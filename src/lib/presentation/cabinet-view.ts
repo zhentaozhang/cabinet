@@ -1,3 +1,5 @@
+import { passRate } from "@/contracts/labels";
+
 /**
  * The Cabinet card footer counts the tasks each Agent has carried.
  *
@@ -96,6 +98,33 @@ export function upgradeRequirementsLine(input: UpgradeRequirements): string {
   );
   return `升级需要：信任分 ≥${trust} · 成功任务 ≥${successes} · 有效审计样本 ≥${samples} · 审计通过率 ≥${rate}% · 非试用期。`;
 }
+
+/**
+ * 绩效卡上的通过率。
+ *
+ * 没有判定过的时候不能印 0%：0/0 不是一个比例，而这行字旁边写着「验收通过率」，
+ * 读起来就是「一次都没过」。复盘页（src/app/review/page.tsx）早就按这个口径写
+ * 「还没有验收记录」，Agent 详情页却仍然印 0%——同一个数在两页上说法不一致，
+ * 也违背「没有证据就写未判定」：没判过就没有通过率可报。
+ */
+export type PassRateReadout = {
+  /** 「75%」，或没有判定记录时的「—」。 */
+  value: string;
+  hint: string;
+};
+
+export function agentPassRate(input: {
+  successCount: number;
+  failCount: number;
+}): PassRateReadout {
+  const success = Math.max(0, Math.round(finiteOr(input.successCount, 0)));
+  const fail = Math.max(0, Math.round(finiteOr(input.failCount, 0)));
+  if (success + fail === 0) {
+    return { value: "—", hint: "还没有验收记录" };
+  }
+  return { value: `${passRate(success, fail)}%`, hint: "验收通过率" };
+}
+
 
 function finiteOr(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;

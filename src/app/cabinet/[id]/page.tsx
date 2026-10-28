@@ -17,13 +17,13 @@ import {
   AUTONOMY_LABELS,
   grantStateLabel,
   grantStateTone,
-  passRate,
   roleMeta,
   statusLabel,
 } from "@/lib/agents";
 import { money, pct, relative, shortDate, timeOnly } from "@/lib/format";
 import { memoryTypeLabel } from "@/contracts/labels";
 import { sourceLabel } from "@/lib/domain/provenance";
+import { agentPassRate } from "@/lib/presentation/cabinet-view";
 import { completionPercent } from "@/lib/presentation/ratio";
 import {
   Avatar,
@@ -75,7 +75,11 @@ export default async function AgentPage({
   const standingGrants = grants.filter((grant) => grant.state !== "base");
   const baseGrants = grants.filter((grant) => grant.state === "base");
   const meta = roleMeta(agent.role);
-  const rate = passRate(agent.successCount, agent.failCount);
+  // 没判过就没有通过率可报：0/0 印成「0%」会被读成「验收全没过」。
+  const passRateReadout = agentPassRate({
+    successCount: agent.successCount,
+    failCount: agent.failCount,
+  });
   // Week usage comes from the ledger, never from the frozen agents.spent_cents
   // snapshot: settled is measured-token cost, unknown is unreported exposure.
   const weekUsedCents = budget.settledCents + budget.unknownCents;
@@ -144,7 +148,11 @@ export default async function AgentPage({
             />
             <div className="grid grid-cols-2 gap-5 px-5 py-4 sm:grid-cols-4">
               <Stat label="Trust" value={Math.round(agent.trustScore)} hint="0–100" />
-              <Stat label="Pass rate" value={`${rate}%`} hint="验收通过率" />
+              <Stat
+                label="Pass rate"
+                value={passRateReadout.value}
+                hint={passRateReadout.hint}
+              />
               <Stat
                 label="本周用量"
                 value={money(weekUsedCents)}
