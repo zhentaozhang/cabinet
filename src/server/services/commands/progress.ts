@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, ne } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, ne } from "drizzle-orm";
 import type { Tx } from "../shared/tx";
 import { checkins, goals, tasks, users } from "@/lib/db/schema";
 import { localDateKey, weekRange } from "@/lib/domain/time";
@@ -67,10 +67,17 @@ export async function recalculateGoalProgress(
           lt(checkins.date, localDateKey(range.end, timezone)),
         ),
       ),
+    // 最近一次**记下了分数**的回忆正确率，不是"最近一条打卡的分数"。
+    //
+    // recall_score 是选填的：同一天的打卡再存一次、把这一栏留空，就会把昨天
+    // 那个真实的 0.4 覆盖成 null，而 computeLearningProgress 把 null 当 0 分算
+    // —— 用户只是今天没再自评一次，进度却掉了一整个回忆权重。"这一栏空着"说的
+    // 是"没测"，不是"测出来 0%"；分数只在有证据时更新，没有证据时沿用最近一次
+    // 已知的（一次都没测过才真的是 0 分）。
     tx
       .select({ recallScore: checkins.recallScore })
       .from(checkins)
-      .where(eq(checkins.userId, userId))
+      .where(and(eq(checkins.userId, userId), isNotNull(checkins.recallScore)))
       .orderBy(desc(checkins.date))
       .limit(1),
   ]);
