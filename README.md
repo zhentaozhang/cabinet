@@ -138,7 +138,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 |---|---|---|
 | Today | `/` | 今天有什么事、需要我决定什么 |
 | Cabinet | `/cabinet` | 有哪些 Agent、状态/预算/授权如何；能力矩阵（声明了哪些工具、哪些真能执行） |
-| Agent 详情 | `/cabinet/[id]` | 这个 Agent 的宪章、绩效、运行、技能、记忆 |
+| Agent 详情 | `/cabinet/[id]` | 这个 Agent 的宪章、绩效、运行、技能、记忆；「共 N 条，查看记忆」里的 N 是这张表的真实总数，不是卡片窗格的长度（卡片只放五条，查询也只取八条） |
 | Task 详情 | `/tasks/[id]` | 验收标准、运行轨迹、产物、审批、审计；运行前策略预演（只读）；待判定时的判定卡与判定后的人判记录 |
 | Review | `/review` | 本周指标、复盘、洞察、异议、审计日志 |
 | Memory | `/memory` | 记住了什么、证据在哪、是否冲突、能否删除 |
@@ -278,7 +278,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->154<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1274<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->155<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1277<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 

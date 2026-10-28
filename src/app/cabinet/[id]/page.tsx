@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   ArrowLeft,
+  ArrowRight,
   BookOpen,
   Brain,
   Clock3,
@@ -57,7 +58,7 @@ export default async function AgentPage({
   const data = await fetchAgentPage(id);
   if (!data) notFound();
   const tz = data.timezone;
-  const { agent, budget, apprenticeship, runs, memories, skills, tasks, grants } =
+  const { agent, budget, apprenticeship, memoryTotal, runs, memories, skills, tasks, grants } =
     data;
   // Base permissions describe what the agent may touch; standing policies are
   // the rules the user created by approving once, and can revoke here.
@@ -432,7 +433,16 @@ export default async function AgentPage({
               eyebrow="Memories"
               title="它记住的事"
               right={
-                memories.length > 5 ? <Link href="/memory">全部 {memories.length} 条 →</Link> : undefined
+                // 这个数是它记住的事的总数，不是这一页的长度：卡片只放五条，
+                // 查询也最多取八条，拿 memories.length 当总数会把 40 说成 8。
+                memoryTotal > memories.slice(0, 5).length ? (
+                  <Link
+                    href="/memory"
+                    className="inline-flex items-center gap-1 text-label text-faint hover:text-muted"
+                  >
+                    共 {memoryTotal} 条，查看记忆 <ArrowRight className="size-3" />
+                  </Link>
+                ) : undefined
               }
             />
             <div className="divide-y divide-line">

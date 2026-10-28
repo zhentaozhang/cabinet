@@ -296,6 +296,8 @@ export const agentPageSchema = z.object({
   budget: budgetViewDtoSchema,
   apprenticeship: apprenticeshipEvidenceSchema.nullable(),
   runs: z.array(runDtoSchema),
+  // Every memory this Agent has; the memories array above is only the window the card shows.
+  memoryTotal: z.number().int().nonnegative(),
   memories: z.array(memoryDtoSchema),
   skills: z.array(skillDtoSchema),
   tasks: z.array(taskDtoSchema),

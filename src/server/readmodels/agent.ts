@@ -35,6 +35,7 @@ export async function loadAgent(
           }
         : null,
       runs: data.runs.map(toRunDto),
+      memoryTotal: data.memoryTotal,
       memories: data.memories.map(toMemoryDto),
       skills: data.skills.map(toSkillDto),
       tasks: data.tasks.map(toTaskDto),
