@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { agents, insights, memories, profiles, tasks, users } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
-import { localDateTimeParts, zonedTimeToUtc } from "@/lib/domain/time";
+import { addLocalDays, localDateTimeParts, zonedTimeToUtc } from "@/lib/domain/time";
 import type { Tx } from "../../shared/tx";
 import { applyOverrideTx, rollbackOverrideTx } from "../policy";
 import { factForChange, rollbackMemoryForSource, writeMemoryFact } from "./facts";
@@ -46,11 +46,28 @@ async function applyChange(
       .where(eq(users.id, userId))
       .limit(1);
     const timeZone = user?.timezone ?? "UTC";
-    const today = localDateTimeParts(new Date(), timeZone);
-    const next = zonedTimeToUtc(
+    // 用户点「采纳」的那一刻通常已经过了那个钟点（这条洞察本来就是给晚间任务
+    // 提的，人往往在晚上才看到它）。取今天的 09:00 会把任务直接写成几个小时的
+    // 逾期，而首页「计划遵从率」的分母正是按 dueAt 算的——一条帮你重排的洞察
+    // 反而把指标压下去。所以取「下一次」这个钟点：今天还没到就是今天，已过就顺延一天。
+    const now = new Date();
+    const today = localDateTimeParts(now, timeZone);
+    const todaySlot = zonedTimeToUtc(
       today.year,
       today.month,
       today.day,
+      h,
+      m,
+      timeZone,
+    );
+    const targetDay =
+      todaySlot.getTime() > now.getTime()
+        ? today
+        : localDateTimeParts(addLocalDays(now, 1, timeZone), timeZone);
+    const next = zonedTimeToUtc(
+      targetDay.year,
+      targetDay.month,
+      targetDay.day,
       h,
       m,
       timeZone,

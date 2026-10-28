@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { insights, tasks, users } from "@/lib/db/schema";
@@ -11,6 +11,10 @@ import { resetDb } from "../helpers/db";
 
 beforeEach(async () => {
   await resetDb();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("insight task isolation and timezone", () => {
@@ -105,6 +109,9 @@ describe("insight task isolation and timezone", () => {
       status: "proposed",
     });
 
+    // 09:00 还没到：应当仍然排到今天 09:00，不能无谓顺延一天。
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-28T06:30:00.000Z"));
     await applyInsight("ins_timezone", "accept", userId);
 
     const [task] = await db
@@ -121,5 +128,58 @@ describe("insight task isolation and timezone", () => {
       "UTC",
     );
     expect(task.dueAt?.toISOString()).toBe(expected.toISOString());
+  });
+
+  it("moves the task to the next occurrence when that hour already passed today", async () => {
+    const userId = "usr_insight_past_slot";
+    await db.insert(users).values({
+      id: userId,
+      email: "insight-past@cabinet.local",
+      name: "Past Slot User",
+      emailVerified: true,
+      timezone: "UTC",
+      updatedAt: new Date(),
+    });
+    await setupWorkspace({ userId, timezone: "UTC" });
+    await db.insert(tasks).values({
+      id: "tsk_insight_past_slot",
+      userId,
+      title: "Evening task",
+      description: "A task the reflection insight asks to move to the morning.",
+      status: "planned",
+      acceptanceCriteria: "有产物",
+      estimateMin: 25,
+      actionType: "internal",
+      resource: "task",
+      estimatedCostCents: 0,
+      createdBy: "user",
+      dueAt: new Date("2030-01-01T21:00:00.000Z"),
+    });
+    await db.insert(insights).values({
+      id: "ins_past_slot",
+      userId,
+      claim: "move the evening task to the morning",
+      rationale: "energy pattern test",
+      confidence: 0.5,
+      evidence: [],
+      proposedChange: {
+        type: "reschedule",
+        taskId: "tsk_insight_past_slot",
+        from: "21:00",
+        to: "09:00",
+      },
+      status: "proposed",
+    });
+
+    // 21:30 采纳：今天的 09:00 已经过去，写成今天 09:00 就是一条当场逾期的任务。
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-28T21:30:00.000Z"));
+    await applyInsight("ins_past_slot", "accept", userId);
+
+    const [task] = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, "tsk_insight_past_slot"));
+    expect(task.dueAt?.toISOString()).toBe("2026-10-29T09:00:00.000Z");
   });
 });
