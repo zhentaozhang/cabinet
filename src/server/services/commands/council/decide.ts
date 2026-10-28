@@ -11,7 +11,7 @@ import {
 import type { CouncilResolution } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
-import { getPolicyConfig } from "@/lib/policy/config";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import {
   ConflictError,
   NotFoundError,
@@ -48,7 +48,8 @@ export async function decideCouncil(
     .where(eq(agents.userId, userId));
   const chief = allAgents.find((agent) => agent.role === "chief");
   const auditor = allAgents.find((agent) => agent.role === "auditor");
-  const config = await getPolicyConfig();
+  // 与 createCouncil 同源：兜底出来的证伪条件也要用这个人自己的阈值。
+  const config = await getPolicyConfigFor(userId);
 
   const label =
     decision === "approve"

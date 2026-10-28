@@ -5,6 +5,7 @@ import {
   agents,
   auditEvents,
   councilPositions,
+  dissents,
   goals,
   memories,
   tasks,
@@ -12,6 +13,7 @@ import {
 import { DEMO_USER_ID } from "@/lib/demo";
 import { ConflictError } from "@/lib/domain/errors";
 import { councilDecisionSchema } from "@/lib/validation/schemas";
+import { applyOverride } from "@/server/services/commands/policy";
 import { createCouncil, decideCouncil } from "@/server/services/engine";
 import { resetDb } from "../helpers/db";
 
@@ -282,5 +284,46 @@ describe("council closed loop", () => {
     const chief = await chiefPosition("要不要把本周的练习量再加一点？");
     // 种子里 10 个任务（5 个已验收）+ 上面 20 个已验收 = 30 / 25。
     expect(chief.claim).toContain("近 7 天有 30 个任务，25 个已验收");
+  });
+
+  it("stamps the dissent with the user's own reject-streak limit", async () => {
+    // audit.rejectStreakLimit 是洞察采纳白名单里的键，也是 audit.ts 判「连续驳回，
+    // 几次就暂停 Agent」的门槛。内阁写下的证伪条件必须与这个人实际会被暂停的阈值
+    // 一致，否则复盘页上写着「>= 2 次驳回即证伪」，而 Agent 要到第 5 次才停。
+    await applyOverride({
+      userId: DEMO_USER_ID,
+      key: "audit.rejectStreakLimit",
+      value: 5,
+    });
+
+    const council = await createCouncil(
+      { topic: "要不要报名周末的工作坊？", trigger: "单笔支出 > ¥200" },
+      DEMO_USER_ID,
+    );
+    const positions = await db
+      .select()
+      .from(councilPositions)
+      .where(eq(councilPositions.councilId, council.id));
+    const agentRows = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.userId, DEMO_USER_ID));
+    const criticId = agentRows.find((agent) => agent.role === "critic")?.id;
+    const critic = positions.find((position) => position.agentId === criticId);
+    expect(critic?.falsificationCondition?.threshold).toBe(5);
+
+    // 旧会议（立场上没有随行保存条件）走 decide 的兜底分支，同样不能退回全局默认。
+    await db
+      .update(councilPositions)
+      .set({ falsificationCondition: null })
+      .where(eq(councilPositions.councilId, council.id));
+    await decideCouncil(council.id, "approve", "批准。", DEMO_USER_ID);
+    const dissentRows = await db
+      .select()
+      .from(dissents)
+      .where(eq(dissents.councilId, council.id));
+    const criticDissent = dissentRows.find((row) => row.agentId === criticId);
+    expect(criticDissent?.condition.threshold).toBe(5);
+    expect(dissentRows.every((row) => row.condition.threshold !== 2)).toBe(true);
   });
 });

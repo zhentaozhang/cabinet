@@ -7,7 +7,7 @@ import {
 import type { CouncilMatrix } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
-import { getPolicyConfig } from "@/lib/policy/config";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import { buildCouncilMatrix, buildCouncilMemo } from "@/lib/domain/council";
 import type { CouncilPositionDraft } from "@/lib/domain/council";
 import { ValidationError } from "@/lib/domain/errors";
@@ -31,7 +31,11 @@ export async function createCouncil(
     throw new ValidationError("Topic and trigger are required.");
   }
 
-  const config = await getPolicyConfig();
+  // 用户级配置：critic 的证伪条件用的是 audit.rejectStreakLimit，而那是洞察
+  // 采纳白名单里的键（audit.ts 自己也是按 getPolicyConfigFor 判暂停的）。这里
+  // 读全局默认，会议就会替你写下一个和别人不一样的门槛：复盘页写着「>= 2 次
+  // 驳回即证伪」，而你的 Agent 到第 5 次才停。
+  const config = await getPolicyConfigFor(userId);
   const context = await loadCouncilContext(userId, config.budget.weeklyLimitCents);
   const id = newId("ccl");
 
