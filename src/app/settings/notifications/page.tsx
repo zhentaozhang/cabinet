@@ -175,7 +175,7 @@ export default async function NotificationsPage({
           </li>
           <li className="flex items-start gap-2">
             <Clock className="mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden />
-            静默时段的邮件只是推迟，不会丢弃；关掉通知则不再入队发送。
+            静默时段的邮件只是推迟，不会丢弃；关掉通知后邮件不再发出，队列里那条记为「已跳过」，事件本身照样入队，账才对得上。
           </li>
         </ul>
       </Card>
