@@ -8,6 +8,8 @@ import { ensureNextLearningTask } from "@/server/services/commands/learning";
 import { applyOverride } from "@/server/services/commands/policy";
 import { saveCheckin } from "@/server/services/commands/checkins";
 import { auditTask, createTask, runTask } from "@/server/services/engine";
+import { escalationPolicyLine } from "@/lib/presentation/cabinet-view";
+import { loadCabinet } from "@/server/readmodels/cabinet";
 import { resetDb } from "../helpers/db";
 
 // 一条洞察被采纳之后，运行时必须真的换了行为。只证明 getPolicyConfigFor
@@ -136,5 +138,25 @@ describe("被采纳的覆盖真的改变运行时", () => {
       .where(eq(goals.id, goal.id));
     // 本周打卡数不变，分母从 5 变 1，打卡项直接拉满 → 进度必须上升。
     expect(after.progress).toBeGreaterThan(baseline.progress);
+  });
+
+  it("内阁制度栏印的连续驳回上限就是真正执行的那个", async () => {
+    // 制度栏原来写死「连续 2 次驳回 → 换人或进入退休评估」：那个 2 是默认值，
+    // 而 audit.rejectStreakLimit 在洞察的覆盖白名单里。页面必须读同一个数，
+    // 否则用户调到 5 之后，页面仍在承诺一个后端不执行的阈值。
+    const before = await loadCabinet(DEMO_USER_ID);
+    expect(before.policy.rejectStreakLimit).toBe(2);
+
+    await applyOverride({
+      userId: DEMO_USER_ID,
+      key: "audit.rejectStreakLimit",
+      value: 5,
+    });
+
+    const after = await loadCabinet(DEMO_USER_ID);
+    expect(after.policy.rejectStreakLimit).toBe(5);
+    expect(escalationPolicyLine(after.policy.rejectStreakLimit)).toContain(
+      "连续驳回 5 次",
+    );
   });
 });

@@ -68,7 +68,7 @@ Cabinet 把「目标 → 任务 → 执行 → 验收 → 复盘 → 记忆」�
 - 外部动作和花钱：`external_action` / `spend` 会进入审批；批准后仍只执行同一套产物生成，不会真的预订或支付。
 - 三个结论，不是两个：`accepted`（通过）、`rejected`（明确不合格）、`needs_review`（清单里必须判定的条目没有人能给出结论，例如没配模型的 `judge` 项、或者根本没有清单）。第三种既不是通过也不是驳回，任务停在「待你判定」，不动执行者的信任分、不加掌握度、不发驳回邮件。
 - 人给的结论：`needs_review` 的任务只能由用户在任务页判定（`POST /api/tasks/:id/override`，`audit.override`）。理由必填（5–500 字），结论按条件写回（并发时后到的那次得到 409）。用户的判定**不**改变 Agent 的信任分——人的覆盖不是 Agent 自己的证据；但它会推进知识点掌握度并留一条任务记忆：掌握度记的是学习者的状态，人给出的结论恰恰是它最可信的输入（不推的后果很具体：没接模型时到期复习题永远停在"待你判定"，判通过后 due_at 仍留在过去，同一主题天天被判为到期）。
-- 驳回：执行者的 `reject_streak` 加一；达到阈值（默认 2）自动暂停，恢复由用户操作。
+- 驳回：执行者的 `reject_streak` 加一；达到阈值（默认 2，可被采纳的洞察覆盖）自动暂停 Agent 并记一条 `agent.paused`，是否重新启用或退休由用户决定。内阁页的制度栏印的就是这个阈值——它读用户自己的策略值，不写死默认值。
 - 通过：Agent 执行者的信任分 +1；驳回 -2。用户自己提交的验收不改变信任分，只有“真实模型运行 + Agent 产物 + 任务已验收”同时成立才计入晋升证据，而且看的是**产出这份产物那条 run**（重跑一次却在中途失败，不会把上一次真跑过的成绩抹掉），以及**这条结论当时判的那份产物**（审计行里记着 `artifactId`；之后又交了一版产物，不会把已经成立的那次判定改判成「没有证据」）。
 - 关键写操作在事务里完成；写请求支持 `Idempotency-Key` 去重。
 
@@ -280,7 +280,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->158<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1308<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->158<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1312<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 

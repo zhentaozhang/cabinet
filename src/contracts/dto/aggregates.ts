@@ -167,6 +167,12 @@ export const cabinetPageSchema = z.object({
   /** Keyed by agent id: the current week's ledger view for each card. */
   budgets: z.record(z.string(), budgetViewDtoSchema),
   knowledge: knowledgeSchema,
+  /**
+   * 制度栏编码的是可调策略，不是常量：`audit.rejectStreakLimit` 在洞察的
+   * 覆盖白名单里，用户把「连续驳回上限」从 2 调到 5 之后，页面上那句
+   * 「连续 N 次驳回」必须跟着改，否则页面许诺一个后端已经不执行的阈值。
+   */
+  policy: z.object({ rejectStreakLimit: z.number() }),
 });
 export type CabinetPageDto = z.infer<typeof cabinetPageSchema>;
 

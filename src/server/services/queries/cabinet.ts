@@ -8,6 +8,7 @@ import {
   skills,
   tasks,
 } from "@/lib/db/schema";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import { loadWeeklyUsage } from "./budget";
 import { getWorkspace } from "./workspace";
 
@@ -26,7 +27,7 @@ function tally(
 }
 
 export async function getCabinetData(userId: string) {
-  const [workspace, allAgents, allTasks] = await Promise.all([
+  const [workspace, allAgents, allTasks, policy] = await Promise.all([
     getWorkspace(userId),
     db
       .select()
@@ -34,6 +35,10 @@ export async function getCabinetData(userId: string) {
       .where(eq(agents.userId, userId))
       .orderBy(asc(agents.createdAt)),
     db.select().from(tasks).where(eq(tasks.userId, userId)),
+    // 用户级策略：制度那一栏写的是「连续驳回几次会暂停 Agent」，而那个
+    // 数字是洞察可调的键（audit.rejectStreakLimit），页面上写死一个常量，
+    // 用户在复盘页把上限调到 5 之后，这里还在承诺 2。
+    getPolicyConfigFor(userId),
   ]);
   const timezone = workspace.user.timezone ?? "UTC";
   // Read-only ledger views, one per card, so the grid never provisions buckets.
@@ -86,6 +91,7 @@ export async function getCabinetData(userId: string) {
     agents: allAgents,
     tasks: allTasks,
     budgets: Object.fromEntries(budgets),
+    policy: { rejectStreakLimit: policy.audit.rejectStreakLimit },
     knowledge: {
       skills: {
         total: skillRows.reduce((sum, row) => sum + Number(row.n), 0),

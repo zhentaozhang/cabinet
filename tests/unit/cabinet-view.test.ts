@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { agentHeadcount, tasksPerAgent } from "@/lib/presentation/cabinet-view";
+import {
+  agentHeadcount,
+  escalationPolicyLine,
+  tasksPerAgent,
+} from "@/lib/presentation/cabinet-view";
 
 describe("tasksPerAgent", () => {
   it("counts every task of an Agent, including the finished ones", () => {
@@ -31,5 +35,32 @@ describe("agentHeadcount", () => {
     ]);
 
     expect(counts).toEqual({ total: 3, onDuty: 1, growing: 1, retired: 1 });
+  });
+});
+
+describe("escalationPolicyLine", () => {
+  it("prints the limit it is given instead of a hardcoded 2", () => {
+    // `audit.rejectStreakLimit` 在洞察的覆盖白名单里（1–20），用户调到 5 之后
+    // 制度栏还写「连续 2 次驳回」就是在承诺一个后端不再执行的阈值。
+    expect(escalationPolicyLine(5)).toContain("连续驳回 5 次");
+    expect(escalationPolicyLine(5)).not.toContain("连续 2 次驳回");
+    expect(escalationPolicyLine(1)).toContain("连续驳回 1 次");
+  });
+
+  it("says what actually happens: the Agent pauses, retirement is the user's call", () => {
+    // 代码里既没有「换人」也没有自动退休评估（audit.ts 只把 Agent 置为
+    // paused 并记一条 agent.paused），复盘页的「考虑退休」是另一个判据
+    // （驳回次数多于通过次数），与这个上限无关。
+    const line = escalationPolicyLine(2);
+    expect(line).toContain("暂停这个 Agent");
+    expect(line).not.toContain("换人");
+    expect(line).not.toContain("进入退休评估");
+  });
+
+  it("never prints a limit below 1, whatever the row holds", () => {
+    // 覆盖值理论上被 validation 收在 1–20，但页面用的是从 API 反序列化的
+    // 数字：0 或 NaN 会让这句话读成「连续驳回 0 次」，比不写更糟。
+    expect(escalationPolicyLine(0)).toContain("连续驳回 1 次");
+    expect(escalationPolicyLine(Number.NaN)).toContain("连续驳回 1 次");
   });
 });

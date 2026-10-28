@@ -19,7 +19,11 @@ import {
 } from "@/lib/domain/tool-plan";
 import { AUTONOMY_LABELS, roleMeta, statusLabel } from "@/lib/agents";
 import { money } from "@/lib/format";
-import { agentHeadcount, tasksPerAgent } from "@/lib/presentation/cabinet-view";
+import {
+  agentHeadcount,
+  escalationPolicyLine,
+  tasksPerAgent,
+} from "@/lib/presentation/cabinet-view";
 import {
   Avatar,
   Badge,
@@ -634,7 +638,7 @@ export default async function CabinetPage() {
               Chief 不能推翻 Auditor；只有你能覆盖，且必须留下理由。
             </p>
             <p>
-              连续 2 次驳回 → 换人或进入退休评估。所有记录进入哈希链审计日志。
+              {escalationPolicyLine(data.policy.rejectStreakLimit)}
             </p>
           </div>
         </Card>

@@ -20,6 +20,7 @@ export async function loadCabinet(userId: string): Promise<CabinetPageDto> {
       agents: data.agents.map(toAgentDto),
       tasks: data.tasks.map(toTaskDto),
       knowledge: data.knowledge,
+      policy: data.policy,
       budgets: Object.fromEntries(
         Object.entries(data.budgets).map(([agentId, usage]) => [
           agentId,

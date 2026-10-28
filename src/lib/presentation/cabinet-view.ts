@@ -17,6 +17,24 @@ export function tasksPerAgent(
   }
   return counts;
 }
+/**
+ * 制度栏的第三句：连续驳回几次会发生什么。
+ *
+ * 这句话原本是写死的「连续 2 次驳回 → 换人或进入退休评估」，两处都不对：
+ * 那个 2 是 `audit.rejectStreakLimit` 的默认值，而它在洞察的覆盖白名单里
+ * （`src/lib/policy/overrides.ts`，1–20），用户把上限调到 5 之后这句话就在
+ * 承诺一个后端不执行的阈值；而且代码里既没有「换人」也没有自动退休评估——
+ * `src/server/services/commands/tasks/audit.ts` 做的是把 Agent 置为 paused，
+ * 记一条 `agent.paused`（reason=reject_streak_limit），等用户决定；复盘页的
+ * 「考虑退休」是另一个判据（驳回次数多于通过次数），与这个上限无关。
+ */
+export function escalationPolicyLine(rejectStreakLimit: number): string {
+  const limit = Number.isFinite(rejectStreakLimit)
+    ? Math.max(1, Math.trunc(rejectStreakLimit))
+    : 1;
+  return `连续驳回 ${limit} 次 → 暂停这个 Agent，等你决定重新启用还是退休。所有记录进入哈希链审计日志。`;
+}
+
 export type AgentHeadcount = {
   total: number;
   onDuty: number;
