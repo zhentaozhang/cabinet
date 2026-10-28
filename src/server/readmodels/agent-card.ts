@@ -1,4 +1,7 @@
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { agentCardSchema, type AgentCardDto } from "@/contracts";
+import { db } from "@/lib/db";
+import { tasks } from "@/lib/db/schema";
 import { asDto } from "@/server/dto-guard";
 import { getAgentData } from "@/server/services/queries/agent";
 
@@ -13,13 +16,22 @@ export async function loadAgentCard(
   const data = await getAgentData(agentId, userId);
   if (!data) return null;
 
-  const outcomes = data.tasks
-    .filter((task) => ["accepted", "done"].includes(task.status))
-    .sort(
-      (a, b) =>
-        (b.acceptedAt?.getTime() ?? 0) - (a.acceptedAt?.getTime() ?? 0),
+  // A separate read: `data.tasks` is the detail page's window (eight newest by
+  // update time), so an Agent whose latest work is still in flight used to
+  // export an empty outcomes list while holding plenty of accepted work.
+  const accepted = await db
+    .select()
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.assigneeId, agentId),
+        eq(tasks.userId, userId),
+        inArray(tasks.status, ["accepted", "done"]),
+      ),
     )
-    .slice(0, 5)
+    .orderBy(sql`${tasks.acceptedAt} desc nulls last`, desc(tasks.id))
+    .limit(5);
+  const outcomes = accepted
     .map((task) => ({
       taskId: task.id,
       title: task.title,
