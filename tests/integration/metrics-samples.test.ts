@@ -120,6 +120,16 @@ describe("weekly metrics sample semantics", () => {
         target: "tsk_metrics_accepted",
         hash: "hash-a",
       },
+      // 复测通过率读的是「这一周判过的复测」：两道复测各有一条结论，
+      // 一过一驳 → 50%。它和审计驳回率是两个问题，共用的是同一批审计行。
+      {
+        id: "aud_metrics_retest_accept",
+        userId,
+        actor: "agent",
+        action: "audit.accept",
+        target: "tsk_metrics_retest_pass",
+        hash: "hash-retest",
+      },
       {
         id: "aud_metrics_reject_1",
         userId,
@@ -168,7 +178,8 @@ describe("weekly metrics sample semantics", () => {
     const metrics = await getWeeklyMetrics(userId);
 
     expect(metrics.adherence).toBe(50);
-    expect(metrics.auditRejectRate).toBeCloseTo((2 / 3) * 100);
+    // 两条通过（一条普通验收、一条复测）、两条驳回 → 审计驳回率 50%。
+    expect(metrics.auditRejectRate).toBe(50);
     expect(metrics.retestPassRate).toBe(50);
     expect(metrics.managementMinutes).toBe(1.5);
     expect(metrics.managementMinutesSource).toBe("measured");
@@ -178,13 +189,13 @@ describe("weekly metrics sample semantics", () => {
     expect(metrics.sample).toEqual({
       planned: 2,
       completed: 1,
-      accepts: 1,
+      accepts: 2,
       rejects: 2,
       // 待判定不进分子也不进分母：驳回率仍是 2/3，而这条记录单独可见，
       // 否则"没人判过"在复盘页上等于没发生。
       pendingReview: 1,
     });
-    expect(metrics.auditRejectRate).toBeCloseTo((2 / 3) * 100);
+    expect(metrics.auditRejectRate).toBe(50);
   });
 
   it("counts only the reviews that are still waiting on the user", async () => {
@@ -318,6 +329,82 @@ describe("weekly metrics sample semantics", () => {
     // （当时还没做完），这一周又被挡在窗外，两篇复盘都不提它。遵从率的分子
     // 一直按 accepted_at 算，学习任务这个数没有理由换一个窗口。
     expect(metrics.learningTasks).toBe(1);
+  });
+
+  it("counts a retest in the week it was judged, not the week it was planned", async () => {
+    const userId = "usr_metrics_retest_week";
+    await createUser(userId);
+
+    const now = new Date();
+    const lastWeek = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
+    await db.insert(tasks).values([
+      {
+        id: "tsk_retest_carried",
+        userId,
+        title: "复习：闭包",
+        description: "d",
+        status: "accepted",
+        template: "learning_retest",
+        topicKey: "closure",
+        createdAt: lastWeek,
+        acceptedAt: now,
+        acceptanceCriteria: "c",
+      },
+      {
+        id: "tsk_retest_pending",
+        userId,
+        title: "复习：事件循环",
+        description: "d",
+        status: "needs_review",
+        template: "learning_retest",
+        topicKey: "event_loop",
+        acceptanceCriteria: "c",
+      },
+      {
+        id: "tsk_retest_overridden",
+        userId,
+        title: "复习：原型链",
+        description: "d",
+        status: "rejected",
+        template: "learning_retest",
+        topicKey: "prototype",
+        acceptanceCriteria: "c",
+      },
+    ]);
+
+    const now2 = new Date();
+    await db.insert(auditEvents).values([
+      {
+        id: "aud_retest_carried",
+        userId,
+        actor: "agent",
+        action: "audit.accept",
+        target: "tsk_retest_carried",
+        hash: "hash-retest-carried",
+      },
+      // 模型拿不准、落到待判定、最后由人判驳回：人给的结论同样是这次复测的
+      // 结论，不算进来的话离线用户永远没有复测样本。
+      {
+        id: "aud_retest_overridden",
+        userId,
+        actor: "user",
+        action: "audit.override",
+        target: "tsk_retest_overridden",
+        before: { status: "needs_review" },
+        after: { status: "rejected", reason: "没讲清楚", artifactId: null },
+        hash: "hash-retest-override",
+        createdAt: now2,
+      },
+    ]);
+
+    const metrics = await getWeeklyMetrics(userId);
+
+    // 判过两道（一条 Auditor 通过、一条人判驳回）→ 50%。按 tasks.created_at
+    // 归周时，上周排的这道落在上周窗口外、这一周又没有样本 → null，页面那句
+    // 「本周还没有判定过的复测」就成了假话，而人判那道也根本不存在。
+    // 还没判的那道不进分母：未判定不是没通过（任务页「需人工复核」与 README
+    // 里「未判定不算失败」用的是同一条规则）。
+    expect(metrics.retestPassRate).toBe(50);
   });
 
   it("estimates management from decisions and keeps a sampled zero reject rate", async () => {

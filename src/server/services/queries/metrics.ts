@@ -72,6 +72,17 @@ export async function getWeeklyMetrics(userId: string) {
       and pending_task.status = 'needs_review'
   )`;
 
+  /**
+   * 一道复测的「结论」有两种来源：Auditor 自己给的（audit.accept / audit.reject），
+   * 以及它判不了、你在待判定时接手给的（audit.override，after.status 记的就是
+   * accepted / rejected）。只认前者，一道"模型拿不准、最后由你判通过"的复测就
+   * 不会算进这一周——而那恰恰是离线用户的常态。
+   */
+  const verdictRow = sql`(${auditEvents.action} in ('audit.accept', 'audit.reject') or (${auditEvents.action} = 'audit.override' and ${auditEvents.after} ->> 'status' in ('accepted', 'rejected')))`;
+  const acceptedVerdict = sql`(${auditEvents.action} = 'audit.accept' or (${auditEvents.action} = 'audit.override' and ${auditEvents.after} ->> 'status' = 'accepted'))`;
+  // 子查询里这一行是别名，不能复用上面按表名渲染的片段。
+  const laterVerdictRow = sql`(later_verdict.action in ('audit.accept', 'audit.reject') or (later_verdict.action = 'audit.override' and later_verdict.after ->> 'status' in ('accepted', 'rejected')))`;
+
   // Every aggregate below is independent; one round-trip instead of eight.
   const [
     aaoRows,
@@ -228,21 +239,34 @@ export async function getWeeklyMetrics(userId: string) {
           lt(tasks.acceptedAt, range.end),
         ),
       ),
+    // 复测通过率问的是「这一周判过的复测里过了几条」。按 tasks.created_at 归周
+    // 会把两件事一起说错：上周排的复测这一周才判，判完就从窗口里消失（上周那篇
+    // 复盘写它时还没有结论），而这一周还没判的那道又被当成「没通过」留在分母里
+    // ——README 和任务页都写着「未判定不算失败」，首页那个百分比却在按失败算。
+    // 结论记在审计行上（target = 任务 id）。同一道题驳回后重做再验收会再落一行，
+    // 所以只认这道题最后一条结论（seq 最大），并用任务当前状态把撤回的排除掉
+    // ——自己撤掉的题不算「没通过」，与目标进度同一条规则。
     db
       .select({
         total: sql<number>`count(*)`,
-        accepted: sql<number>`count(*) filter (where ${tasks.status} in ('accepted', 'done'))`,
+        accepted: sql<number>`count(*) filter (where ${acceptedVerdict})`,
       })
-      .from(tasks)
+      .from(auditEvents)
+      .innerJoin(tasks, eq(tasks.id, auditEvents.target))
       .where(
         and(
-          eq(tasks.userId, userId),
+          eq(auditEvents.userId, userId),
           eq(tasks.template, "learning_retest"),
-          gte(tasks.createdAt, range.start),
-          lt(tasks.createdAt, range.end),
-          // 撤回的重测不算"没通过"：分母里混进一条自己撤销的题，通过率就
-          // 永远差这一块。目标进度用的是同一条规则（commands/progress.ts）。
           ne(tasks.status, "cancelled"),
+          verdictRow,
+          gte(auditEvents.createdAt, range.start),
+          lt(auditEvents.createdAt, range.end),
+          sql`not exists (
+            select 1 from ${auditEvents} as later_verdict
+            where later_verdict.target = ${auditEvents.target}
+              and later_verdict.seq > ${auditEvents.seq}
+              and (${laterVerdictRow})
+          )`,
         ),
       ),
     /*
