@@ -278,7 +278,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->156<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1280<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->156<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1281<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 
@@ -303,7 +303,7 @@ gh run watch
 - **学徒考试是模拟**：考试产物由确定性模板生成；5 条验收项必须全部通过；考试前需要 5 条显式记录的观摩证据（只有 mentor 的真实模型运行、且任务已验收才算）。练习通过只把阶段推进到 `practice_passed`，不授予生产技能、不加信任分、不提等级。
 - **早报、周复盘、反思候选是规则/模板**：不调用模型。反思能提出真实的策略覆盖（`set_policy`，16 个白名单键，可回滚），但"要不要提出"本身是规则判断，不是模型分析。
 - **记忆检索没有 embedding**：排序是词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度；本机 Postgres 没有 `vector` 扩展，所以没有向量检索。`retrieveMemories` 留了 `rerank` 钩子，接外部重排模型不需要改调用方。
-- **掌握度视图是只读摘要**：`/api/learning/mastery` + Review 页的掌握度卡片（按掌握度从低到高列前 6 个、到期数单独显示）。没有手动编辑掌握度或重置复习计划的入口。
+- **掌握度视图是只读摘要**：`/api/learning/mastery` + Review 页的掌握度卡片（按掌握度从低到高列前 6 个、到期数单独显示；页脚「共 N 个主题」的 N 是整表数，不是最多 50 条的列表长度）。没有手动编辑掌握度或重置复习计划的入口。
 - **判卷依赖模型**：`judge` 项没有配置 `OPENAI_API_KEY` 时永远是"未判定"（不会自动通过）；真实模型路径没有网络级测试，测试里注入的是假判卷函数。
 - **管理时长没有埋点**：`user_actions` 只有 seed 写入；真实工作区会显示估算或空值。
 - **成本是估算**：按供应商返回的 token 数和配置单价计算，不是供应商账单；没有返回 usage 的运行记为“用量未知”并保留全额预留。预算是 Agent 的每周模型用量，不是个人财务。

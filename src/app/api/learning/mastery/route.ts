@@ -21,6 +21,11 @@ export type MasteryOverview = {
   topics: MasteryTopicView[];
   /** 到期的主题总数（不受列表截断影响），给卡片标"该复习了"。 */
   dueCount: number;
+  /**
+   * 复习过的主题总数。列表只取前 50 个（listMastery 的上限），
+   * 页脚写"共 N 个主题"时不能用列表长度冒充总数。
+   */
+  total: number;
 };
 
 /**
@@ -36,7 +41,7 @@ export type MasteryOverview = {
  * 代价只是多一次索引扫描。
  */
 export async function loadMasteryOverview(userId: string): Promise<MasteryOverview> {
-  const [rows, dueRows] = await Promise.all([
+  const [rows, dueRows, totalRows] = await Promise.all([
     listMastery(userId),
     db
       .select({ topicKey: learningTopics.key })
@@ -47,6 +52,15 @@ export async function loadMasteryOverview(userId: string): Promise<MasteryOvervi
           eq(learningMastery.userId, userId),
           sql`${learningMastery.dueAt} <= now()`,
         ),
+      ),
+    // 列表有上限，页脚的"共 N 个主题"必须是整表的数，否则第 51 个主题起它就少报。
+    // 连 learning_topics 与列表同一个范围：列表只列自己的主题，总数也得只数这些。
+    db
+      .select({ total: sql<number>`count(*)` })
+      .from(learningMastery)
+      .innerJoin(learningTopics, eq(learningMastery.topicId, learningTopics.id))
+      .where(
+        and(eq(learningMastery.userId, userId), eq(learningTopics.userId, userId)),
       ),
   ]);
 
@@ -67,6 +81,7 @@ export async function loadMasteryOverview(userId: string): Promise<MasteryOvervi
       lastReviewedAt: row.lastReviewedAt ? row.lastReviewedAt.toISOString() : null,
     })),
     dueCount: dueKeys.size,
+    total: Number(totalRows[0]?.total ?? 0),
   };
 }
 

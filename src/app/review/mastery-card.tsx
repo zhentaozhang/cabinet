@@ -27,7 +27,7 @@ type TopicView = {
   lastReviewedAt: string | null;
 };
 
-type Overview = { topics: TopicView[]; dueCount: number };
+type Overview = { topics: TopicView[]; dueCount: number; total: number };
 
 /**
  * 手写的形状校验，不用 zod：前端包不该为了一次读接口塞进一个 schema 库
@@ -35,10 +35,10 @@ type Overview = { topics: TopicView[]; dueCount: number };
  * client 会把它变成一句可展示的失败提示，而不是让页面渲染出 undefined。
  */
 function parseOverview(value: unknown): Overview {
-  const record = (value ?? {}) as { topics?: unknown; dueCount?: unknown };
+  const record = (value ?? {}) as Record<string, unknown>;
   if (!Array.isArray(record.topics)) throw new Error("topics 不是数组");
 
-  const topics = record.topics.map((raw): TopicView => {
+  const topics = (record.topics as unknown[]).map((raw): TopicView => {
     const topic = (raw ?? {}) as Record<string, unknown>;
     if (typeof topic.topicKey !== "string" || typeof topic.label !== "string") {
       throw new Error("主题缺少 topicKey/label");
@@ -64,12 +64,18 @@ function parseOverview(value: unknown): Overview {
     };
   });
 
+  const count = (key: string): number => {
+    const candidate = record[key];
+    return typeof candidate === "number" && Number.isFinite(candidate)
+      ? candidate
+      : 0;
+  };
+
   return {
     topics,
-    dueCount:
-      typeof record.dueCount === "number" && Number.isFinite(record.dueCount)
-        ? record.dueCount
-        : 0,
+    dueCount: count("dueCount"),
+    // 旧响应没有 total 时退回列表长度：宁可少报，也不要在页脚写 undefined。
+    total: count("total") || topics.length,
   };
 }
 
@@ -97,7 +103,7 @@ export async function MasteryCard({ timezone }: { timezone: string }) {
     );
   }
 
-  const { topics, dueCount } = result.data;
+  const { topics, dueCount, total } = result.data;
   const visible = topics.slice(0, VISIBLE_TOPICS);
 
   return (
@@ -161,7 +167,7 @@ export async function MasteryCard({ timezone }: { timezone: string }) {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-2.5 text-label text-faint">
             <span>
-              共 {topics.length} 个主题，这里按掌握度从低到高列前 {VISIBLE_TOPICS} 个。
+              共 {total} 个主题，这里按掌握度从低到高列前 {VISIBLE_TOPICS} 个。
             </span>
             <span>这不是第二件承诺：到期只影响复习顺序，不改变上面那一件事。</span>
           </div>

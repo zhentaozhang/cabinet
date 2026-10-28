@@ -37,7 +37,11 @@ type Topic = {
   lastReviewedAt: string | null;
 };
 
-type Body = { ok?: boolean; code?: string; data?: { topics: Topic[]; dueCount: number } };
+type Body = {
+  ok?: boolean;
+  code?: string;
+  data?: { topics: Topic[]; dueCount: number; total: number };
+};
 
 function userValues(id: string) {
   return {
@@ -87,6 +91,7 @@ describe("GET /api/learning/mastery", () => {
     expect(body.ok).toBe(true);
     expect(body.data?.topics).toEqual([]);
     expect(body.data?.dueCount).toBe(0);
+    expect(body.data?.total).toBe(0);
   });
 
   it("reports the reviewed topics weakest-first with their schedule", async () => {
@@ -112,6 +117,7 @@ describe("GET /api/learning/mastery", () => {
     expect(Number.isNaN(Date.parse(topic.dueAt ?? ""))).toBe(false);
     expect(topic.lastReviewedAt).not.toBeNull();
     expect(body.data?.dueCount).toBe(0);
+    expect(body.data?.total).toBe(1);
   });
 
   it("decides isDue with the database clock, not the process clock", async () => {
@@ -150,6 +156,25 @@ describe("GET /api/learning/mastery", () => {
       "别人的主题",
     ]);
     expect(asOther.body.data?.dueCount).toBe(1);
+  });
+
+  it("reports the real topic count, not the length of the capped list", async () => {
+    // listMastery caps at 50 (MAX_DUE_LIMIT). The card's footer says "共 N 个
+    // 主题" — borrowing topics.length there would freeze at 50 the day the user
+    // reviews their 51st topic.
+    for (let index = 0; index < 55; index += 1) {
+      await recordOutcome({
+        userId: USER,
+        topicKey: `topic_${index}`,
+        label: `主题 ${index}`,
+        correct: true,
+      });
+    }
+
+    const { status, body } = await call();
+    expect(status).toBe(200);
+    expect(body.data?.topics.length).toBe(50);
+    expect(body.data?.total).toBe(55);
   });
 
   it("answers 401 for an anonymous request", async () => {
