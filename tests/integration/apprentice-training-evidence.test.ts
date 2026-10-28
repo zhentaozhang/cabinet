@@ -302,4 +302,47 @@ describe("apprentice training evidence", () => {
       );
     expect(attemptOne).toHaveLength(1);
   });
+
+  it("counts both of two concurrent failed attempts", async () => {
+    const coach = await agentByRole("coach");
+    await seedEligibleRuns(APPRENTICE_SKILL.minShadowRuns, coach.id);
+    // A checklist the deterministic exam draft cannot satisfy.
+    await db
+      .update(skills)
+      .set({
+        evalSet: [
+          { type: "contains" as const, value: "不可能出现的短语", required: true },
+        ],
+      })
+      .where(eq(skills.agentId, "ag_apprentice"));
+
+    // Two tabs pressing "考试" at once: both exams run, both fail, so both
+    // failures have to be counted — the fail count is the only thing that
+    // retires the apprentice, and a lost count means unlimited retakes.
+    await Promise.allSettled([
+      runApprenticeExam(DEMO_USER_ID),
+      runApprenticeExam(DEMO_USER_ID),
+    ]);
+
+    const [skill] = await db
+      .select()
+      .from(skills)
+      .where(eq(skills.agentId, "ag_apprentice"))
+      .orderBy(desc(skills.createdAt))
+      .limit(1);
+    const [agent] = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.id, "ag_apprentice"));
+    const snapshots = await db
+      .select()
+      .from(apprenticeExamSnapshots)
+      .where(eq(apprenticeExamSnapshots.apprenticeId, "ag_apprentice"))
+      .orderBy(apprenticeExamSnapshots.attemptNo);
+
+    expect(snapshots.map((row) => row.attemptNo)).toEqual([1, 2]);
+    expect(snapshots.every((row) => row.passed === false)).toBe(true);
+    expect(skill.failCount).toBe(2);
+    expect(agent.lifecycleStage).toBe("retired");
+  });
 });

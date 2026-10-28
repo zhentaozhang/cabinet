@@ -419,14 +419,26 @@ export async function runApprenticeExam(userId: string) {
   const practicePassed = audit.decision === "accepted";
 
   const result = await db.transaction(async (tx) => {
+    // Lock the apprentice again: the exam transaction committed before the
+    // audit ran, so a second exam may have finished in between. Reading the
+    // stage and the fail count here without the lock is how two failed attempts
+    // both wrote "1" and the apprentice kept retaking the exam forever.
     const [current] = await tx
       .select()
       .from(agents)
       .where(eq(agents.id, attempt.apprenticeId))
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (!current) {
       throw new NotFoundError("Apprentice not found");
     }
+
+    const [counted] = await tx
+      .select({ failCount: skills.failCount })
+      .from(skills)
+      .where(eq(skills.id, attempt.skillId))
+      .limit(1)
+      .for("update");
 
     if (practicePassed) {
       assertTransition("apprentice", current.lifecycleStage, "practice_passed");
@@ -498,7 +510,9 @@ export async function runApprenticeExam(userId: string) {
       };
     }
 
-    const failedAttempts = attempt.failCount + 1;
+    // Count from the row we just locked, not from the value the exam
+    // transaction read before the audit: the stored count is what retires.
+    const failedAttempts = (counted?.failCount ?? attempt.failCount) + 1;
     const retired = failedAttempts >= EXAM_ATTEMPT_LIMIT;
     await tx
       .update(skills)
@@ -575,6 +589,16 @@ export async function runApprenticeExam(userId: string) {
       };
     }
 
+    if (current.lifecycleStage === "drafting") {
+      // A concurrent attempt already put the apprentice back to drafting. The
+      // count above is the authoritative one, so just report this failure.
+      return {
+        promoted: false,
+        practicePassed: false,
+        retired: false,
+        failedAttempts,
+      };
+    }
     assertTransition("apprentice", current.lifecycleStage, "drafting");
     const [drafted] = await tx
       .update(agents)
