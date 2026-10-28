@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agentBudgetPeriods,
@@ -191,6 +191,9 @@ export async function getWeeklyMetrics(userId: string) {
           eq(tasks.template, "learning_retest"),
           gte(tasks.createdAt, range.start),
           lt(tasks.createdAt, range.end),
+          // 撤回的重测不算"没通过"：分母里混进一条自己撤销的题，通过率就
+          // 永远差这一块。目标进度用的是同一条规则（commands/progress.ts）。
+          ne(tasks.status, "cancelled"),
         ),
       ),
     /*

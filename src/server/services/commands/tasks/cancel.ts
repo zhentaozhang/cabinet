@@ -4,7 +4,9 @@ import { runJobs, runs, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { assertTransition } from "@/lib/domain/state";
 import { taskActions } from "@/lib/domain/task-actions";
+import { recalculateGoalProgress } from "../progress";
 import { ConflictError, NotFoundError } from "@/lib/domain/errors";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import { settleBudget } from "./execution";
 
 /**
@@ -99,6 +101,14 @@ export async function cancelTask(
         ),
       )
       .returning({ id: runJobs.id });
+
+    // 取消改的是"这个目标下有多少任务"，进度必须当场按新分母算一次。
+    // 不重算的话，页面上那个被这条任务压低的数字要等到下一次打卡、出题或
+    // 验收才自己跳回去 —— 用户看到的是"取消了也没用"，而数字是被时机决定的。
+    if (task.goalId) {
+      const config = await getPolicyConfigFor(userId);
+      await recalculateGoalProgress(tx, userId, task.goalId, config.learning);
+    }
 
     await logAuditTx(tx, {
       userId,

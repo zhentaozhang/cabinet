@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, ne } from "drizzle-orm";
 import type { Tx } from "../shared/tx";
 import { checkins, goals, tasks, users } from "@/lib/db/schema";
 import { localDateKey, weekRange } from "@/lib/domain/time";
@@ -50,6 +50,11 @@ export async function recalculateGoalProgress(
           eq(tasks.userId, userId),
           eq(tasks.goalId, goalId),
           inArray(tasks.template, [...LEARNING_TEMPLATES]),
+          // 撤回的任务不是"该通过却没通过"，它连题目都撤掉了。cancel 是终态，
+          // 留在分母里就等于给进度按上一个永远解不开的上限：用户越早发现题
+          // 出得不对、越早取消，代价越大。plan 出去的任务仍然算数（那才是
+          // "还有活没干"），cancelled 不算。
+          ne(tasks.status, "cancelled"),
         ),
       ),
     tx
