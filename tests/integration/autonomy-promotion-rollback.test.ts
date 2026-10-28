@@ -62,6 +62,7 @@ async function seedEligibleAudit(taskId: string, agentId: string, auditorId: str
   await db.insert(artifacts).values({
     id: `art_${taskId}`,
     taskId,
+    runId: `run_${taskId}`,
     submittedBy: "agent",
     sourceType: "model_generated",
     type: "note",

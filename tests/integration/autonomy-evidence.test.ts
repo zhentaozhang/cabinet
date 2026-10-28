@@ -224,7 +224,14 @@ describe("autonomy evidence", () => {
       .where(eq(agents.id, coach.id));
     expect(after.successCount).toBe(7);
     expect(after.trustScore).toBe(96);
+
+    // The promotion window reads the same evidence, so it has to agree with the
+    // counters: one eligible sample, not zero because the newest run happens to
+    // be the failed retry.
+    const decision = await evaluateAutonomyUpgrade(coach.id, 2, DEMO_USER_ID);
+    expect(decision.samples).toBe(1);
   });
+
   it("promotes on five eligible distinct tasks at a passing rate", async () => {
     const coach = await agentByRole("coach");
     await raiseTrust(coach.id, 6, 95);

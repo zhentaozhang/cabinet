@@ -67,10 +67,12 @@ export async function loadAuditWindows(
     .from(auditEvents)
     .innerJoin(tasks, eq(tasks.id, auditEvents.target))
     .innerJoin(artifacts, eq(artifacts.taskId, tasks.id))
-    .innerJoin(
-      runs,
-      and(eq(runs.taskId, tasks.id), eq(runs.agentId, tasks.assigneeId)),
-    )
+    // The run behind the artifact, not the newest run of its assignee: a retry
+    // that fails before reaching the provider must not erase the evidence a
+    // live submission already produced. A null link cannot be attributed to a
+    // run, and the left join keeps the sample visible as ineligible instead of
+    // silently dropping it from the window.
+    .leftJoin(runs, eq(runs.id, artifacts.runId))
     .where(
       and(
         eq(auditEvents.userId, userId),
@@ -87,7 +89,7 @@ export async function loadAuditWindows(
     .orderBy(
       desc(auditEvents.seq),
       desc(artifacts.createdAt),
-      desc(runs.createdAt),
+      desc(artifacts.id),
     )
     .limit(MAX_SAMPLE_ROWS);
 
@@ -105,7 +107,7 @@ export async function loadAuditWindows(
     const input: AuditSampleInput = {
       artifactSubmittedBy: row.artifactSubmittedBy,
       artifactSourceType: row.artifactSourceType,
-      executionChannel: row.executionChannel,
+      executionChannel: row.executionChannel ?? "",
       hasProviderAttempt: row.providerAttemptId !== null,
     };
     const sample: AuditSample = {

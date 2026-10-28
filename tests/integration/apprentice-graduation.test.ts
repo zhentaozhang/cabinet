@@ -96,6 +96,7 @@ async function seedEligibleAudits(count = 5): Promise<void> {
     await db.insert(artifacts).values({
       id: `art_real_${index}`,
       taskId,
+      runId: `run_real_${index}`,
       submittedBy: "agent",
       sourceType: "model_generated",
       type: "note",
