@@ -56,6 +56,22 @@ export async function getWeeklyMetrics(userId: string) {
     sql`, `,
   )})`;
 
+  /**
+   * 待判定必须是"现在仍停着"的，所以按任务当前状态过滤，而不是只数事件。
+   *
+   * 审计事件只记录"曾经停过"：用户判定（audit.override）或放弃（cancel）之后
+   * 任务已经离开 needs_review。复盘页那行写着「本周有 N 条停在你这里」，
+   * 首页的待办队列却按 tasks.status 现算——只数事件就会出现同一周两个页面
+   * 说法相反，而且是那句"停在你这里"在说谎。
+   *
+   * `distinct` 去重到任务粒度：被驳回后重新验收可能再次落回待判定。
+   */
+  const stillPending = sql`exists (
+    select 1 from ${tasks} as pending_task
+    where pending_task.id = ${auditEvents.target}
+      and pending_task.status = 'needs_review'
+  )`;
+
   // Every aggregate below is independent; one round-trip instead of eight.
   const [
     aaoRows,
@@ -124,7 +140,10 @@ export async function getWeeklyMetrics(userId: string) {
         rejects: sql<number>`count(*) filter (where ${auditEvents.action} = 'audit.reject')`,
         // 待判定单独计数：它既不是通过也不是驳回，把它算进任何一边都会
         // 让通过率说谎（算进分母像是判过了，算进分子像是在变好）。
-        pendingReview: sql<number>`count(*) filter (where ${auditEvents.action} = 'audit.needs_review')`,
+        // 而且只数仍然停在 needs_review 的那些（见上面的 stillPending）。
+        pendingReview: sql<number>`count(distinct ${auditEvents.target}) filter (
+          where ${auditEvents.action} = 'audit.needs_review' and ${stillPending}
+        )`,
       })
       .from(auditEvents)
       .where(

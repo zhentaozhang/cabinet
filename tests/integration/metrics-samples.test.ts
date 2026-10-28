@@ -52,7 +52,7 @@ describe("weekly metrics sample semantics", () => {
       accepts: 0,
       rejects: 0,
       // 一条待判定都没有：0 是真实计数（而不是"没样本"），因为它统计的是
-      // 本周发生过多少次 needs_review，没发生就是 0。
+      // 此刻还有多少条验收停在你这里，没有就是 0。
       pendingReview: 0,
     });
   });
@@ -97,6 +97,16 @@ describe("weekly metrics sample semantics", () => {
         description: "d",
         status: "rejected",
         template: "learning_retest",
+        acceptanceCriteria: "c",
+      },
+      // 待判定的审计行必须指向一条真实任务：这条数字说的是"现在还停着"，
+      // 没有任务行就无从判断它是否还在等（见下一条用例）。
+      {
+        id: "tsk_metrics_pending",
+        userId,
+        title: "pending",
+        description: "d",
+        status: "needs_review",
         acceptanceCriteria: "c",
       },
     ]);
@@ -175,6 +185,80 @@ describe("weekly metrics sample semantics", () => {
       pendingReview: 1,
     });
     expect(metrics.auditRejectRate).toBeCloseTo((2 / 3) * 100);
+  });
+
+  it("counts only the reviews that are still waiting on the user", async () => {
+    const userId = "usr_metrics_pending";
+    await createUser(userId);
+
+    await db.insert(tasks).values([
+      {
+        id: "tsk_pending_open",
+        userId,
+        title: "open",
+        description: "d",
+        status: "needs_review",
+        acceptanceCriteria: "c",
+      },
+      {
+        id: "tsk_pending_decided",
+        userId,
+        title: "decided",
+        description: "d",
+        status: "accepted",
+        acceptanceCriteria: "c",
+      },
+      {
+        id: "tsk_pending_abandoned",
+        userId,
+        title: "abandoned",
+        description: "d",
+        status: "cancelled",
+        acceptanceCriteria: "c",
+      },
+    ]);
+
+    await db.insert(auditEvents).values([
+      {
+        id: "aud_pending_open",
+        userId,
+        actor: "agent",
+        action: "audit.needs_review",
+        target: "tsk_pending_open",
+        hash: "hash-open",
+      },
+      {
+        id: "aud_pending_decided",
+        userId,
+        actor: "agent",
+        action: "audit.needs_review",
+        target: "tsk_pending_decided",
+        hash: "hash-decided",
+      },
+      {
+        id: "aud_pending_decided_override",
+        userId,
+        actor: "user",
+        action: "audit.override",
+        target: "tsk_pending_decided",
+        hash: "hash-override",
+      },
+      {
+        id: "aud_pending_abandoned",
+        userId,
+        actor: "agent",
+        action: "audit.needs_review",
+        target: "tsk_pending_abandoned",
+        hash: "hash-abandoned",
+      },
+    ]);
+
+    const metrics = await getWeeklyMetrics(userId);
+
+    // 判过的、放弃的都不再"停在你这里"：复盘页与首页待办读的必须是同一件事。
+    expect(metrics.sample.pendingReview).toBe(1);
+    // 人判不是审计样本：通过率仍然是"没有样本"，而不是 0%。
+    expect(metrics.auditRejectRate).toBeNull();
   });
 
   it("estimates management from decisions and keeps a sampled zero reject rate", async () => {
