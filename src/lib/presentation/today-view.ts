@@ -200,6 +200,24 @@ export function inFlightTasks<T extends { status: string }>(
   return tasks.filter((task) => IN_FLIGHT_TASK_STATUSES.includes(task.status));
 }
 
+/**
+ * How many open tasks the stored brief was generated from.
+ *
+ * `regenerateBrief` writes that count into `reviews.metrics.tasks` at the
+ * moment it renders the text. The badge under the brief used to print the
+ * *current* in-flight count instead, so a brief written when five tasks were
+ * open started claiming it was based on one as soon as four of them finished —
+ * a provenance claim that silently rewrote itself.
+ *
+ * Returns null for rows written before the metric existed; the caller then says
+ * only what it knows rather than borrowing today's number.
+ */
+export function briefTaskSnapshot(
+  brief: { metrics: Record<string, number | string> } | null | undefined,
+): number | null {
+  return cents(brief?.metrics?.tasks);
+}
+
 function text(value: unknown): string {
   return typeof value === "string" ? value : "";
 }

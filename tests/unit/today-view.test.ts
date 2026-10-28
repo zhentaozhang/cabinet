@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { TASK_STATUSES } from "@/contracts";
 import {
+  briefTaskSnapshot,
   buildTodayActionQueue,
   formatPercentValue,
   formatRatioAsPercent,
@@ -581,6 +582,21 @@ describe("inFlightTasks keeps only the work that is actually moving", () => {
       "planned",
     ]);
     expect(tasks).toHaveLength(3);
+  });
+});
+
+describe("the brief badge quotes the snapshot it was generated from", () => {
+  it("reads the task count stored with the brief", () => {
+    expect(briefTaskSnapshot({ metrics: { tasks: 5, decisions: 2 } })).toBe(5);
+  });
+
+  it("refuses to borrow a number it was not given", () => {
+    // Rows written before the metric existed, and rows whose jsonb holds a
+    // string, must not make the card print today's count as the brief's basis.
+    expect(briefTaskSnapshot({ metrics: {} })).toBeNull();
+    expect(briefTaskSnapshot({ metrics: { tasks: "5" } })).toBeNull();
+    expect(briefTaskSnapshot(null)).toBeNull();
+    expect(briefTaskSnapshot(undefined)).toBeNull();
   });
 });
 

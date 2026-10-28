@@ -20,6 +20,7 @@ import type { GoalDto } from "@/contracts";
 import { goalStatusLabel } from "@/contracts/labels";
 import { cn, dateTime, money, pct, timeOnly } from "@/lib/format";
 import {
+  briefTaskSnapshot,
   buildTodayActionQueue,
   getProvenanceLabel,
   getTaskTypeLabel,
@@ -77,6 +78,17 @@ export default async function TodayPage() {
     check-in candidates use the in-flight subset instead.
   */
   const inFlight = inFlightTasks(data.tasks);
+  /*
+    The stored brief was written from the counts at generation time, so the
+    badge under it must quote that snapshot instead of today's queue — it used
+    to print the live count and thereby rewrote the brief's own provenance as
+    tasks moved. A row without the metric yields null and the badge then states
+    only what it knows. The fallback text below is assembled right now, so for
+    that one the current count *is* the snapshot.
+  */
+  const briefTaskCount = data.brief
+    ? briefTaskSnapshot(data.brief)
+    : inFlight.length;
   const agentById = new Map(data.agents.map((a) => [a.id, a]));
   const today = new Intl.DateTimeFormat("zh-CN", {
     weekday: "long",
@@ -686,8 +698,14 @@ export default async function TodayPage() {
               >
                 <FileCode2 className="size-2.5" /> 由规则脚本生成
               </Badge>
-              <Badge tone="teal">
-                <ShieldCheck className="size-2.5" /> 基于 {inFlight.length} 个进行中的任务
+              <Badge
+                tone="teal"
+                title="数字取自生成早报那一刻的读模型；之后任务有变动，正文与这里都不会改写，重新生成才会更新"
+              >
+                <ShieldCheck className="size-2.5" />{" "}
+                {briefTaskCount === null
+                  ? "基于生成时的任务快照"
+                  : `基于生成时的 ${briefTaskCount} 个待推进任务`}
               </Badge>
               <Badge tone="accent">
                 <Sparkles className="size-2.5" /> {data.counts.proposedInsights} 条洞察待采纳
