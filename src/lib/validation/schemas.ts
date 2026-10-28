@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { acceptanceItemSchema } from "@/contracts";
+import { isValidTimeZone } from "@/lib/domain/time";
 
 export const insightActionSchema = z.object({
   action: z.enum(["accept", "reject", "rollback"]),
@@ -123,7 +124,15 @@ export const agentUpdateSchema = z
   });
 
 export const setupSchema = z.object({
-  timezone: z.string().min(1).max(100).default("Asia/Shanghai"),
+  // Setup is the only writer of `users.timezone`, and every page formats dates
+  // with it: a zone Intl refuses would wedge the workspace for good.
+  timezone: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .refine(isValidTimeZone, { message: "请选择有效的时区，例如 Asia/Shanghai。" })
+    .default("Asia/Shanghai"),
   name: z.string().min(1).max(100).optional(),
   goal: z.object({
     title: z.string().min(1).max(200),

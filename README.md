@@ -278,7 +278,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->154<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1273<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->154<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1274<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 
@@ -309,6 +309,7 @@ gh run watch
 - **成本是估算**：按供应商返回的 token 数和配置单价计算，不是供应商账单；没有返回 usage 的运行记为“用量未知”并保留全额预留。预算是 Agent 的每周模型用量，不是个人财务。
 - **台账是唯一账目**：周预算由 `agent_budget_periods` / `agent_budget_reservations` 记账，`runs.cost_cents` 只是逐次运行的遥测，`agents.spent_cents` / `agents.budget_period_start` 已冻结，不再读写。
 - **同步执行是默认值**：`RUN_EXECUTION=worker` 才把请求交给 `run_jobs` 队列（`scripts/run-worker.ts` 消费；`FOR UPDATE SKIP LOCKED` 领取、10 分钟租约、最多领取 5 次，见 `src/server/services/commands/tasks/jobs.ts`）。**没有通用重试调度**：重新领取只发生在“租约过期”这一种情况；也没有流式输出，响应是完整 JSON。
+- **时区写进去就改不了**：`users.timezone` 只在 setup 时写入，之后没有界面能改，而每个页面的时间都用它格式化——所以 `setupSchema` 会拒掉 `Intl.DateTimeFormat` 不认的时区（校验器是 `src/lib/domain/time.ts` 的 `isValidTimeZone`），否则一次手滑就能把工作区变成每页都报错的死局。
 - **Agent Card 未签名**：只读 JSON，不是 A2A 实现。
 
 ## License

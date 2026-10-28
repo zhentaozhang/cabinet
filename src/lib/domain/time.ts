@@ -130,6 +130,23 @@ export function weekRange(
   return { start, end, key: isoWeekKey(start, timeZone) };
 }
 
+/**
+ * Whether Intl can format with this zone.
+ *
+ * Every page renders timestamps through `Intl.DateTimeFormat` with the zone
+ * stored on the user, and `setup` is the only thing that ever writes it — a
+ * value Intl rejects would leave a workspace that throws on every page load
+ * with no screen left to correct it.
+ */
+export function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function isoWeekKey(date: Date, timeZone: string): string {
   const parts = partsInZone(date, timeZone);
   const d = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));

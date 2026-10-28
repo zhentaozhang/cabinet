@@ -120,6 +120,26 @@ describe("validation schemas", () => {
     ).toBe(true);
   });
 
+
+  it("rejects a time zone Intl cannot format with", () => {
+    const goal = {
+      title: "学习",
+      why: "why",
+      target: "target",
+      horizon: "6 weeks",
+      domain: "learning",
+    };
+    // Every page renders timestamps through Intl with this zone, and setup is the
+    // only place that writes `users.timezone` — an unusable value would leave a
+    // workspace that throws on every page load with no screen to fix it.
+    expect(
+      () => new Intl.DateTimeFormat("en-US", { timeZone: "Mars/Phobos" }),
+    ).toThrow(RangeError);
+    expect(setupSchema.safeParse({ timezone: "Mars/Phobos", goal }).success).toBe(false);
+    expect(setupSchema.safeParse({ timezone: "  ", goal }).success).toBe(false);
+    expect(setupSchema.safeParse({ timezone: "Asia/Shanghai", goal }).success).toBe(true);
+    expect(setupSchema.safeParse({ timezone: "UTC", goal }).success).toBe(true);
+  });
   it("rejects unknown insight actions", () => {
     expect(insightActionSchema.safeParse({ action: "delete" }).success).toBe(
       false,
