@@ -5,7 +5,9 @@ import { localDateKey, weekRange } from "@/lib/domain/time";
 import { computeLearningProgress } from "@/lib/domain/learning-progress";
 import type { LearningConfig } from "@/lib/domain/policy";
 
-export const LEARNING_TEMPLATES = ["learning", "learning_retest"] as const;
+// 学习模板清单只有一份：多一处副本，加第三种模板时就会有一处悄悄不认它。
+export { LEARNING_TEMPLATES } from "@/lib/domain/learning";
+import { LEARNING_TEMPLATES } from "@/lib/domain/learning";
 
 /**
  * The only goal domain the formula below can score.

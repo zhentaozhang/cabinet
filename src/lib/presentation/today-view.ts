@@ -1,6 +1,9 @@
 import type { WeeklyMetricsDto } from "@/contracts";
 import { actionTypeLabel } from "@/contracts/labels";
 import { dateTime, money, shortDate } from "@/lib/format";
+// 学习模板清单只有一份（domain 里那份）：这里曾经抄了一份，加第三种模板时
+// 页面会悄悄不认它。
+import { LEARNING_TEMPLATES } from "@/lib/domain/learning";
 
 /**
  * Presentation rules for the Today page.
@@ -27,9 +30,6 @@ import { dateTime, money, shortDate } from "@/lib/format";
  * into one list is what made failed tasks show up as progress.
  */
 const CLOSED_TASK_STATUSES = ["done", "accepted", "failed", "cancelled"];
-
-/** Templates that represent the learning loop, in priority order. */
-const LEARNING_TEMPLATES = ["learning", "learning_retest"];
 
 export function getProvenanceLabel(createdBy: string): string {
   if (createdBy === "user") return "用户手动";
@@ -74,7 +74,7 @@ export function pickLearningTask<
   const excludeIds = options?.excludeIds;
   return tasks.find(
     (task) =>
-      LEARNING_TEMPLATES.includes(task.template ?? "") &&
+      (LEARNING_TEMPLATES as readonly string[]).includes(task.template ?? "") &&
       !CLOSED_TASK_STATUSES.includes(task.status) &&
       !(excludeIds?.has(task.id) ?? false),
   );
