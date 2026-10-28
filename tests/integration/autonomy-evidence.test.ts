@@ -232,6 +232,39 @@ describe("autonomy evidence", () => {
     expect(decision.samples).toBe(1);
   });
 
+  it("keeps a verdict pinned to the artifact it judged, not a later submission", async () => {
+    const coach = await agentByRole("coach");
+    await raiseTrust(coach.id, 6, 95);
+    await seedSubmission({
+      taskId: "tsk_ev_pinned",
+      agentId: coach.id,
+      provenance: "eligible",
+    });
+    expect(await auditTask("tsk_ev_pinned", DEMO_USER_ID)).toMatchObject({
+      decision: "accepted",
+    });
+
+    // The user hands in a note of their own on the same task afterwards. It is
+    // not evidence of model execution, but it did not exist when the auditor
+    // passed its verdict either: that verdict stays pinned to the artifact it
+    // judged (audit rows record it in after.artifactId), so a later artifact
+    // cannot retroactively turn real evidence into no evidence.
+    await db.insert(artifacts).values({
+      id: "art_tsk_ev_pinned_manual",
+      taskId: "tsk_ev_pinned",
+      submittedBy: "user",
+      sourceType: "user_submitted",
+      type: "note",
+      title: "用户补交的说明",
+      content: "补充说明。",
+      createdAt: new Date(Date.now() + 60_000),
+    });
+
+    const decision = await evaluateAutonomyUpgrade(coach.id, 2, DEMO_USER_ID);
+    expect(decision.samples).toBe(1);
+    expect(decision.passRate).toBe(1);
+  });
+
   it("promotes on five eligible distinct tasks at a passing rate", async () => {
     const coach = await agentByRole("coach");
     await raiseTrust(coach.id, 6, 95);

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, artifacts, auditEvents, runs, tasks } from "@/lib/db/schema";
 import {
@@ -66,7 +66,20 @@ export async function loadAuditWindows(
     })
     .from(auditEvents)
     .innerJoin(tasks, eq(tasks.id, auditEvents.target))
-    .innerJoin(artifacts, eq(artifacts.taskId, tasks.id))
+    // The artifact the verdict was passed on, not whichever artifact the task
+    // happens to hold newest: a resubmission after the verdict would otherwise
+    // re-decide, retrospectively, whether that verdict was evidence at all.
+    // Audit rows record it in `after.artifactId`; rows written before that
+    // field existed fall back to the task's newest artifact so old evidence
+    // keeps counting. A verdict with no artifact to point at stays visible
+    // and ineligible, the same way an unattributable run does below.
+    .leftJoin(
+      artifacts,
+      and(
+        eq(artifacts.taskId, tasks.id),
+        sql`${artifacts.id} = coalesce(${auditEvents.after} ->> 'artifactId', (select fallback.id from artifacts fallback where fallback.task_id = ${tasks.id} order by fallback.created_at desc, fallback.id desc limit 1))`,
+      ),
+    )
     // The run behind the artifact, not the newest run of its assignee: a retry
     // that fails before reaching the provider must not erase the evidence a
     // live submission already produced. A null link cannot be attributed to a
@@ -83,14 +96,9 @@ export async function loadAuditWindows(
         ),
       ),
     )
-    // Newest verdict first, and within one verdict the newest artifact and the
-    // newest run of the assignee: the first row per task is the pair the
-    // auditor actually judged.
-    .orderBy(
-      desc(auditEvents.seq),
-      desc(artifacts.createdAt),
-      desc(artifacts.id),
-    )
+    // Newest verdict first: one row per verdict now that the artifact is
+    // pinned, and the first verdict per task wins the dedupe below.
+    .orderBy(desc(auditEvents.seq))
     .limit(MAX_SAMPLE_ROWS);
 
   const seenTasks = new Set<string>();
@@ -105,8 +113,8 @@ export async function loadAuditWindows(
     if (windowForAgent.samples.length >= window) continue;
 
     const input: AuditSampleInput = {
-      artifactSubmittedBy: row.artifactSubmittedBy,
-      artifactSourceType: row.artifactSourceType,
+      artifactSubmittedBy: row.artifactSubmittedBy ?? "",
+      artifactSourceType: row.artifactSourceType ?? "",
       executionChannel: row.executionChannel ?? "",
       hasProviderAttempt: row.providerAttemptId !== null,
     };
