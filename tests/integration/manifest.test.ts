@@ -7,7 +7,7 @@ import { desc, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
-import { approvals, auditEvents, runs, steps } from "@/lib/db/schema";
+import { approvals, auditEvents, evidence, runs, steps } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { verifyManifest } from "@/lib/domain/manifest";
 import { buildManifest } from "@/server/services/commands/tasks/manifest";
@@ -282,5 +282,55 @@ describe("scripts/verify-manifest.ts", () => {
     const mismatch = verifyFile(manifestPath, wrongChainPath);
     expect(mismatch.status).toBe(1);
     expect(JSON.parse(mismatch.stdout).mismatches[0].path).toBe("auditHead");
+  });
+});
+
+/**
+ * 同一次检索返回的多条证据写在同一条 insert 里，created_at 因此完全相同
+ * （now() 是事务时间）。只按 created_at 排序时，谁在前取决于物理行序：
+ * 同一份 run 两次导出会得到不同的证据顺序，摘要也就跟着变。
+ */
+describe("buildManifest 的确定性", () => {
+  it("orders evidence by a stable key instead of where the row happens to sit", async () => {
+    await runTask("tsk_read", DEMO_USER_ID);
+    const run = await latestRun("tsk_read");
+    const retrievedAt = new Date();
+
+    await db.insert(evidence).values(
+      ["evd_tie_c", "evd_tie_a", "evd_tie_b"].map((id) => ({
+        id,
+        userId: DEMO_USER_ID,
+        taskId: "tsk_read",
+        runId: run.id,
+        kind: "web_page",
+        url: `https://example.com/${id}`,
+        title: id,
+        quote: "检索片段",
+        provider: "stub",
+        contentHash: `hash-${id}`,
+        retrievedAt,
+      })),
+    );
+
+    const first = await buildManifest(run.id, DEMO_USER_ID);
+    if (!first) throw new Error("manifest missing");
+    expect(first.evidence.map((item) => item.id)).toEqual([
+      "evd_tie_a",
+      "evd_tie_b",
+      "evd_tie_c",
+    ]);
+
+    // title 不在摘要里。改它不该改变同一份 run 的摘要；可如果顺序来自物理行序，
+    // 一次 UPDATE 把这一行挪到堆尾，摘要就会变——那是"翻新了行"而不是"改了内容"。
+    await db
+      .update(evidence)
+      .set({ title: "改过的标题" })
+      .where(eq(evidence.id, "evd_tie_a"));
+    const second = await buildManifest(run.id, DEMO_USER_ID);
+    if (!second) throw new Error("manifest missing");
+    expect(second.evidence.map((item) => item.id)).toEqual(
+      first.evidence.map((item) => item.id),
+    );
+    expect(second.digest).toBe(first.digest);
   });
 });

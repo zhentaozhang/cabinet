@@ -82,17 +82,22 @@ export async function buildManifest(
         .select()
         .from(steps)
         .where(eq(steps.runId, runId))
-        .orderBy(asc(steps.idx)),
+        // idx 是步序；idx 没有唯一约束，id 只在它相同时兜底，
+        // 保证同一份 run 永远给出同一个顺序。
+        .orderBy(asc(steps.idx), asc(steps.id)),
       db
         .select({ id: artifacts.id, content: artifacts.content })
         .from(artifacts)
         .where(eq(artifacts.runId, runId))
-        .orderBy(asc(artifacts.createdAt)),
+        // 同一事务插入的行共用 now()，只按时间排会退化成物理行序。
+        .orderBy(asc(artifacts.createdAt), asc(artifacts.id)),
       db
         .select({ id: evidence.id, contentHash: evidence.contentHash })
         .from(evidence)
         .where(eq(evidence.runId, runId))
-        .orderBy(asc(evidence.createdAt)),
+        // 一次检索返回的多条证据是同一个事务写的，created_at 完全相同；
+        // 不加 id 兜底，顺序就成了物理行序，改一行无关字段都会让摘要变。
+        .orderBy(asc(evidence.createdAt), asc(evidence.id)),
       // Only approvals that belong to this run are listed, plus the task-scoped
       // ones that no run has spent yet (`run_id` stays null until a run
       // consumes the approval). Without the filter a manifest for run A happily
