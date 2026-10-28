@@ -80,8 +80,14 @@ export const weeklyMetricsSchema = z.object({
     /** Calls whose price was unknown when they ran — reported, not guessed. */
     unpricedRequests: z.number(),
   }),
-  /** Already a percentage (0–100), and an estimate — see the Review page. */
-  goalProgress: z.number(),
+  /**
+   * Already a percentage (0–100), and an estimate — see the Review page.
+   *
+   * 只报活跃的**学习**目标：这一屏其余数字全是学习口径，把健康目标或
+   * 者「随便一个活跃目标」的进度混进来，读起来是同一个人的同一周。
+   * Null when no learning goal is active — 没有目标不是 0%。
+   */
+  goalProgress: z.number().nullable(),
   /**
    * Already a percentage (0–100), not a 0–1 ratio.
    * Null when no audit accept/reject events were sampled.

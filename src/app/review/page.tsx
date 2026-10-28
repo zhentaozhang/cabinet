@@ -146,8 +146,14 @@ export default async function ReviewPage({
     },
     {
       label: "目标进度",
-      value: `${metrics.goalProgress.toFixed(0)}%`,
-      hint: "估算：任务验收 + 回忆分 + 打卡数加权，非实测。",
+      value:
+        metrics.goalProgress === null
+          ? "—"
+          : `${metrics.goalProgress.toFixed(0)}%`,
+      hint:
+        metrics.goalProgress === null
+          ? "没有活跃的学习目标，暂不计算。"
+          : "估算：任务验收 + 回忆分 + 打卡数加权，非实测。",
     },
     {
       label: "每周自主行动",

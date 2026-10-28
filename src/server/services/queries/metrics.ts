@@ -148,10 +148,25 @@ export async function getWeeklyMetrics(userId: string) {
           lt(auditEvents.createdAt, range.end),
         ),
       ),
+    /*
+     * 这一屏的其余数字（打卡 / 回忆分 / 学习任务 / 复测）全是学习口径，
+     * 所以「目标进度」也只能是学习目标的：种子里同时有两个活跃目标，
+     * 原来的 status = 'active' limit 1 没有 order by，报哪一个取决于数据库
+     * 的物理顺序，同一周重新生成一次就可能换成另一个目标的数字。order by
+     * 再带上 id 兜底，是因为同一事务里插入的两行 created_at 完全相同
+     *（now() 取事务开始时间），只按时间排仍然是任意的。
+     */
     db
-      .select()
+      .select({ progress: goals.progress })
       .from(goals)
-      .where(and(eq(goals.userId, userId), eq(goals.status, "active")))
+      .where(
+        and(
+          eq(goals.userId, userId),
+          eq(goals.status, "active"),
+          eq(goals.domain, "learning"),
+        ),
+      )
+      .orderBy(desc(goals.createdAt), desc(goals.id))
       .limit(1),
     db
       .select({
@@ -276,7 +291,9 @@ export async function getWeeklyMetrics(userId: string) {
       // setting, and pretending a number would be worse than reporting none.
       unpricedRequests: Number(searchRow?.unpriced ?? 0),
     },
-    goalProgress: goal?.progress ?? 0,
+    // 没有活跃的学习目标就是「没有这个数」，不是 0%——和 adherence /
+    // retestPassRate 一样，缺样本用 null，别让页面印一个假的 0。
+    goalProgress: goal ? Number(goal.progress) : null,
     auditRejectRate: auditTotal > 0 ? (rejects / auditTotal) * 100 : null,
     sample: { planned, completed, accepts, rejects, pendingReview },
   };

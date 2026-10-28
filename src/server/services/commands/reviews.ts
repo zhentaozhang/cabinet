@@ -63,6 +63,12 @@ export async function regenerateWeeklyReview(userId: string) {
     .filter((task) => ["accepted", "done"].includes(task.status))
     .map((task) => task.title);
 
+  // 没有活跃学习目标时整行不出现："目标进度 0%" 会让人以为目标存在但没动，
+  // 而其实这一周根本没有可对照的目标。
+  const goalLine =
+    metrics.goalProgress === null
+      ? []
+      : [`- 目标进度 ${Math.round(metrics.goalProgress)}%。`];
   const narrative = [
     `# ${metrics.weekKey} 复盘`,
     "",
@@ -72,7 +78,7 @@ export async function regenerateWeeklyReview(userId: string) {
     completedTitles.length > 0
       ? `- 已验收：${completedTitles.join("、")}。`
       : "- 本周还没有验收通过的学习任务。",
-    `- 目标进度 ${Math.round(metrics.goalProgress)}%。`,
+    ...goalLine,
     "",
     "## 薄弱点",
     weakTopics.length > 0
@@ -109,7 +115,7 @@ export async function regenerateWeeklyReview(userId: string) {
           learningTasks: metrics.learningTasks,
           retestPassRate: metrics.retestPassRate ?? "",
           costCents: metrics.costCents,
-          goalProgress: metrics.goalProgress,
+          goalProgress: metrics.goalProgress ?? "",
           auditRejectRate: metrics.auditRejectRate ?? "",
         },
         decisions: [],
@@ -128,7 +134,7 @@ export async function regenerateWeeklyReview(userId: string) {
             learningTasks: metrics.learningTasks,
             retestPassRate: metrics.retestPassRate ?? "",
             costCents: metrics.costCents,
-            goalProgress: metrics.goalProgress,
+            goalProgress: metrics.goalProgress ?? "",
             auditRejectRate: metrics.auditRejectRate ?? "",
           },
           decisions: [],

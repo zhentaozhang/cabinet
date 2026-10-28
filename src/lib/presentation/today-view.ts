@@ -429,7 +429,7 @@ export function weeklyMetricRows(
       key: "goal",
       label: "目标总进度",
       value: formatPercentValue(weekly.goalProgress),
-      hint: "核心目标权重",
+      hint: "学习目标进度",
     },
   ];
 }
