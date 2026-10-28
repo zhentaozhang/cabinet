@@ -55,6 +55,10 @@ type PreJudgement = {
   content: string;
   results: AcceptanceResult[];
   trace: JudgeTrace | null;
+  /** 供应商回报的判卷用量；没回报时为 null。 */
+  usage: { tokensIn: number; tokensOut: number } | null;
+  /** 这次判卷请求的尝试 id；模型没被调用时为 null。 */
+  attemptId: string | null;
 };
 
 /** 产物对应的证据 id；手交产物没有 run，也就没有检索发生过。 */
@@ -135,6 +139,8 @@ async function prepareJudgement(input: {
             model: judged.judgeModel ?? null,
             score: judged.score ?? null,
           },
+    usage: judged.usage ?? null,
+    attemptId: judged.attemptId ?? null,
   };
 }
 
@@ -237,12 +243,16 @@ async function auditTaskInner(
     const userSubmitted = artifact?.submittedBy === "user";
 
     const runId = newId("run");
+    // 判卷调了模型，这条 run 就不是纯确定性的：`live` + 尝试 id 让页面按
+    // 「真实模型」显示它，而不是在所有判过卷的审计上都印「演示模板」。
+    const judgeAttempt = preJudge?.attemptId ?? null;
     await tx.insert(runs).values({
       id: runId,
       taskId,
       agentId: auditor.id,
       status: "running",
-      mode: "demo",
+      mode: judgeAttempt ? "live" : "demo",
+      providerAttemptId: judgeAttempt,
       sourceType: "system_event",
       startedAt: new Date(),
       runLabel: `audit_${taskId}_${taskRuns.length + 1}`,
@@ -399,16 +409,30 @@ async function auditTaskInner(
       output: { verdict, reason, checklist: acceptanceReport },
     });
 
+    // 判卷那一步真的调了模型：它报告的 token 与费用记在这条审计 run 上。
+    // 确定性核对（逐条对照证据、格式检查）本身不产生用量，所以没判卷时
+    // 留 null 而不是 0——「没调用」与「调用过但没上报」不是同一个事实。
+    const judgeUsage = preJudge?.usage ?? null;
+    const judgeCost = judgeUsage
+      ? Number(
+          (
+            ((judgeUsage.tokensIn + judgeUsage.tokensOut) / 1000) *
+            config.cost.centsPer1kTokens
+          ).toFixed(2),
+        )
+      : 0;
+
     await tx
       .update(runs)
       .set({
         status: "succeeded",
         endedAt: new Date(),
-        // The auditor is deterministic: no provider was involved, so this run
-        // carries no measured usage and no model cost.
-        costCents: 0,
-        tokensIn: null,
-        tokensOut: null,
+        costCents: judgeCost,
+        tokensIn: judgeUsage?.tokensIn ?? null,
+        tokensOut: judgeUsage?.tokensOut ?? null,
+        // 调用过却没拿到用量（超时/供应商没报）记 unknown：那笔钱可能真的
+        // 花掉了，写成 actual 0 就是替你保证没花钱。
+        costSource: judgeUsage ? "actual" : judgeAttempt ? "unknown" : null,
       })
       .where(eq(runs.id, runId));
 

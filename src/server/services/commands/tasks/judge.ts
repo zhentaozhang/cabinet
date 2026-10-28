@@ -53,6 +53,13 @@ export type JudgeOutcome = {
   /** 已判定项里通过的比例；判卷没发生时缺省。 */
   score?: number;
   judgeModel?: string | null;
+  /**
+   * 供应商回报的用量。没调用、没回报、或回报是 0/0（判卷提示非空，真实调用
+   * 不可能 0 输入 token）时为 null——不能拿 0 冒充「没花钱」。
+   */
+  usage?: { tokensIn: number; tokensOut: number } | null;
+  /** 这次判卷请求的尝试 id（模型真被调用时才非空），审计 run 用它记账。 */
+  attemptId?: string | null;
 };
 
 export type JudgeSubmissionInput = {
@@ -108,6 +115,8 @@ export async function judgeSubmission(
       results: input.results,
       judged: false,
       reason: "no_judge_items",
+      usage: null,
+      attemptId: null,
     };
   }
 
@@ -121,6 +130,8 @@ export async function judgeSubmission(
       results: input.results,
       judged: false,
       reason: "empty_answer",
+      usage: null,
+      attemptId: null,
     };
   }
 
@@ -137,6 +148,8 @@ export async function judgeSubmission(
       results: input.results,
       judged: false,
       reason: "no_model",
+      usage: null,
+      attemptId: null,
     };
   }
 
@@ -259,6 +272,14 @@ export async function judgeSubmission(
     });
   }
 
+  // 只有真拿到回复、且供应商报了非零用量时才记用量。判卷提示非空（题面 + 答案
+  // + 清单），所以 0 输入 token 只可能是「没上报」，不是「真没花」。
+  const usage =
+    reply?.status === "success" &&
+    (reply.tokensIn > 0 || reply.tokensOut > 0)
+      ? { tokensIn: reply.tokensIn, tokensOut: reply.tokensOut }
+      : null;
+
   return {
     results: merged,
     judged: true,
@@ -266,5 +287,7 @@ export async function judgeSubmission(
     verdicts,
     score,
     judgeModel,
+    usage,
+    attemptId: reply?.attemptId ?? null,
   };
 }

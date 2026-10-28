@@ -243,6 +243,11 @@ export type JudgeAnswerResult = {
   model: string;
   tokensIn: number;
   tokensOut: number;
+  /**
+   * 一次真实请求的 id（与 generateArtifact 同一约定：请求前先造、失败也留身份）。
+   * 没发请求（没 key）时为 null；注入的假实现可以不填。
+   */
+  attemptId?: string | null;
 };
 
 /**
@@ -263,16 +268,22 @@ export async function judgeAnswer(
     process.env.OPENAI_MODEL ??
     "gpt-4.1-mini";
   const maxOutputTokens = input.maxOutputTokens ?? JUDGE_MAX_OUTPUT_TOKENS;
-  const failed = (status: JudgeAnswerStatus): JudgeAnswerResult => ({
+  // 请求前就造 id：超时或报错时这次尝试也还是同一次尝试，不能没有身份。
+  const attemptId = newId("att");
+  const failed = (
+    status: JudgeAnswerStatus,
+    callId: string | null,
+  ): JudgeAnswerResult => ({
     status,
     text: "",
     model,
     tokensIn: 0,
     tokensOut: 0,
+    attemptId: callId,
   });
 
   // 调用方本应先用 isModelConfigured() 拦住；漏了也只算失败，不发请求。
-  if (!apiKey) return failed("provider_error");
+  if (!apiKey) return failed("provider_error", null);
 
   const deadline = attemptDeadline(input.signal);
   try {
@@ -309,7 +320,7 @@ export async function judgeAnswer(
       },
     );
 
-    if (!text.trim()) return failed("empty_response");
+    if (!text.trim()) return failed("empty_response", attemptId);
 
     return {
       status: "success",
@@ -317,9 +328,13 @@ export async function judgeAnswer(
       model,
       tokensIn: usage?.inputTokens ?? 0,
       tokensOut: usage?.outputTokens ?? 0,
+      attemptId,
     };
   } catch {
-    return failed(deadline.signal.aborted ? "timeout" : "provider_error");
+    return failed(
+      deadline.signal.aborted ? "timeout" : "provider_error",
+      attemptId,
+    );
   } finally {
     deadline.dispose();
   }

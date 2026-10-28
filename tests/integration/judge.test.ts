@@ -6,12 +6,14 @@ import {
   artifacts,
   auditEvents,
   learningAttempts,
+  runs,
   tasks,
 } from "@/lib/db/schema";
 import type { AcceptanceItem } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { evaluateAcceptance } from "@/lib/domain/acceptance";
 import { auditTask, createTask, runTask } from "@/server/services/engine";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import type { JudgeFn } from "@/server/services/commands/tasks/judge";
 import { judgeSubmission } from "@/server/services/commands/tasks/judge";
 import { resetDb } from "../helpers/db";
@@ -400,6 +402,68 @@ describe("audit + judge", () => {
     expect(after?.judge?.model).toBe("fake-judge");
     expect(after?.judge?.score).toBe(1);
     expect(after?.artifactId).toBe(artifactId);
+  });
+
+  // 审计 run 原本无条件写「没有供应商参与、没有用量、没有花费」，而判卷那次
+  // 调用是真的：用量被丢掉了，页面既印「演示模板」又印「用量未知 · ¥0.00」。
+  it("记下判卷那次调用真正用掉的 token 与费用", async () => {
+    const { taskId } = await setupJudgeTask();
+    const judge: JudgeFn = async () => ({
+      status: "success",
+      text: verdictReply(true, "答案解释了词法环境"),
+      model: "fake-judge",
+      tokensIn: 1200,
+      tokensOut: 300,
+      attemptId: "att_judge",
+    });
+
+    await auditTask(taskId, DEMO_USER_ID, { judge });
+
+    const [run] = await db
+      .select()
+      .from(runs)
+      .where(and(eq(runs.taskId, taskId), eq(runs.agentId, "ag_auditor")))
+      .orderBy(desc(runs.startedAt))
+      .limit(1);
+    expect(run.mode).toBe("live");
+    expect(run.providerAttemptId).toBe("att_judge");
+    expect(run.tokensIn).toBe(1200);
+    expect(run.tokensOut).toBe(300);
+    expect(run.costSource).toBe("actual");
+    // 与生成产物同一条成本公式：两次调用都算钱。
+    const config = await getPolicyConfigFor(DEMO_USER_ID);
+    expect(run.costCents).toBeCloseTo(
+      Number((((1200 + 300) / 1000) * config.cost.centsPer1kTokens).toFixed(2)),
+      2,
+    );
+    expect(run.costCents).toBeGreaterThan(0);
+  });
+
+  it("调用过但供应商没报用量时写 unknown，不写 0", async () => {
+    const { taskId } = await setupJudgeTask();
+    const judge: JudgeFn = async () => ({
+      status: "timeout",
+      text: "",
+      model: "fake-judge",
+      tokensIn: 0,
+      tokensOut: 0,
+      attemptId: "att_judge_timeout",
+    });
+
+    await auditTask(taskId, DEMO_USER_ID, { judge });
+
+    const [run] = await db
+      .select()
+      .from(runs)
+      .where(and(eq(runs.taskId, taskId), eq(runs.agentId, "ag_auditor")))
+      .orderBy(desc(runs.startedAt))
+      .limit(1);
+    expect(run.mode).toBe("live");
+    // 超时也可能已经花掉钱：留 null + unknown，而不是 actual 0。
+    expect(run.tokensIn).toBeNull();
+    expect(run.tokensOut).toBeNull();
+    expect(run.costSource).toBe("unknown");
+    expect(run.costCents).toBe(0);
   });
 
   it("判卷失败时任务既不驳回也不通过，停在待你判定，但仍留下尝试记录", async () => {
