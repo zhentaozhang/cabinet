@@ -336,4 +336,18 @@ describe("scheduling reuses the task the learner still has in hand", () => {
       expect(await learningTasks(USER)).toHaveLength(before + 1);
     },
   );
+
+  // "复用"读的是库里有没有在手任务，"排"是紧接着的一次插入。两步之间没有
+  // 任何互斥，于是打卡与手动"下一题"同时到达、或者按钮被点两下时，两个调用
+  // 都看不到对方，各建一道一样的题——学习者一次只能做一道，多出来的那道还会
+  // 把它记进目标进度的分母。
+  it("queues one task when two schedulers arrive at once", async () => {
+    const [first, second] = await Promise.all([
+      ensureNextLearningTask(USER),
+      ensureNextLearningTask(USER),
+    ]);
+
+    expect(first.id).toBe(second.id);
+    expect(await learningTasks(USER)).toHaveLength(1);
+  });
 });

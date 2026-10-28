@@ -8,6 +8,7 @@ import { newId } from "@/lib/ids";
 import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
 import { getPolicyConfigFor } from "@/lib/policy/config";
+import type { Tx } from "../../shared/tx";
 import { recalculateGoalProgress } from "../progress";
 
 export async function promoteSuggestion(taskId: string, userId: string) {
@@ -86,6 +87,12 @@ export async function createTask(
     createdBy?: "user" | "agent" | "system";
   },
   userId: string,
+  /**
+   * 传入事务就并入调用方的事务：调用方若已经在事务里做了"先查后写"，这次插入
+   * 必须和那次查询在同一个事务里，否则中间又会出现一个看不到对方的窗口
+   * （学习任务的排期就是这种调用方，它先数"有没有在手任务"）。
+   */
+  outerTx?: Tx,
 ) {
   const title = input.title.trim();
   const description = input.description.trim();
@@ -100,11 +107,12 @@ export async function createTask(
     throw new ValidationError("Spend tasks require a positive estimated cost.");
   }
 
-  const [assignee] = await db
+  const reader = outerTx ?? db;
+  const [assignee] = await reader
     .select({ id: agents.id, userId: agents.userId })
     .from(agents)
     .where(eq(agents.id, input.assigneeId));
-  const [auditor] = await db
+  const [auditor] = await reader
     .select({ id: agents.id, userId: agents.userId })
     .from(agents)
     .where(eq(agents.id, input.auditorId));
@@ -118,7 +126,7 @@ export async function createTask(
   }
 
   if (input.goalId) {
-    const [goal] = await db
+    const [goal] = await reader
       .select({ id: goals.id, userId: goals.userId })
       .from(goals)
       .where(eq(goals.id, input.goalId));
@@ -139,7 +147,7 @@ export async function createTask(
   const checklist =
     input.acceptanceChecklist ??
     (await defaultEvidenceChecklist(input.assigneeId, userId));
-  return db.transaction(async (tx) => {
+  const write = async (tx: Tx) => {
     const [created] = await tx
       .insert(tasks)
       .values({
@@ -189,5 +197,7 @@ export async function createTask(
     });
 
     return created;
-  });
+  };
+
+  return outerTx ? write(outerTx) : db.transaction(write);
 }
