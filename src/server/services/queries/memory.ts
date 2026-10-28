@@ -22,7 +22,7 @@ export async function getMemoryData(
       ? isNotNull(memories.validTo)
       : isNull(memories.validTo);
 
-  const [countsRows, userRows] = await Promise.all([
+  const [countsRows, userRows, conflictRows] = await Promise.all([
     db
     .select({
       all: sql<number>`count(*)`,
@@ -32,11 +32,11 @@ export async function getMemoryData(
       selected: type
         ? sql<number>`count(*) filter (where ${memories.type} = ${type})`
         : sql<number>`count(*)`,
-      // The card row above the list reports library-wide numbers. Conflicts and
-      // the average confidence used to be recomputed in the page from the rows
-      // on screen, so a conflict sitting on page two showed up as "0 待解决矛盾"
-      // next to a whole-library "Memories" count — two scopes in one row.
-      conflicted: sql<number>`count(*) filter (where ${memories.status} = 'conflicted')`,
+      // The card row above the list reports library-wide numbers. The average
+      // confidence stays scoped to the tab on screen: a closed row is not a
+      // current belief. Conflicts are counted in their own query below, because
+      // `writeMemoryFact` closes the rejected claim the moment it records the
+      // conflict, so they never appear in this tab at all.
       avgConfidence: sql<number | null>`avg(${memories.confidence})`,
     })
     .from(memories)
@@ -45,8 +45,25 @@ export async function getMemoryData(
       .select({ timezone: users.timezone })
       .from(users)
       .where(eq(users.id, userId)),
+    /*
+     * Whole-library, both tabs. A conflict is an open question for the user, not
+     * a row of one tab: the rejected claim is stored closed (`validTo = now`,
+     * `status = "conflicted"`), so scoping this to the current tab made the
+     * tile read 0 forever while the Cabinet page — which tallies every memory —
+     * said "N 条自相矛盾，待你裁定" about the same rows.
+     */
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(memories)
+      .where(
+        and(
+          eq(memories.userId, userId),
+          eq(memories.status, "conflicted"),
+        ),
+      ),
   ]);
   const [countsRow] = countsRows;
+  const [conflictRow] = conflictRows;
 
   const [staleRow] = await db
     .select({ count: sql<number>`count(*)` })
@@ -86,7 +103,7 @@ export async function getMemoryData(
     memories: rows,
     counts,
     stale: Number(staleRow?.count ?? 0),
-    conflicts: Number(countsRow?.conflicted ?? 0),
+    conflicts: Number(conflictRow?.count ?? 0),
     // `avg` comes back as a string (Postgres numeric) or null on an empty table;
     // null must stay null so the card says "暂无记忆" instead of reporting 0%.
     avgConfidence:
