@@ -29,7 +29,7 @@ import {
   statusLabel,
   statusTone,
 } from "@/lib/agents";
-import { dateTime, money, timeOnly } from "@/lib/format";
+import { dateTime, timeOnly } from "@/lib/format";
 import { goalStatusLabel } from "@/contracts/labels";
 import { isSimulatedSource, sourceLabel } from "@/lib/domain/provenance";
 import {
@@ -50,6 +50,7 @@ import {
   tallyChecklist,
   checklistBadge,
 } from "@/lib/presentation/task-view";
+import { runCostLabel, runTokensLabel } from "@/lib/presentation/run-usage";
 import {
   Avatar,
   Badge,
@@ -442,11 +443,10 @@ export default async function TaskPage({
                             {run.provider ? `${run.provider}/` : ""}{run.model}
                           </span>
                         ) : null}
+                        {/* 用量未知时金额也必须是「未知」：失败/超时的 run 不写
+                            costCents（默认 0），印 ¥0.00 等于说这次没花钱。 */}
                         <span className="text-label text-faint">
-                          · {run.tokensIn === null || run.tokensOut === null
-                            ? "用量未知"
-                            : `${run.tokensIn + run.tokensOut} tokens`}{" "}
-                          · {money(run.costCents)}
+                          · {runTokensLabel(run)} · {runCostLabel(run)}
                         </span>
                         <span className="ml-auto text-label text-faint">
                           {timeOnly(run.startedAt, tz)} → {timeOnly(run.endedAt, tz)}

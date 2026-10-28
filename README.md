@@ -113,6 +113,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | 运行前预演 | 任务页的只读面板：把 `decideRun` 的结论翻成「允许 / 需审批 / 拒绝 + 还缺什么」 | 与真实执行读同一份基础策略；不建预算周期行、不写任何状态 |
 | 分离职责 | 只有 auditor 角色、且不是 assignee，才能验收 | Auditor 放弃判定时由用户判定（`audit.override`），但用户的判定不进 Agent 的绩效 |
 | 通过率口径 | Agent 详情页的 Pass rate 在没有任何判定记录时印「—」（提示「还没有验收记录」），有记录才印百分比 | 0/0 不是一个比例：一次都没判过就印「0% · 验收通过率」，等于替这个 Agent 宣布「验收全没过」；复盘页对同一个数早就写「还没有验收记录」，metrics 里的遵从率/复测通过率/目标进度缺样本时也一律给 null 而不用 0 顶替 |
+| 运行成本 | 运行横幅和 Agent 页的最近运行列表：token 未上报印「用量未知」，`cost_source = unknown` 时金额印「费用未知」而不是 ¥0.00；只有 `actual` 或 null（这次根本没调模型）才印金额 | 失败/超时的模型调用可能真的到了供应商那边、只是没报用量（`src/lib/llm.ts` 对 timeout / provider_error / empty_response 都记 unknown），台账已把这份敞口记成 `unknownCents`，Agent 页的「本周模型用量」也把「未知」算进去了——同一页的行里再印 ¥0.00 等于说这次没花钱 |
 | 审计链 | 每个用户一条 SHA-256 前向哈希链；哈希按「这一行落进 jsonb 之后的样子」算（对象里值为 undefined 的键会被丢掉，数组里的 undefined 记作 null），所以任何人都能从存下来的行重算并验证 | Review 页可验证 |
 | 记忆 | 证据、scope、冲突、删除、历史；排序 = 词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度，可注入外部 rerank | 没有 embedding / 向量库（本机 Postgres 无 `vector` 扩展）；写入面只有删除（`DELETE /api/memories/:id`，留 `memory.delete` 审计），没有编辑接口，也没有「按领域要求你确认」的闸门——Agent 写的健康类记忆同样直接生效，所以记忆页不承诺这两件事 |
 | 学习任务 | 规则生成；知识点掌握度 + SM-2 间隔重复排期；到期优先复习 | 依赖学习目标和 Check-in；难度仍来自配置；只要上一条学习任务还没了结（含"待你判定"），复用的是同一条，不会每打一次卡再发一道——"先查有没有在手任务、再插入"在同一个事务里按用户加了咨询锁，并发打卡/双击"下一题"也只会排出一道 |
@@ -282,7 +283,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->160<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1327<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->161<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1332<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 

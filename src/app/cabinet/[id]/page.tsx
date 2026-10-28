@@ -24,6 +24,7 @@ import { money, pct, relative, shortDate, timeOnly } from "@/lib/format";
 import { memoryTypeLabel } from "@/contracts/labels";
 import { sourceLabel } from "@/lib/domain/provenance";
 import { agentPassRate } from "@/lib/presentation/cabinet-view";
+import { runCostLabel, runTokensLabel } from "@/lib/presentation/run-usage";
 import { completionPercent } from "@/lib/presentation/ratio";
 import {
   Avatar,
@@ -223,14 +224,11 @@ export default async function AgentPage({
                   <div className="min-w-0 flex-1">
                     <div className="mono truncate text-label text-ink">{run.id}</div>
                     <div className="mt-0.5 text-label text-faint">
-                      {run.taskId} · {run.mode} ·{" "}
-                      {run.tokensIn === null || run.tokensOut === null
-                        ? "用量未知"
-                        : `${run.tokensIn + run.tokensOut} tokens`}
+                      {run.taskId} · {run.mode} · {runTokensLabel(run)}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="mono text-label text-muted">{money(run.costCents)}</div>
+                    <div className="mono text-label text-muted">{runCostLabel(run)}</div>
                     <div className="text-label text-faint">{timeOnly(run.createdAt, tz)}</div>
                   </div>
                 </Link>
