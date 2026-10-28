@@ -351,7 +351,8 @@ export default async function AgentPage({
                   </>
                 ) : null}
                 <p className="mt-3 text-label leading-relaxed text-faint">
-                  考试由 Auditor 监考；≥4/5 通过。通过只标记练习完成，不改变信任分与授权等级。
+                  考试由 Auditor 监考；技能的验收项必须全部通过，有一项不过就是驳回。
+                  通过只标记练习完成，不改变信任分与授权等级。
                 </p>
               </div>
             </Card>
