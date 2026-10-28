@@ -110,7 +110,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | 复盘口径 | 页面用现在时说话的数字都按当前状态现算：待判定数只数此刻仍停在 `needs_review` 的任务（判定或放弃后立刻归零）、目标进度只取学习目标、「本周改了什么」里的已生效变更按整张 `insights` 统计（列表只取最新几条，与洞察分页无关）、计划遵从率的分母不含已撤回（`cancelled`）的任务 | 审计事件记录的是「曾经发生过」，不能直接当作「现在还剩多少」；一页装得下的东西也不能当成全集——同一周里复盘页与首页待办必须说同一件事 |
 | 运行前预演 | 任务页的只读面板：把 `decideRun` 的结论翻成「允许 / 需审批 / 拒绝 + 还缺什么」 | 与真实执行读同一份基础策略；不建预算周期行、不写任何状态 |
 | 分离职责 | 只有 auditor 角色、且不是 assignee，才能验收 | Auditor 放弃判定时由用户判定（`audit.override`），但用户的判定不进 Agent 的绩效 |
-| 审计链 | 每个用户一条 SHA-256 前向哈希链 | Review 页可验证 |
+| 审计链 | 每个用户一条 SHA-256 前向哈希链；哈希按「这一行落进 jsonb 之后的样子」算（对象里值为 undefined 的键会被丢掉，数组里的 undefined 记作 null），所以任何人都能从存下来的行重算并验证 | Review 页可验证 |
 | 记忆 | 证据、scope、冲突、删除、历史；排序 = 词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度，可注入外部 rerank | 没有 embedding / 向量库（本机 Postgres 无 `vector` 扩展） |
 | 学习任务 | 规则生成；知识点掌握度 + SM-2 间隔重复排期；到期优先复习 | 依赖学习目标和 Check-in；难度仍来自配置；只要上一条学习任务还没了结（含"待你判定"），复用的是同一条，不会每打一次卡再发一道——"先查有没有在手任务、再插入"在同一个事务里按用户加了咨询锁，并发打卡/双击"下一题"也只会排出一道 |
 | 反思 | 规则候选 → 洞察 → 采纳/回滚；`set_policy` 提案走白名单覆盖表 | 候选仍是规则生成，不调用模型 |
@@ -278,7 +278,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->157<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1296<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->158<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1299<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 
