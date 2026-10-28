@@ -2,10 +2,12 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { artifacts, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import { assertTransition } from "@/lib/domain/state";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
 import { logEvent } from "@/lib/observability/log";
 import { recordTaskLesson } from "../memory/task-lesson";
+import { recalculateGoalProgress } from "../progress";
 import { recordMasteryOutcome } from "./mastery-outcome";
 
 /** 判定理由的长度约束：太短等于没写，太长是没人会读完的流水账。 */
@@ -115,6 +117,26 @@ export async function overrideAudit({
       verdict: decision === "accepted" ? "pass" : "fail",
       source: "audit.override",
     });
+
+    // 人判通过之后目标进度必须当场重算。
+    //
+    // 不重算的后果不是"少涨一点"，而是同一个数据库算出两个数：进度按任务
+    // 状态现算（progress.ts 数 accepted/done），人判已把这一行改成 accepted，
+    // 于是第二天随便一次打卡触发重算时，进度会自己跳上去 —— 用户没有再做
+    // 任何事，数字却变了。把"什么时候算"交给下一次无关事件的到达，等于让
+    // 页面显示一个当时并不成立的结论。
+    //
+    // 只跟 Auditor 一样在通过时重算：驳回不会改变 accepted 比例，重算一次也
+    // 只是把同样的数字再写一遍。
+    if (decision === "accepted" && updated.goalId) {
+      const config = await getPolicyConfigFor(userId);
+      await recalculateGoalProgress(
+        tx,
+        userId,
+        updated.goalId,
+        config.learning,
+      );
+    }
 
     // 人给的结论同样是这个任务留下的"经验"，要让之后的检索看得见。
     // 仍然放在 savepoint 里：判定已经写进任务行，一条记忆写失败不该把
