@@ -11,6 +11,7 @@ import {
 import { ConnectorTestButton } from "@/components/actions";
 import { fetchConnectorStatus } from "@/lib/api/pages";
 import { money } from "@/lib/format";
+import { modelBillingHint } from "@/lib/presentation/connectors-view";
 
 export const metadata: Metadata = {
   title: "连接器 · Cabinet",
@@ -140,7 +141,7 @@ export default async function ConnectorsPage() {
             icon={<Sparkles className="size-4 text-muted" aria-hidden />}
             label="模型"
             value={model.model}
-            hint={`通过 ${model.provider} 调用；用量与费用记在每周预算台账里。`}
+            hint={modelBillingHint(model.provider)}
           />
           <Row
             icon={
