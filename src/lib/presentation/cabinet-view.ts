@@ -17,3 +17,37 @@ export function tasksPerAgent(
   }
   return counts;
 }
+export type AgentHeadcount = {
+  total: number;
+  onDuty: number;
+  growing: number;
+  retired: number;
+};
+
+/**
+ * The Cabinet header reads "N 个 Agent · X 在岗 · Y 成长中".
+ *
+ * "成长中" used to be `lifecycleStage !== "active"`, which also matches a
+ * retired Agent: `retireAgent` writes status="retired" *and*
+ * lifecycleStage="retired", so the page counted someone who had left the org
+ * as still growing while the card below them showed the badge 已退休.
+ * Retired Agents are counted on their own and never as 成长中.
+ */
+export function agentHeadcount(
+  agents: ReadonlyArray<{ status: string; lifecycleStage: string }>,
+): AgentHeadcount {
+  let onDuty = 0;
+  let growing = 0;
+  let retired = 0;
+  for (const agent of agents) {
+    const isRetired =
+      agent.status === "retired" || agent.lifecycleStage === "retired";
+    if (isRetired) {
+      retired += 1;
+      continue;
+    }
+    if (agent.status === "active") onDuty += 1;
+    if (agent.lifecycleStage !== "active") growing += 1;
+  }
+  return { total: agents.length, onDuty, growing, retired };
+}

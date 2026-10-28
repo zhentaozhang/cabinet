@@ -19,7 +19,7 @@ import {
 } from "@/lib/domain/tool-plan";
 import { AUTONOMY_LABELS, roleMeta, statusLabel } from "@/lib/agents";
 import { money } from "@/lib/format";
-import { tasksPerAgent } from "@/lib/presentation/cabinet-view";
+import { agentHeadcount, tasksPerAgent } from "@/lib/presentation/cabinet-view";
 import {
   Avatar,
   Badge,
@@ -410,6 +410,7 @@ export default async function CabinetPage() {
   // One pass over tasks instead of one scan per agent card.
   const tasksByAgent = tasksPerAgent(data.tasks);
   const taskCount = (id: string) => tasksByAgent.get(id) ?? 0;
+  const headcount = agentHeadcount(data.agents);
 
   return (
     <div>
@@ -421,8 +422,8 @@ export default async function CabinetPage() {
           </div>
           <h1 className="text-page font-semibold tracking-tight text-ink">你的个人内阁</h1>
           <p className="mt-1.5 text-label text-muted">
-            {data.agents.length} 个 Agent · {data.agents.filter((a) => a.status === "active").length} 在岗 ·{" "}
-            {data.agents.filter((a) => a.lifecycleStage !== "active").length} 成长中
+            {headcount.total} 个 Agent · {headcount.onDuty} 在岗 · {headcount.growing} 成长中
+            {headcount.retired > 0 ? ` · ${headcount.retired} 已退休` : null}
           </p>
         </div>
         <div className="flex items-center gap-2">

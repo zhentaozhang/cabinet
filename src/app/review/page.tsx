@@ -401,7 +401,7 @@ export default async function ReviewPage({
               <div className="divide-y divide-line">
                 {data.agents.length === 0 ? (
                   <div className="px-5 py-6 text-center text-label text-faint">
-                    还没有在岗的 Agent。创建工作区后，这里会按信任分给出升级或退休建议。
+                    还没有 Agent。创建工作区后，这里会按信任分给出升级或退休建议。
                   </div>
                 ) : null}
                 {data.agents.map((agent) => {
@@ -694,7 +694,7 @@ export default async function ReviewPage({
                 {
                   href: "/cabinet",
                   label: "Agent 档案与绩效",
-                  hint: `${data.agents.length} 个在岗 Agent 的信任分与判例`,
+                  hint: `${data.agents.length} 个 Agent 的信任分与判例`,
                   icon: Bot,
                 },
                 {
