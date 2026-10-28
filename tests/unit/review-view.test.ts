@@ -363,11 +363,24 @@ describe("picking next week's single goal", () => {
   });
 
   it("keeps priority above the deadline", () => {
+    // P1 is the top rung: the task page prints "优先级 P{n}" (tasks/[id]/page.tsx:235),
+    // the seed gives today's work priority 1 and tomorrow's 2, and the council's
+    // follow-up task is created with priority 1 (council/decide.ts:102). Nothing
+    // in src/ ever writes a number above the schema default of 2, so reading the
+    // number as "bigger is more important" made the picker step over every P1.
     const picked = pickFocusTask([
-      task("urgent", { priority: 3, dueAt: "2026-03-01" }),
-      task("sooner", { priority: 1, dueAt: "2026-01-05" }),
+      task("routine", { priority: 2, dueAt: "2026-01-05" }),
+      task("urgent", { priority: 1, dueAt: "2026-03-01" }),
     ]);
     expect(picked?.id).toBe("urgent");
+  });
+
+  it("puts a task with no priority of its own below a P1", () => {
+    const picked = pickFocusTask([
+      task("default", { priority: 2, dueAt: "2026-01-05" }),
+      task("top", { priority: 1, dueAt: "2026-05-01" }),
+    ]);
+    expect(picked?.id).toBe("top");
   });
 
   it("prefers the earlier deadline at equal priority", () => {

@@ -103,6 +103,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | 机制 | 当前实现 | 边界 |
 |---|---|---|
 | 任务状态机 | planned → assigned → running → submitted → auditing → accepted / rejected / needs_review → done；外部动作走 awaiting_approval | 条件更新 + 409 冲突；needs_review 只能由用户判定带走 |
+| 优先级 | `tasks.priority` 是名次不是分数：P1 最靠前。种子把今天的事记 1、明天记 2，内阁决议生成的任务是 1（`council/decide.ts`），新建任务默认 2 | Review 页的「下一周唯一目标」先按优先级挑、同优先才比截止日期；反着排会让 P1 的任务全被跳过，页面却仍说挑的是「优先级最高的」 |
 | 策略门禁 | 状态、生命周期、自主等级、grant、周预算台账、审批 | 阈值来自 `policy_config`（可按用户被 `policy_overrides` 覆盖），缺失时 fail-closed |
 | 审批 | 外部动作 / 超预算进入审批；批准后消费一次 | 不执行真实外部动作 |
 | 验收 | 清单项：section / min_words / min_sources / min_evidence / contains / claims_table / manual / judge；页面把「未通过」与「需人工复核」分开数（`undetermined` 的条目 `passed` 也是 false，不能算失败）；驳回面板按当前状态说话——重新提交后不再显示「被驳回」，人判驳回时署「你的驳回理由」而不是 Auditor 的旧结论 | 除 judge 外都是确定性检查；required 项未判定时进入 `needs_review`，不冒充通过 |
@@ -278,7 +279,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->158<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1299<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->158<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1300<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 

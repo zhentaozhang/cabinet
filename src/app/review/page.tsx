@@ -595,7 +595,7 @@ export default async function ReviewPage({
                   <Link href={`/tasks/${focus.id}`} className="text-ink hover:underline">
                     {focus.title}
                   </Link>
-                  {` · 优先级 ${focus.priority}`}
+                  {` · 优先级 P${focus.priority}`}
                   {focus.dueAt ? ` · 截止 ${shortDate(focus.dueAt, tz)}` : ""}
                 </p>
               ) : (

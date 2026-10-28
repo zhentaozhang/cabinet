@@ -173,6 +173,13 @@ export type FocusTaskInput = {
  * The one task next week is allowed to be about: highest priority among open
  * work, earliest deadline to break the tie.
  *
+ * Priority is a rank, not a score: P1 outranks P2. That is how the task page
+ * prints it (`优先级 P{n}`), how the demo data ranks it (today's work is 1,
+ * tomorrow's is 2) and what the council writes on the task it creates from a
+ * decision (`council/decide.ts:102`). Sorting the numbers the other way round
+ * silently stepped over every P1 — the picker then called a P2 task "the
+ * highest priority" while P1 work sat open next to it.
+ *
  * A task with no deadline sorts last instead of first. `"".localeCompare(date)`
  * put every unbounded task ahead of every dated one, which is the opposite of
  * what the copy promises and quietly made an open-ended idea the week's goal.
@@ -183,7 +190,7 @@ export function pickFocusTask<T extends FocusTaskInput>(
   const open = tasks
     .filter((task) => OPEN_TASK_STATUS.has(task.status))
     .sort((a, b) => {
-      if (a.priority !== b.priority) return b.priority - a.priority;
+      if (a.priority !== b.priority) return a.priority - b.priority;
       if (a.dueAt === b.dueAt) return 0;
       if (a.dueAt === null) return 1;
       if (b.dueAt === null) return -1;
