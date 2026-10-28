@@ -32,6 +32,12 @@ export async function getMemoryData(
       selected: type
         ? sql<number>`count(*) filter (where ${memories.type} = ${type})`
         : sql<number>`count(*)`,
+      // The card row above the list reports library-wide numbers. Conflicts and
+      // the average confidence used to be recomputed in the page from the rows
+      // on screen, so a conflict sitting on page two showed up as "0 待解决矛盾"
+      // next to a whole-library "Memories" count — two scopes in one row.
+      conflicted: sql<number>`count(*) filter (where ${memories.status} = 'conflicted')`,
+      avgConfidence: sql<number | null>`avg(${memories.confidence})`,
     })
     .from(memories)
     .where(and(eq(memories.userId, userId), viewFilter)),
@@ -80,6 +86,13 @@ export async function getMemoryData(
     memories: rows,
     counts,
     stale: Number(staleRow?.count ?? 0),
+    conflicts: Number(countsRow?.conflicted ?? 0),
+    // `avg` comes back as a string (Postgres numeric) or null on an empty table;
+    // null must stay null so the card says "暂无记忆" instead of reporting 0%.
+    avgConfidence:
+      countsRow?.avgConfidence === null || countsRow?.avgConfidence === undefined
+        ? null
+        : Number(countsRow.avgConfidence),
     total,
     offset,
     limit,

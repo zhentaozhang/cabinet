@@ -44,11 +44,15 @@ export default async function MemoryPage({
   const offset = Math.max(Number(params.offset ?? 0) || 0, 0);
   const data = await fetchMemoryPage(type, view, { offset });
   const tz = data.timezone;
-  const avgConfidence =
-    data.memories.length > 0
-      ? data.memories.reduce((sum, m) => sum + m.confidence, 0) / data.memories.length
-      : null;
-  const conflicts = data.memories.filter((m) => m.status === "conflicted").length;
+  /*
+    These four numbers describe the whole library (or the current tab, for
+    `total`), not the page below them. Averaging and counting conflicts from
+    `data.memories` made a conflict that lives on page two invisible while the
+    neighbouring "Memories" tile counted every row — the same card row claiming
+    two different scopes.
+  */
+  const avgConfidence = data.avgConfidence;
+  const conflicts = data.conflicts;
   const stale = data.stale;
   const pageHref = (nextOffset: number) => {
     const query = new URLSearchParams();

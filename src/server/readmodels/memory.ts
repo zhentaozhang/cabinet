@@ -21,6 +21,8 @@ export async function loadMemory(
       memories: data.memories.map(toMemoryDto),
       counts: data.counts,
       stale: data.stale,
+      conflicts: data.conflicts,
+      avgConfidence: data.avgConfidence,
       total: data.total,
       offset: data.offset,
       limit: data.limit,

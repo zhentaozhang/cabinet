@@ -252,6 +252,12 @@ export const memoryPageSchema = z.object({
     procedural: z.number(),
   }),
   stale: z.number(),
+  /**
+   * Library-wide, like `counts` and `stale` — not a tally of the rows on
+   * screen. Null when the view has no rows at all (no average to report).
+   */
+  conflicts: z.number(),
+  avgConfidence: z.number().min(0).max(1).nullable(),
   total: z.number(),
   offset: z.number(),
   limit: z.number(),
