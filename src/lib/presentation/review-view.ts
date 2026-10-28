@@ -57,6 +57,17 @@ export function recommendation(
   },
   decision: AutonomyDecision | undefined,
 ) {
+  // A retired Agent is asked nothing more. `retireAgent` writes
+  // status="retired" and lifecycleStage="retired" together, so the apprentice
+  // branch below used to label one "待转正" — a badge promising an exam, and a
+  // "考虑退休" for anyone whose rejections outnumbered their passes.
+  if (agent.lifecycleStage === "retired") {
+    return {
+      label: "已退休",
+      tone: "danger" as const,
+      title: "这位 Agent 已退休，不再参与升级或转正。",
+    };
+  }
   if (agent.role === "apprentice" && agent.lifecycleStage !== "active") {
     return { label: "待转正", tone: "accent" as const, title: "学徒需先通过转正考核。" };
   }

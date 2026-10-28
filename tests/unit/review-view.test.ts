@@ -166,6 +166,27 @@ describe("recommendation renders the backend verdict and never re-decides it", (
     expect(rec.label).toBe("可升级");
   });
 
+  it("does not send a retired apprentice back to the exam", () => {
+    // `retireAgent` writes lifecycleStage="retired" together with
+    // status="retired". The apprentice branch fired first and printed 待转正,
+    // promising an exam that can never be taken; a spotty record printed
+    // 考虑退休 for someone who had already left.
+    const rec = recommendation(
+      {
+        ...healthyAgent,
+        role: "apprentice",
+        lifecycleStage: "retired",
+        failCount: 2,
+        successCount: 0,
+      },
+      decision({ allowed: false, code: "retired" }),
+    );
+    expect(rec.label).toBe("已退休");
+    expect(rec.label).not.toBe("待转正");
+    expect(rec.label).not.toBe("考虑退休");
+    expect(rec.tone).toBe("danger");
+  });
+
   it("does not promise an upgrade to an Agent that is already at the top rung", () => {
     // `autonomy.ts:103` clamps the target level at 3, and `policy.ts:548-550`
     // allows a same-level move. So an L3 Agent always gets `allowed: true` at
