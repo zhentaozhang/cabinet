@@ -1,6 +1,5 @@
 import { ConflictError } from "./errors";
 import { GOAL_TRANSITIONS } from "@/contracts/goals";
-import type { GoalStatus } from "@/contracts/goals";
 
 // 目标的状态图与动作表定义在 contracts/goals.ts：客户端要为"哪些按钮能点"
 // 做出和服务端一样的判断，而 src/lib/domain/state.ts 会顺带把 errors.ts（进而

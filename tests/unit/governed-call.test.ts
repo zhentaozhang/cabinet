@@ -6,8 +6,8 @@ const readGrant: Grant[] = [{ resource: "mcp:github", scope: "read" }];
 
 function deps(overrides: Record<string, unknown> = {}) {
   const call = vi.fn(async () => ({ ok: true as const, latencyMs: 12, value: "issue created" }));
-  const admit = vi.fn(async (_cents: number) => ({ allowed: true as const, reservationId: "brs_1" }));
-  const settle = vi.fn(async (_id: string | undefined, _state: string) => {});
+  const admit = vi.fn(async () => ({ allowed: true as const, reservationId: "brs_1" }));
+  const settle = vi.fn(async () => {});
   return {
     tool: "mcp:github:search_issues",
     resource: "mcp:github",

@@ -46,7 +46,6 @@ import { runTask } from "@/server/services/commands/tasks/run";
 import type {
   ModelToolExecutor,
   ModelToolGenerator,
-  ModelToolRegistry,
   ToolStepRecord,
 } from "@/server/services/commands/tasks/tool-loop";
 import {
