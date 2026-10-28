@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { and, desc, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { artifacts, goals, learningAttempts } from "@/lib/db/schema";
+import { artifacts, learningAttempts } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { newId } from "@/lib/ids";
 import {
