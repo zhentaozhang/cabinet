@@ -10,7 +10,12 @@ import {
   users,
 } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
-import { addLocalDays, localDateKey } from "@/lib/domain/time";
+import {
+  addLocalDays,
+  localDateKey,
+  localDateTimeParts,
+  zonedTimeToUtc,
+} from "@/lib/domain/time";
 import { retrieveMemories } from "@/lib/memory/retrieval";
 import { decayMemoryScores } from "@/lib/memory/decay";
 import { writeMemoryFact } from "@/server/services/commands/memory/facts";
@@ -100,6 +105,34 @@ describe("real reflection", () => {
     expect(first!.claim).toContain("审计驳回");
     expect(second!.claim).toContain("晚间");
     expect(third!.claim).toContain("精力只有 1/5");
+  });
+
+  it("does not count a cancelled evening task as one that was not finished", async () => {
+    // The evening signal is "you keep scheduling work at night and not finishing",
+    // so the denominator is evening tasks that are still owed. A task the user
+    // withdrew on purpose is neither finished nor owed: leaving it in the count
+    // keeps the completion rate below the threshold forever.
+    const tz = "Asia/Shanghai";
+    const yesterday = localDateTimeParts(addLocalDays(new Date(), -1, tz), tz);
+    await db.insert(tasks).values({
+      id: "tsk_evening_cancelled",
+      userId: DEMO_USER_ID,
+      title: "取消掉的晚间复习",
+      description: "原本排在 21:00，用户主动撤回。",
+      acceptanceCriteria: "写三行笔记，至少一个自己的例子。",
+      assigneeId: "ag_coach",
+      auditorId: "ag_auditor",
+      status: "cancelled",
+      dueAt: zonedTimeToUtc(yesterday.year, yesterday.month, yesterday.day, 21, 0, tz),
+      createdBy: "user",
+      createdAt: new Date(),
+    });
+
+    const first = await runReflection(DEMO_USER_ID);
+    const second = await runReflection(DEMO_USER_ID);
+    expect(first!.claim).toContain("审计驳回");
+    expect(second!.claim).toContain("安排了 2 个任务");
+    expect(second!.claim).not.toContain("安排了 3 个任务");
   });
 });
 

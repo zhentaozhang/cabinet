@@ -221,9 +221,13 @@ export async function runReflection(
     });
   }
 
+  // 撤回的晚间任务不算「没完成」：分母里混进一条自己撤销的任务，完成率就永远
+  // 差这一块，洞察会一直建议把晚上的事挪到早上。下面挑候选时本来就排除了
+  // cancelled，两处口径必须一致（复盘页的计划遵从率、目标进度也是这么算的）。
   const eveningTasks = recentTasks.filter(
     (task) =>
       task.dueAt &&
+      task.status !== "cancelled" &&
       localHourIn(task.dueAt, user.timezone) >= config.reflection.eveningHour,
   );
   const eveningDone = eveningTasks.filter((task) =>
