@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { agents, checkins, goals, tasks } from "@/lib/db/schema";
 import { getPolicyConfigFor } from "@/lib/policy/config";
@@ -69,7 +69,21 @@ export async function ensureNextLearningTask(userId: string) {
         eq(tasks.userId, userId),
         eq(tasks.goalId, goal.id),
         inArray(tasks.template, [...LEARNING_TEMPLATES]),
-        inArray(tasks.status, ["planned", "assigned", "submitted"]),
+        // 反着写：只要任务还没了结，它就已经在手里了。以前这里正着列
+        // planned/assigned/submitted，状态机后来加了 needs_review，默认配置下
+        // 判卷没有模型就会停在那里等人判定——于是每打一次卡都会再发一道
+        // 一模一样的题，而学习者一次只能做一道。
+        //
+        // 了结的只有四种：accepted / done 是做完的，cancelled 是撤回的，
+        // rejected 是被驳回要重来的（重来就是新的一道）；suggested 是还没被
+        // 接受的做法建议，不是已经排给学习者的任务。
+        notInArray(tasks.status, [
+          "accepted",
+          "done",
+          "cancelled",
+          "rejected",
+          "suggested",
+        ]),
       ),
     )
     .orderBy(desc(tasks.createdAt))

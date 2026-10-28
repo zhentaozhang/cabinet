@@ -295,3 +295,45 @@ describe("scheduling from a due topic", () => {
     expect(task.title).toBe("下一步练习：基础概念");
   });
 });
+
+describe("scheduling reuses the task the learner still has in hand", () => {
+  // 复用规则要覆盖"正在进行"的每一种状态。漏掉一个，学习者每打一次卡就会
+  // 多拿到一道一模一样的题：needs_review 尤其明显——默认配置下判卷项没有
+  // 模型就落在这里，任务停在等人判定，而打卡每天都会再来一次。
+  const IN_HAND = [
+    "planned",
+    "assigned",
+    "awaiting_approval",
+    "approved",
+    "running",
+    "submitted",
+    "auditing",
+    "needs_review",
+    "failed",
+  ] as const;
+
+  it.each(IN_HAND)("does not queue a second task while one is %s", async (status) => {
+    const task = await ensureNextLearningTask(USER);
+    const before = (await learningTasks(USER)).length;
+    await db.update(tasks).set({ status }).where(eq(tasks.id, task.id));
+
+    const again = await ensureNextLearningTask(USER);
+
+    expect(again.id).toBe(task.id);
+    expect(await learningTasks(USER)).toHaveLength(before);
+  });
+
+  it.each(["cancelled", "rejected", "accepted", "done"] as const)(
+    "queues the next task once the last one is %s",
+    async (status) => {
+      const task = await ensureNextLearningTask(USER);
+      const before = (await learningTasks(USER)).length;
+      await db.update(tasks).set({ status }).where(eq(tasks.id, task.id));
+
+      const again = await ensureNextLearningTask(USER);
+
+      expect(again.id).not.toBe(task.id);
+      expect(await learningTasks(USER)).toHaveLength(before + 1);
+    },
+  );
+});
