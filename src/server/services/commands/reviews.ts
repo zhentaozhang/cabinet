@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { checkins, reviews, tasks, users } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
@@ -16,23 +16,25 @@ export async function regenerateWeeklyReview(userId: string) {
   const timezone = user?.timezone ?? "UTC";
   const range = weekRange(new Date(), timezone);
 
-  const [learningTasks, recentCheckins] = await Promise.all([
+  const [completedLearning, recentCheckins] = await Promise.all([
+    // 只查已验收的学习任务：`order by accepted_at desc` 在 Postgres 里把
+    // NULL 排在最前面（DESC 的默认是 NULLS FIRST），同周没做完的任务一多，
+    // limit 5 就被它们占满，叙事会在「完成 N 个学习任务」的下一行写「本周
+    // 还没有验收通过的学习任务」。同一份数据两次生成也不会换行：顺序用
+    // accepted_at + id 排死。
     db
-      .select({
-        title: tasks.title,
-        status: tasks.status,
-        acceptedAt: tasks.acceptedAt,
-      })
+      .select({ title: tasks.title })
       .from(tasks)
       .where(
         and(
           eq(tasks.userId, userId),
           inArray(tasks.template, [...LEARNING_TEMPLATES]),
+          inArray(tasks.status, ["accepted", "done"]),
           gte(tasks.createdAt, range.start),
           lt(tasks.createdAt, range.end),
         ),
       )
-      .orderBy(desc(tasks.acceptedAt))
+      .orderBy(sql`${tasks.acceptedAt} desc nulls last`, desc(tasks.id))
       .limit(5),
     db
       .select({
@@ -59,9 +61,7 @@ export async function regenerateWeeklyReview(userId: string) {
     metrics.recallAvg === null
       ? "本周还没有回忆数据"
       : `回忆正确率平均 ${Math.round(metrics.recallAvg * 100)}%`;
-  const completedTitles = learningTasks
-    .filter((task) => ["accepted", "done"].includes(task.status))
-    .map((task) => task.title);
+  const completedTitles = completedLearning.map((task) => task.title);
 
   // 没有活跃学习目标时整行不出现："目标进度 0%" 会让人以为目标存在但没动，
   // 而其实这一周根本没有可对照的目标。
