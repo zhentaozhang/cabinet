@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { artifacts, tasks } from "@/lib/db/schema";
+import { artifacts, learningAttempts, tasks } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { getPolicyConfigFor } from "@/lib/policy/config";
 import { assertTransition } from "@/lib/domain/state";
@@ -117,6 +117,25 @@ export async function overrideAudit({
       verdict: decision === "accepted" ? "pass" : "fail",
       source: "audit.override",
     });
+
+    // 判卷历史里的"这份答案被接受了吗"必须与任务结论一致。
+    //
+    // audit.ts 给出结论时会回填这个字段（它只在模型判过时回填，因为那时它
+    // 确定这行存在）；人接手判定的这条路径同样要回填，否则同一次作答会在两
+    // 处说相反的话：任务页写"已通过"，导出的学习历史仍写"未被接受"——而这
+    // 条路径恰恰是离线用户的常态（判卷项没有模型必然落到 needs_review）。
+    //
+    // 不按"必须命中一行"来判错：没有判卷项的任务本来就没有这行记录，零行是
+    // 正常结果，不像 audit 那样能确定它刚刚写过。
+    await tx
+      .update(learningAttempts)
+      .set({ accepted: decision === "accepted" })
+      .where(
+        and(
+          eq(learningAttempts.userId, userId),
+          eq(learningAttempts.taskId, taskId),
+        ),
+      );
 
     // 人判通过之后目标进度必须当场重算。
     //
