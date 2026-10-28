@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { RetrievedEvidenceDto, StepDto } from "@/contracts";
+import type {
+  AcceptanceItemDto,
+  RetrievedEvidenceDto,
+  StepDto,
+} from "@/contracts";
 import { TASK_STATUSES, type TaskStatus } from "@/contracts/dto/entities";
 import { statusLabel, statusTone } from "@/contracts/labels";
 import {
@@ -17,7 +21,10 @@ import {
   getStatusSummary,
   isKnownTaskStatus,
   resolveFailurePresentation,
+  resolveRejectionPresentation,
   summarizeTaskCitations,
+  tallyChecklist,
+  checklistBadge,
   type TaskNextActionCategory,
 } from "@/lib/presentation/task-view";
 
@@ -797,5 +804,154 @@ describe("pendingDecisionItems lists only what a person still has to settle", ()
       "人工核验项：第一项",
       "人工核验项：第二项",
     ]);
+  });
+});
+describe("the page narrates the rejection that is current, not one the window still holds", () => {
+  const auditorReject = {
+    after: { reason: "缺少 rerank 章节。" } as Record<string, unknown>,
+    createdAt: "2026-10-20T02:00:00.000Z",
+  };
+  const userReject = {
+    decision: "rejected",
+    reason: "结论对，但证据没标出处。",
+    decidedAt: "2026-10-26T03:00:00.000Z",
+  };
+
+  it("does not keep calling a resubmitted task rejected", () => {
+    // 重新提交不写审计事件，所以十行审计窗口里最新的一条仍是上次的
+    // audit.reject；旧判据（status==="rejected" || 窗口里有 audit.reject）
+    // 会把"已提交、等待复验"的任务画成"被驳回"。
+    const current = resolveRejectionPresentation({
+      taskStatus: "submitted",
+      override: null,
+      auditorReject,
+    });
+    expect(current).toEqual({
+      isRejected: false,
+      byUser: false,
+      reason: undefined,
+      at: null,
+    });
+  });
+
+  it("credits the user's own rejection instead of an older auditor one", () => {
+    const current = resolveRejectionPresentation({
+      taskStatus: "rejected",
+      override: userReject,
+      auditorReject,
+    });
+    // 窗口里那条 audit.reject 属于上一次尝试，不能拿来当"当前的驳回原因"。
+    expect(current).toEqual({
+      isRejected: true,
+      byUser: true,
+      reason: "结论对，但证据没标出处。",
+      at: "2026-10-26T03:00:00.000Z",
+    });
+  });
+
+  it("attributes an auditor rejection to the auditor, with its own timestamp", () => {
+    const current = resolveRejectionPresentation({
+      taskStatus: "rejected",
+      override: null,
+      auditorReject,
+    });
+    expect(current).toEqual({
+      isRejected: true,
+      byUser: false,
+      reason: "缺少 rerank 章节。",
+      at: "2026-10-20T02:00:00.000Z",
+    });
+  });
+
+  it("leaves the reason empty when the event has none, so the page can say so", () => {
+    const current = resolveRejectionPresentation({
+      taskStatus: "rejected",
+      override: null,
+      auditorReject: { after: null, createdAt: "2026-10-20T02:00:00.000Z" },
+    });
+    expect(current.reason).toBeUndefined();
+    expect(current.isRejected).toBe(true);
+  });
+});
+describe("the checklist badge tells failures apart from items nobody judged", () => {
+  const checklist: AcceptanceItemDto[] = [
+    { type: "contains", value: "RAG", required: true },
+    { type: "judge", value: "能解释清楚", required: true },
+    { type: "min_words", value: 20, required: false },
+  ];
+
+  it("does not count an undetermined item as a failure", () => {
+    // domain/acceptance.ts 给 undetermined 的条目 `passed: false`：拿 `!passed`
+    // 数失败，就会把「没人判过」印成「未通过」，而「需人工复核」永远显示不出来。
+    const tally = tallyChecklist(checklist, [
+      { item: checklist[0], passed: true, reason: "包含关键词。" },
+      {
+        item: checklist[1],
+        passed: false,
+        reason: "需要模型判定。",
+        undetermined: true,
+      },
+      { item: checklist[2], passed: true, reason: "字数够。" },
+    ]);
+
+    expect(tally).toEqual({
+      total: 3,
+      passed: 2,
+      failed: 0,
+      undetermined: 1,
+      pending: 0,
+    });
+    expect(checklistBadge(tally)).toEqual({
+      kind: "undetermined",
+      tone: "accent",
+      label: "需人工复核 (1 项)",
+    });
+  });
+
+  it("keeps a real failure and says how many items are still waiting", () => {
+    const tally = tallyChecklist(checklist, [
+      { item: checklist[0], passed: false, reason: "缺少关键词。" },
+      {
+        item: checklist[1],
+        passed: false,
+        reason: "需要模型判定。",
+        undetermined: true,
+      },
+      { item: checklist[2], passed: true, reason: "字数够。" },
+    ]);
+
+    expect(tally.failed).toBe(1);
+    expect(checklistBadge(tally)).toEqual({
+      kind: "failed",
+      tone: "danger",
+      label: "未通过 (1/3) · 待复核 1 项",
+    });
+  });
+
+  it("says the audit has not run yet when there is no report", () => {
+    const tally = tallyChecklist(checklist, null);
+    expect(tally.pending).toBe(3);
+    expect(checklistBadge(tally)).toEqual({
+      kind: "pending",
+      tone: "neutral",
+      label: "待验收 (3 项)",
+    });
+  });
+
+  it("reports a checklist that passed in full, and nothing for an empty one", () => {
+    const passed = checklistBadge(
+      tallyChecklist(checklist, [
+        { item: checklist[0], passed: true, reason: "ok" },
+        { item: checklist[1], passed: true, reason: "ok" },
+        { item: checklist[2], passed: true, reason: "ok" },
+      ]),
+    );
+    expect(passed).toEqual({
+      kind: "passed",
+      tone: "teal",
+      label: "全部通过 (3/3)",
+    });
+
+    expect(checklistBadge(tallyChecklist([], null))).toBeNull();
   });
 });

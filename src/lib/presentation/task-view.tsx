@@ -215,6 +215,86 @@ export function pendingDecisionItems(
     }));
 }
 
+/**
+ * 验收清单的三个桶：通过 / 明确没通过 / 还没人判。
+ *
+ * `undetermined` 的条目在 domain/acceptance.ts 里 `passed` 也是 false——它们
+ * 是「没有结论」，不是「判过没过」。页面若用 `!passed` 数失败，就会把没人判
+ * 过的条目印成「未通过」，「需人工复核」那枚徽章也因此永远轮不到显示
+ * （失败数恒大于等于待判数，分支走不到）。
+ */
+export type ChecklistTally = {
+  total: number;
+  passed: number;
+  failed: number;
+  undetermined: number;
+  pending: number;
+};
+
+export function tallyChecklist(
+  checklist: AcceptanceItemDto[] | null | undefined,
+  report: AcceptanceResultDto[] | null | undefined,
+): ChecklistTally {
+  const tally: ChecklistTally = {
+    total: checklist?.length ?? 0,
+    passed: 0,
+    failed: 0,
+    undetermined: 0,
+    pending: 0,
+  };
+  (checklist ?? []).forEach((_, index) => {
+    const result = report?.[index];
+    if (!result) {
+      tally.pending += 1;
+      return;
+    }
+    if (result.undetermined === true) {
+      tally.undetermined += 1;
+      return;
+    }
+    if (result.passed) tally.passed += 1;
+    else tally.failed += 1;
+  });
+  return tally;
+}
+
+/** 验收标准卡片右上角那枚徽章。文案与数字都来自同一份 tally。 */
+export function checklistBadge(tally: ChecklistTally): {
+  kind: "passed" | "failed" | "undetermined" | "pending";
+  tone: BadgeTone;
+  label: string;
+} | null {
+  if (tally.total === 0) return null;
+  if (tally.failed > 0) {
+    const waiting =
+      tally.undetermined > 0 ? ` · 待复核 ${tally.undetermined} 项` : "";
+    return {
+      kind: "failed",
+      tone: "danger",
+      label: `未通过 (${tally.failed}/${tally.total})${waiting}`,
+    };
+  }
+  if (tally.undetermined > 0) {
+    return {
+      kind: "undetermined",
+      tone: "accent",
+      // 待判的条目数可能少于清单总数（其余已经通过），所以只报待判数。
+      label: `需人工复核 (${tally.undetermined} 项)`,
+    };
+  }
+  if (tally.passed === tally.total) {
+    return {
+      kind: "passed",
+      tone: "teal",
+      label: `全部通过 (${tally.passed}/${tally.total})`,
+    };
+  }
+  return {
+    kind: "pending",
+    tone: "neutral",
+    label: `待验收 (${tally.total} 项)`,
+  };
+}
 export function getChecklistTypeTag(type: AcceptanceItemDto["type"]) {
   switch (type) {
     case "contains":
@@ -484,6 +564,78 @@ export function resolveFailurePresentation({
   };
 }
 
+/**
+ * Who rejected the current artifact, and why.
+ *
+ * The page used to decide this from the newest audit event plus any `audit.reject`
+ * anywhere in the ten-row window, which produced two kinds of wrong narration:
+ *
+ *  - a task that was rejected and then resubmitted was still described as
+ *    rejected (submitting writes no audit event, so the newest one stayed
+ *    `audit.reject`) — the banner promised "the artifact was rejected" while it
+ *    was actually queued for a fresh audit;
+ *  - a human rejection (`audit.override`) rendered under the heading
+ *    "Auditor 驳回原因" with an older auditor reason pulled out of the window,
+ *    so the panel contradicted the user's own decision card.
+ *
+ * The current status is the only thing that says "rejected now"; the reason
+ * comes from whichever event actually produced that status.
+ */
+export type RejectionPresentation = {
+  isRejected: boolean;
+  /** True when the user was the one who rejected it (`audit.override`). */
+  byUser: boolean;
+  reason: string | undefined;
+  /** When that verdict was given; null when the event is missing. */
+  at: string | null;
+};
+
+function reasonText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+const NOT_REJECTED: RejectionPresentation = {
+  isRejected: false,
+  byUser: false,
+  reason: undefined,
+  at: null,
+};
+
+export function resolveRejectionPresentation({
+  taskStatus,
+  override,
+  auditorReject,
+}: {
+  taskStatus: string;
+  override:
+    | { decision: string; reason: string; decidedAt: string }
+    | null
+    | undefined;
+  auditorReject:
+    | { after: Record<string, unknown> | null; createdAt: string }
+    | null
+    | undefined;
+}): RejectionPresentation {
+  if (taskStatus !== "rejected") return NOT_REJECTED;
+  // 人判驳回时，最新的审计事件就是那条 audit.override；窗口里更早的
+  // audit.reject 属于上一次尝试，拿它当"当前的驳回原因"会让同一件事在页面上
+  // 有两个说法（下面那张「你的判定」卡片写的是真实理由）。
+  if (override?.decision === "rejected") {
+    return {
+      isRejected: true,
+      byUser: true,
+      reason: reasonText(override.reason) || undefined,
+      at: override.decidedAt,
+    };
+  }
+  const after = (auditorReject?.after ?? null) as Record<string, unknown> | null;
+  return {
+    isRejected: true,
+    byUser: false,
+    reason: reasonText(after?.reason) || undefined,
+    at: auditorReject?.createdAt ?? null,
+  };
+}
 function failureTitle(taskStatus: string): string {
   if (taskStatus === "failed") return "执行中断 / 失败原因";
   // Recovery rewinds to a not-yet-started state; nothing is running any more.

@@ -45,7 +45,10 @@ import {
   getStatusSummary,
   pendingDecisionItems,
   resolveFailurePresentation,
+  resolveRejectionPresentation,
   summarizeTaskCitations,
+  tallyChecklist,
+  checklistBadge,
 } from "@/lib/presentation/task-view";
 import {
   Avatar,
@@ -98,11 +101,18 @@ export default async function TaskPage({
   );
 
   // Audits & rejections
-  const latestAudit = audit.find((a) => a.action.startsWith("audit."));
   const latestAuditReject = audit.find((a) => a.action === "audit.reject");
-  const isRejected = task.status === "rejected" || latestAudit?.action === "audit.reject";
-  const rejectionReason =
-    ((latestAuditReject?.after ?? latestAudit?.after) as Record<string, unknown> | null)?.reason as string | undefined;
+  // 当前状态才算"被驳回"：重新提交不写审计事件，窗口里最新的一条仍是上次的
+  // audit.reject，拿它当现在时会让横幅把"已提交、等待复验"说成"被驳回"。
+  const rejection = resolveRejectionPresentation({
+    taskStatus: task.status,
+    override,
+    auditorReject: latestAuditReject
+      ? { after: latestAuditReject.after, createdAt: latestAuditReject.createdAt }
+      : null,
+  });
+  const isRejected = rejection.isRejected;
+  const rejectionReason = rejection.reason;
 
   function runProvenance(run: (typeof runs)[number]): {
     label: string;
@@ -122,8 +132,15 @@ export default async function TaskPage({
     index,
     result: task.acceptanceReport?.[index] ?? null,
   }));
-  const failedRows = checklistRows.filter((row) => row.result && !row.result.passed);
-  const undeterminedRows = checklistRows.filter((row) => row.result?.undetermined);
+  // 未通过的条目与「还没人判」的条目是两回事：domain/acceptance.ts 给
+  // undetermined 的条目 `passed: false`，所以这里必须显式排除，否则「需人工
+  // 复核」会同时被算成「不达标」，页面上那枚徽章也永远显示不出来。
+  const failedRows = checklistRows.filter(
+    (row) => row.result && !row.result.passed && !row.result.undetermined
+  );
+  const undeterminedRows = checklistRows.filter(
+    (row) => row.result?.undetermined === true
+  );
   const passedRows = checklistRows.filter(
     (row) => row.result && row.result.passed && !row.result.undetermined
   );
@@ -135,12 +152,11 @@ export default async function TaskPage({
     ...passedRows,
     ...pendingRows,
   ];
-  const passedCount = passedRows.length;
-  const failedCount = failedRows.length;
-  const undeterminedCount = undeterminedRows.length;
-  const totalChecklistCount = checklistRows.length;
-  const allPassed =
-    totalChecklistCount > 0 && passedCount === totalChecklistCount;
+  const checklistTally = tallyChecklist(
+    task.acceptanceChecklist,
+    task.acceptanceReport
+  );
+  const checklistBadgeInfo = checklistBadge(checklistTally);
   /*
     审计没有给出结论时，光有横幅上的"待你判定"是不够的：用户还得自己往
     下翻清单、猜哪一条没人判。这里把"必须判却没有判定人"的条目先摘出来，
@@ -288,11 +304,11 @@ export default async function TaskPage({
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-label font-semibold text-danger">
-                    Auditor 驳回原因
+                    {rejection.byUser ? "你的驳回理由" : "Auditor 驳回原因"}
                   </span>
-                  {latestAudit ? (
+                  {rejection.at ? (
                     <span className="text-label text-faint">
-                      · 判定于 {dateTime(latestAudit.createdAt, tz)}
+                      · 判定于 {dateTime(rejection.at, tz)}
                     </span>
                   ) : null}
                 </div>
@@ -890,25 +906,20 @@ export default async function TaskPage({
               eyebrow="Acceptance Contract"
               title="验收标准与规则契约"
               right={
-                totalChecklistCount === 0 ? null : (
+                checklistBadgeInfo ? (
                   <div className="flex items-center gap-1.5">
-                    {allPassed ? (
-                      <Badge tone="teal">
-                        <CheckCircle2 className="size-3" /> 全部通过 ({passedCount}/{totalChecklistCount})
-                      </Badge>
-                    ) : failedCount > 0 ? (
-                      <Badge tone="danger">
-                        <XCircle className="size-3" /> 未通过 ({failedCount}/{totalChecklistCount})
-                      </Badge>
-                    ) : undeterminedCount > 0 ? (
-                      <Badge tone="accent">
-                        <CircleAlert className="size-3" /> 需人工复核 ({undeterminedCount} 项)
-                      </Badge>
-                    ) : (
-                      <Badge tone="neutral">待验收 ({totalChecklistCount} 项)</Badge>
-                    )}
+                    <Badge tone={checklistBadgeInfo.tone}>
+                      {checklistBadgeInfo.kind === "passed" ? (
+                        <CheckCircle2 className="size-3" />
+                      ) : checklistBadgeInfo.kind === "failed" ? (
+                        <XCircle className="size-3" />
+                      ) : checklistBadgeInfo.kind === "undetermined" ? (
+                        <CircleAlert className="size-3" />
+                      ) : null}
+                      {checklistBadgeInfo.label}
+                    </Badge>
                   </div>
-                )
+                ) : null
               }
             />
             <div className="px-5 py-4">
