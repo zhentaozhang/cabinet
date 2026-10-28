@@ -20,6 +20,14 @@ export type ReviewPageOptions = {
   limit?: number;
 };
 
+/**
+ * 「本周改了什么」那张卡只列几行变更，但要说出"一共有多少条生效了"。
+ * 口径来自整张表，不是上面那页洞察：洞察先被提出、后来才被采纳，所以
+ * 已生效的那几条往往正好落在更早的页上，只按当前页数会把"已生效"说成
+ * "没有生效"。
+ */
+const APPLIED_DIFF_LIMIT = 5;
+
 export async function getReviewData(
   userId: string,
   options: ReviewPageOptions = {},
@@ -39,6 +47,7 @@ export async function getReviewData(
     auditCountRows,
     dissentCountRows,
     allDissents,
+    appliedInsightRows,
     config,
     weeklyMetrics,
   ] = await Promise.all([
@@ -99,6 +108,13 @@ export async function getReviewData(
       .orderBy(desc(dissents.createdAt), desc(dissents.id))
       .limit(limit)
       .offset(dissentOffset),
+    // 已生效的那几条不跟着上面的分页走：条数在整张表里数，展示取最新几条。
+    db
+      .select()
+      .from(insights)
+      .where(and(eq(insights.userId, userId), eq(insights.status, 'applied')))
+      .orderBy(desc(insights.createdAt), desc(insights.id))
+      .limit(APPLIED_DIFF_LIMIT),
     getPolicyConfigFor(userId),
     getWeeklyMetrics(userId),
   ]);
@@ -144,6 +160,9 @@ export async function getReviewData(
     dissents: allDissents,
     insightTotal: Number(insightCounts?.total ?? 0),
     insightProposedTotal: Number(insightCounts?.proposed ?? 0),
+    // 整张表里已生效的条数，不是这一页的：卡片要说的是这一周一共改了什么。
+    insightAppliedTotal: Number(insightCounts?.applied ?? 0),
+    appliedInsights: appliedInsightRows,
     dissentTotal: Number(dissentCounts?.total ?? 0),
     dissentPendingTotal: Number(dissentCounts?.pending ?? 0),
     insightOffset,

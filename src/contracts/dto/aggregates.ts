@@ -205,6 +205,10 @@ export const reviewPageSchema = z.object({
   dissents: z.array(dissentDtoSchema),
   insightTotal: z.number(),
   insightProposedTotal: z.number(),
+  /** 整张表里已生效（applied）的洞察条数，不是 `insights` 这一页的。 */
+  insightAppliedTotal: z.number(),
+  /** 最新的几条已生效洞察，供「本周改了什么」展示；只有前几条，不代表全部。 */
+  appliedInsights: z.array(insightDtoSchema),
   dissentTotal: z.number(),
   dissentPendingTotal: z.number(),
   insightOffset: z.number(),

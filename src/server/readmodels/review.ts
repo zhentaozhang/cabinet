@@ -35,6 +35,8 @@ export async function loadReview(
       dissents: data.dissents.map(toDissentDto),
       insightTotal: data.insightTotal,
       insightProposedTotal: data.insightProposedTotal,
+      insightAppliedTotal: data.insightAppliedTotal,
+      appliedInsights: data.appliedInsights.map(toInsightDto),
       dissentTotal: data.dissentTotal,
       dissentPendingTotal: data.dissentPendingTotal,
       insightOffset: data.insightOffset,

@@ -97,7 +97,9 @@ export default async function ReviewPage({
   const tz = data.user.timezone;
   const metrics = data.weeklyMetrics;
   const agentById = new Map(data.agents.map((agent) => [agent.id, agent]));
-  const applied = data.insights.filter((i) => i.status === "applied");
+  // 已生效的洞察来自整张表（`appliedInsights`），不是在当前这页里筛：
+  // 洞察先被提出、后来才被采纳，生效的那几条往往正好落在更早的页上。
+  const applied = data.appliedInsights;
   const pageHref = (next: {
     insightOffset?: number;
     dissentOffset?: number;
@@ -280,13 +282,18 @@ export default async function ReviewPage({
                 <span className="truncate text-muted">{insight.claim}</span>
               </div>
             ))}
-            {decisions.length === 0 && applied.length === 0 ? (
+            {decisions.length === 0 && data.insightAppliedTotal === 0 ? (
               <div className="px-5 py-6 text-label text-muted">
                 {/* `decisions` 目前恒为空：`reviews.ts:115`/`:134` 与 `brief.ts:37`/`:41`
                     都写死 `decisions: []`，只有 seed 里非空。所以这里只承诺"采纳洞察"
                     这一条真实存在的写入路径；若将来接入任务变更记录，这句和上面的
                     `decisions.map` 要一起改。 */}
                 本周没有已生效的变更。复盘时采纳一条洞察，这里就会多一行。
+              </div>
+            ) : null}
+            {data.insightAppliedTotal > applied.length ? (
+              <div className="px-5 py-3 text-label text-faint">
+                共 {data.insightAppliedTotal} 条已生效的变更，这里只列最新的 {applied.length} 条。
               </div>
             ) : null}
           </div>
