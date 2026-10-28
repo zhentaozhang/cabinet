@@ -9,6 +9,7 @@ import {
   tasks,
   users,
 } from "@/lib/db/schema";
+import { getPolicyConfigFor } from "@/lib/policy/config";
 import { loadWeeklyUsage } from "./budget";
 import { loadApprenticeshipEvidence } from "./apprenticeship";
 export async function getAgentData(agentId: string, userId: string) {
@@ -28,6 +29,7 @@ export async function getAgentData(agentId: string, userId: string) {
     taskTotal,
     userRows,
     grantRows,
+    policy,
   ] = await Promise.all([
     // Every list here is a window, so the tie-break column matters: rows created
     // in one statement share a timestamp, and without an id the "latest run"
@@ -73,6 +75,10 @@ export async function getAgentData(agentId: string, userId: string) {
       .from(agentGrants)
       .where(eq(agentGrants.agentId, agentId))
       .orderBy(desc(agentGrants.createdAt), desc(agentGrants.id)),
+    // 升级门槛：卡片上那行「升级需要」必须印后端真正判的那几条，
+    // 包括审计通过率下限（decideUpgrade 最后一道闸）。读用户级配置，
+    // 因为它给的是这台部署对这个用户生效的门槛，而不是另一份常量副本。
+    getPolicyConfigFor(userId),
   ]);
   const timezone = userRows[0]?.timezone ?? "UTC";
   // Read-only: a page load never provisions a bucket.
@@ -88,6 +94,14 @@ export async function getAgentData(agentId: string, userId: string) {
   return {
     apprenticeship,
     timezone,
+    policy: {
+      autonomy: {
+        minTrust: policy.autonomy.minTrust,
+        minSuccesses: policy.autonomy.minSuccesses,
+        minAuditSamples: policy.autonomy.minAuditSamples,
+        minAuditPassRate: policy.autonomy.minAuditPassRate,
+      },
+    },
     agent,
     budget,
     grants: grantRows,

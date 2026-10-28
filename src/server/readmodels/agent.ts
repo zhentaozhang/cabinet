@@ -22,6 +22,7 @@ export async function loadAgent(
     agentPageSchema,
     {
       timezone: data.timezone,
+      policy: data.policy,
       agent: toAgentDto(data.agent),
       budget: toBudgetViewDto(data.budget),
       grants: data.grants.map((grant) => toGrantDto(grant)),

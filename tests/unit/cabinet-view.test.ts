@@ -3,6 +3,7 @@ import {
   agentHeadcount,
   escalationPolicyLine,
   tasksPerAgent,
+  upgradeRequirementsLine,
 } from "@/lib/presentation/cabinet-view";
 
 describe("tasksPerAgent", () => {
@@ -62,5 +63,48 @@ describe("escalationPolicyLine", () => {
     // 数字：0 或 NaN 会让这句话读成「连续驳回 0 次」，比不写更糟。
     expect(escalationPolicyLine(0)).toContain("连续驳回 1 次");
     expect(escalationPolicyLine(Number.NaN)).toContain("连续驳回 1 次");
+  });
+});
+describe("upgradeRequirementsLine", () => {
+  it("prints the pass-rate floor the runtime actually enforces", () => {
+    // decideUpgrade 的最后一道闸是审计通过率 ≥ config.autonomy.minAuditPassRate
+    // （默认 0.9）。原本文案只列了信任分/成功任务/样本数/非试用期四条，
+    // 有人把这四条全做到、通过率只有一半时升级会被拒，而页面从没提过。
+    const line = upgradeRequirementsLine({
+      minTrust: 70,
+      minSuccesses: 3,
+      minAuditSamples: 5,
+      minAuditPassRate: 0.9,
+    });
+    expect(line).toContain("信任分 ≥70");
+    expect(line).toContain("成功任务 ≥3");
+    expect(line).toContain("有效审计样本 ≥5");
+    expect(line).toContain("审计通过率 ≥90%");
+  });
+
+  it("follows the config instead of a copy of its defaults", () => {
+    // 四个数都是调用方传进来的门槛，不是页面自带的常量。
+    const line = upgradeRequirementsLine({
+      minTrust: 85,
+      minSuccesses: 6,
+      minAuditSamples: 12,
+      minAuditPassRate: 0.5,
+    });
+    expect(line).toContain("信任分 ≥85");
+    expect(line).toContain("审计通过率 ≥50%");
+    expect(line).not.toContain("≥70");
+  });
+
+  it("keeps a non-finite rate inside 0–100", () => {
+    // 从 API 反序列化来的数字可能是 NaN：那句话会读成「审计通过率 ≥100%」，
+    // 谁也过不了。
+    const line = upgradeRequirementsLine({
+      minTrust: Number.NaN,
+      minSuccesses: 3,
+      minAuditSamples: 5,
+      minAuditPassRate: 1.4,
+    });
+    expect(line).toContain("审计通过率 ≥100%");
+    expect(line).toContain("信任分 ≥0");
   });
 });

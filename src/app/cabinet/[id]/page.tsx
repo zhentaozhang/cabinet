@@ -275,7 +275,11 @@ export default async function AgentPage({
           <Card>
             <CardHeader eyebrow="Autonomy" title="授权控制" />
             <div className="px-5 py-4">
-              <AutonomyControl agentId={agent.id} level={agent.autonomyLevel} />
+              <AutonomyControl
+                agentId={agent.id}
+                level={agent.autonomyLevel}
+                requirements={data.policy.autonomy}
+              />
             </div>
           </Card>
 

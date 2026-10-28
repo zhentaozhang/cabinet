@@ -69,3 +69,34 @@ export function agentHeadcount(
   }
   return { total: agents.length, onDuty, growing, retired };
 }
+export type UpgradeRequirements = {
+  minTrust: number;
+  minSuccesses: number;
+  minAuditSamples: number;
+  minAuditPassRate: number;
+};
+
+/**
+ * 授权控制卡下面那行「升级需要：…」。
+ *
+ * 原文写死「信任分 ≥70 · 成功任务 ≥3 · 有效审计样本 ≥5 · 非试用期」——四个数字
+ * 是 `config.autonomy` 的默认值，而且漏了最后一个真正的门槛：
+ * `src/lib/domain/policy.ts` 的 `decideUpgrade` 还会要求审计通过率
+ * ≥ `config.autonomy.minAuditPassRate`（默认 0.9）。也就是说有人把这四条全
+ * 做到、通过率只有一半时，升级会被拒，而页面从没提过这一条。
+ *
+ * 门槛全部来自调用方传入的配置值，不再有一份和代码并行的副本。
+ */
+export function upgradeRequirementsLine(input: UpgradeRequirements): string {
+  const trust = Math.max(0, Math.round(finiteOr(input.minTrust, 0)));
+  const successes = Math.max(0, Math.round(finiteOr(input.minSuccesses, 0)));
+  const samples = Math.max(0, Math.round(finiteOr(input.minAuditSamples, 0)));
+  const rate = Math.round(
+    Math.min(1, Math.max(0, finiteOr(input.minAuditPassRate, 1))) * 100,
+  );
+  return `升级需要：信任分 ≥${trust} · 成功任务 ≥${successes} · 有效审计样本 ≥${samples} · 审计通过率 ≥${rate}% · 非试用期。`;
+}
+
+function finiteOr(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}

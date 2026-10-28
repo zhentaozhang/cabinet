@@ -303,6 +303,18 @@ export type ApprenticeshipEvidenceDto = z.infer<
 
 export const agentPageSchema = z.object({
   timezone: z.string(),
+  /**
+   * 升级门槛本身（不是它的文案副本）：授权控制卡下面那行字由这几个数拼出来。
+   * `decideUpgrade` 判的正是这几条，所以页面不可能比后端少承诺一条。
+   */
+  policy: z.object({
+    autonomy: z.object({
+      minTrust: z.number(),
+      minSuccesses: z.number(),
+      minAuditSamples: z.number(),
+      minAuditPassRate: z.number(),
+    }),
+  }),
   agent: agentDtoSchema,
   grants: z.array(grantDtoSchema),
   budget: budgetViewDtoSchema,

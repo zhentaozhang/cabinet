@@ -15,6 +15,8 @@ import {
   loadTask,
   loadToday,
 } from "@/server/readmodels";
+import { getPolicyConfigFor } from "@/lib/policy/config";
+import { upgradeRequirementsLine } from "@/lib/presentation/cabinet-view";
 import { resetDb } from "../helpers/db";
 
 beforeEach(async () => {
@@ -30,6 +32,28 @@ describe("page DTO contracts", () => {
     await expect(loadMemory(DEMO_USER_ID)).resolves.toBeTruthy();
     await expect(loadTask("tsk_read", DEMO_USER_ID)).resolves.toBeTruthy();
     await expect(loadAgent("ag_coach", DEMO_USER_ID)).resolves.toBeTruthy();
+  });
+});
+
+/**
+ * Agent 详情页的授权控制卡下面写着「升级需要：…」。那行字原来是一份写死的
+ * 副本（信任分 ≥70 · 成功任务 ≥3 · 有效审计样本 ≥5 · 非试用期），漏了
+ * decideUpgrade 的最后一道闸：审计通过率 ≥ config.autonomy.minAuditPassRate。
+ * 现在门槛走页面 DTO，这里钉住它和真正判升级用的配置是同一份值。
+ */
+describe("the agent page prints the upgrade floors the runtime enforces", () => {
+  it("carries every threshold decideUpgrade checks", async () => {
+    const config = await getPolicyConfigFor(DEMO_USER_ID);
+    const page = await loadAgent("ag_coach", DEMO_USER_ID);
+    expect(page?.policy.autonomy).toEqual({
+      minTrust: config.autonomy.minTrust,
+      minSuccesses: config.autonomy.minSuccesses,
+      minAuditSamples: config.autonomy.minAuditSamples,
+      minAuditPassRate: config.autonomy.minAuditPassRate,
+    });
+    expect(
+      upgradeRequirementsLine(page!.policy.autonomy),
+    ).toContain("审计通过率 ≥90%");
   });
 });
 

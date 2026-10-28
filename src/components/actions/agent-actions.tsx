@@ -15,14 +15,21 @@ import { API_ROUTES } from "@/contracts/routes";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/format";
+import {
+  upgradeRequirementsLine,
+  type UpgradeRequirements,
+} from "@/lib/presentation/cabinet-view";
 import { call } from "./shared";
 
 export function AutonomyControl({
   agentId,
   level,
+  requirements,
 }: {
   agentId: string;
   level: number;
+  /** 来自 policy 的升级门槛，页面不再自带一份写死的副本。 */
+  requirements: UpgradeRequirements;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<number | null>(null);
@@ -62,7 +69,7 @@ export function AutonomyControl({
         ))}
       </div>
       <div className="mt-2 text-label text-faint">
-        升级需要：信任分 ≥70 · 成功任务 ≥3 · 有效审计样本 ≥5 · 非试用期。
+        {upgradeRequirementsLine(requirements)}
       </div>
       {error ? <div className="mt-2 text-label text-danger">{error}</div> : null}
     </div>
