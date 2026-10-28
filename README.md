@@ -115,7 +115,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | 记忆 | 证据、scope、冲突、删除、历史；排序 = 词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度，可注入外部 rerank | 没有 embedding / 向量库（本机 Postgres 无 `vector` 扩展）；写入面只有删除（`DELETE /api/memories/:id`，留 `memory.delete` 审计），没有编辑接口，也没有「按领域要求你确认」的闸门——Agent 写的健康类记忆同样直接生效，所以记忆页不承诺这两件事 |
 | 学习任务 | 规则生成；知识点掌握度 + SM-2 间隔重复排期；到期优先复习 | 依赖学习目标和 Check-in；难度仍来自配置；只要上一条学习任务还没了结（含"待你判定"），复用的是同一条，不会每打一次卡再发一道——"先查有没有在手任务、再插入"在同一个事务里按用户加了咨询锁，并发打卡/双击"下一题"也只会排出一道 |
 | 反思 | 规则候选 → 洞察 → 采纳/回滚；`set_policy` 提案走白名单覆盖表 | 候选仍是规则生成，不调用模型 |
-| 内阁 | 用户发起；规则生成 5 个立场；批准/有条件批准生成跟进任务，决议写入程序记忆 | 不自动召集；议题挂在「最近在推的那个活跃目标」上（进度也取它，不是一个随机活跃目标），claim 里的「近 7 天 N 个任务」按 SQL 统计，不受展示用的 12 条上限影响；印证异议时给 Agent 加/减信任分是「锁住这一行再读写」，不会把同一时刻审计路径刚提交的增量覆盖掉，审计行里的前后值也就是库里的值；每位成员一次生成一条立场，没有轮次也没有计时（页面上不写「每人 60 秒 / 最多 2 轮」这种没有实现的说法）；异议的证伪门槛（`audit.rejectStreakLimit`）取自你自己的策略值——洞察把这个键调松或调紧之后，会议写下的条件与真正暂停 Agent 的阈值是同一个数 |
+| 内阁 | 用户发起；规则生成 5 个立场；批准/有条件批准生成跟进任务，决议写入程序记忆 | 不自动召集；议题挂在「最近在推的那个活跃目标」上（进度也取它，不是一个随机活跃目标），claim 里的「近 7 天 N 个任务」按 SQL 统计，不受展示用的 12 条上限影响；印证异议时给 Agent 加/减信任分是「锁住这一行再读写」，不会把同一时刻审计路径刚提交的增量覆盖掉，审计行里的前后值也就是库里的值；每位成员一次生成一条立场，没有轮次也没有计时（页面上不写「每人 60 秒 / 最多 2 轮」这种没有实现的说法）；异议的证伪门槛（`audit.rejectStreakLimit`）取自你自己的策略值——洞察把这个键调松或调紧之后，会议写下的条件与真正暂停 Agent 的阈值是同一个数；会议规则按真实门槛写——不声称自动召集，也不声称少了 Critic 就「会议无效」（有效性只看参与人数下限），Auditor 不在内阁里 |
 | 学徒 | 5 条观摩证据 → 确定性考试 → 练习通过 → 常规审计 | 考试是模板产物；练习通过不等于转正 |
 | 模型 | 默认一次 `generateText`；判卷是 temperature 0 的独立调用；`MODEL_TOOL_SELECTION=on` 时模型每选一次工具都是一次独立调用 | 失败不静默回退，判卷失败降级为"未判定" |
 | 外部工具 | `web_search` / `web_fetch` 走真实检索；MCP 服务器按声明调用（`tool-loop.ts runMcpToolLoop`）；`MODEL_TOOL_SELECTION=on` 时改由模型在 `web_search` / `web_fetch` 之间逐步选择（默认关闭，走计划好的单个工具） | 未声明的工具步骤仍是 `not_connected`；两条路径互斥，MCP 调用不经过模型 |
@@ -280,7 +280,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->159<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1315<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->160<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1319<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 

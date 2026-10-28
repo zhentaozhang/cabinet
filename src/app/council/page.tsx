@@ -21,6 +21,7 @@ import {
 } from "@/components/ui";
 import { CouncilActions, NewCouncilForm } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
+import { COUNCIL_RULES } from "@/lib/presentation/council-view";
 
 export const metadata: Metadata = {
   title: "Council · Cabinet",
@@ -285,11 +286,12 @@ export default async function CouncilPage() {
           <Card>
             <CardHeader eyebrow="Rules" title="会议规则" />
             <div className="space-y-2 px-5 py-4 text-label leading-relaxed text-muted">
-              <p>① 只在高风险决策时召开，不替代日常执行。</p>
-              <p>② 每个 Agent 必须给证据，不允许只给观点。</p>
-              <p>③ Critic 必须唱反调，否则会议无效。</p>
-              <p>④ Auditor 只旁听，不投票；验收时独立判断。</p>
-              <p>⑤ 你有一票否决权，但必须留下理由。</p>
+              {COUNCIL_RULES.map((rule, index) => (
+                <p key={rule}>
+                  {["① ", "② ", "③ ", "④ ", "⑤ "][index]}
+                  {rule}
+                </p>
+              ))}
             </div>
           </Card>
 
