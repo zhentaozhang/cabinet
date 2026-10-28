@@ -22,6 +22,7 @@ import {
   learningAttempts,
   learningMastery,
   learningTopics,
+  mcpServers,
   memories,
   outbox,
   policyOverrides,
@@ -58,6 +59,8 @@ export async function exportAccount(userId: string) {
     outboxRows,
     retrievalRows,
     runJobRows,
+    userActionRows,
+    mcpServerRows,
     topicRows,
     masteryRows,
     attemptRows,
@@ -80,6 +83,12 @@ export async function exportAccount(userId: string) {
     db.select().from(outbox).where(eq(outbox.userId, userId)),
     db.select().from(retrievalCalls).where(eq(retrievalCalls.userId, userId)),
     db.select().from(runJobs).where(eq(runJobs.userId, userId)),
+    // 这里是内存版（测试与设置页的预览用）；真正下载的是
+    // account-export.ts 的 NDJSON。两份清单必须一致，否则"能删不能带走"会
+    // 从任意一侧漏出去——导出表清单的守卫在
+    // tests/integration/export-coverage.test.ts。
+    db.select().from(userActions).where(eq(userActions.userId, userId)),
+    db.select().from(mcpServers).where(eq(mcpServers.userId, userId)),
     // 学习历史与策略覆盖同样是用户的个人数据：迁移到一个新工具时，
     // "我复习过哪些知识点、答错过什么" 不能说丢就丢。
     db.select().from(learningTopics).where(eq(learningTopics.userId, userId)),
@@ -172,6 +181,8 @@ export async function exportAccount(userId: string) {
     outbox: outboxRows,
     retrievalCalls: retrievalRows,
     runJobs: runJobRows,
+    userActions: userActionRows,
+    mcpServers: mcpServerRows,
     learningTopics: topicRows,
     learningMastery: masteryRows,
     learningAttempts: attemptRows,

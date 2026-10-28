@@ -109,7 +109,8 @@ export function DataControls() {
         onConfirm={deleteData}
       />
       <p className="text-label leading-relaxed text-faint">
-        导出包含 Agent、目标、任务、记忆、复盘和审计事件；不包含密码或会话。
+        导出包含 Agent、目标、任务、记忆、复盘、审计事件、学习历史、外部工具配置和操作流水；
+        不包含密码、登录会话、幂等键和限流窗口。
       </p>
     </div>
   );

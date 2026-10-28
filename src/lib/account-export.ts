@@ -20,21 +20,45 @@ import {
   learningAttempts,
   learningMastery,
   learningTopics,
+  mcpServers,
   memories,
   outbox,
   policyOverrides,
   profiles,
   retrievalCalls,
   reviews,
+  runJobs,
   runs,
   skills,
   steps,
   tasks,
+  userActions,
   users,
 } from "@/lib/db/schema";
 
 /** Rows per line. Small enough that one line never dominates the response. */
 const CHUNK = 500;
+
+/**
+ * 用户有权删除、但故意不进备份的表。
+ *
+ * 规则只有一条：这张表里装的是**用户自己的数据**就必须能带走。会话、
+ * 账号凭据、限流窗口、幂等键不是数据，是运行这具身体的零件——把它们写进
+ * 用户会转发出去的备份文件，等于把 token 一起交出去。
+ *
+ * 这份清单被 `tests/integration/export-coverage.test.ts` 当成白名单：删号
+ * 路径删掉的表如果既没导出、也不在清单里，测试会失败，而不是让用户在用
+ * 别的工具重建自己的时候才发现少了一部分。
+ */
+export const EXPORT_OMITTED_TABLES: ReadonlyArray<{
+  table: string;
+  reason: string;
+}> = [
+  { table: "sessions", reason: "登录会话：备份文件会被转发，不能带 token" },
+  { table: "accounts", reason: "第三方账号与密码凭据：同上" },
+  { table: "idempotency_keys", reason: "请求幂等键（含缓存的响应体），过期即删" },
+  { table: "rate_limits", reason: "限流窗口，24 小时后由 tick 清理" },
+];
 
 type Fetcher = (limit: number, offset: number) => Promise<unknown[]>;
 
@@ -53,12 +77,6 @@ export async function* exportAccountNdjson(
   userId: string,
 ): AsyncGenerator<string> {
   const cutoff = new Date();
-  yield line({
-    kind: "meta",
-    format: "cabinet-ndjson/1",
-    exportedAt: cutoff.toISOString(),
-    note: "每行一个 JSON 对象；同一张表可能分多行（rows 数组）返回。",
-  });
 
   const agentIds = (
     await db.select({ id: agents.id }).from(agents).where(eq(agents.userId, userId))
@@ -152,6 +170,19 @@ export async function* exportAccountNdjson(
               .limit(limit)
               .offset(offset)
           : Promise.resolve([]),
+    },
+    // 作业队列的行：重试次数、租约、最后一次失败原因。它不是流水账，但
+    // deleteAccount 会把它删掉，而"能删不能带走"没有第二种解释。
+    {
+      name: "runJobs",
+      rows: (limit, offset) =>
+        db
+          .select()
+          .from(runJobs)
+          .where(eq(runJobs.userId, userId))
+          .orderBy(runJobs.id)
+          .limit(limit)
+          .offset(offset),
     },
     {
       name: "artifacts",
@@ -280,6 +311,19 @@ export async function* exportAccountNdjson(
           .limit(limit)
           .offset(offset),
     },
+    // 用户自己的操作流水。它不是调试日志：管理时长一类指标就是从这里算的，
+    // 换工具重建工作区时，"我什么时候做过什么"是数据本身。
+    {
+      name: "userActions",
+      rows: (limit, offset) =>
+        db
+          .select()
+          .from(userActions)
+          .where(eq(userActions.userId, userId))
+          .orderBy(userActions.id)
+          .limit(limit)
+          .offset(offset),
+    },
     {
       name: "dissents",
       rows: (limit, offset) =>
@@ -405,6 +449,19 @@ export async function* exportAccountNdjson(
           .limit(limit)
           .offset(offset),
     },
+    // 用户配的外部工具服务。只有名字、地址、scope、开关，没有密钥——
+    // 凭据在 agent_grants 的授权里，而那一张早就导出了。
+    {
+      name: "mcpServers",
+      rows: (limit, offset) =>
+        db
+          .select()
+          .from(mcpServers)
+          .where(eq(mcpServers.userId, userId))
+          .orderBy(mcpServers.id)
+          .limit(limit)
+          .offset(offset),
+    },
     {
       name: "outbox",
       rows: (limit, offset) =>
@@ -417,6 +474,17 @@ export async function* exportAccountNdjson(
           .offset(offset),
     },
   ];
+
+  // 清单写在文件头里，而不是只存在这份源码里：读到备份的人要能一眼看出
+  // 它包含了什么、以及缺的那几张为什么缺。
+  yield line({
+    kind: "meta",
+    format: "cabinet-ndjson/1",
+    exportedAt: cutoff.toISOString(),
+    note: "每行一个 JSON 对象；同一张表可能分多行（rows 数组）返回。",
+    tables: tables.map((table) => table.name),
+    omitted: EXPORT_OMITTED_TABLES.map((entry) => entry.table),
+  });
 
   for (const table of tables) {
     let offset = 0;
