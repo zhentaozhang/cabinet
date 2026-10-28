@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { db } from "./index";
 import {
   accounts,
@@ -29,11 +29,15 @@ import {
 import { canonicalJson, sha256 } from "../ids";
 import { weekLabel } from "../format";
 import { SEED_POLICY_CONFIG } from "../domain/policy";
+import { computeLearningProgress } from "../domain/learning-progress";
+import { LEARNING_TEMPLATES } from "../domain/learning";
+import { getPolicyConfig } from "../policy/config";
 import {
   addLocalDays,
   localDateKey,
   localDateTimeParts,
   startOfLocalWeek,
+  weekRange,
   zonedTimeToUtc,
 } from "../domain/time";
 import { AGENT_TEMPLATES } from "@/contracts/templates";
@@ -106,6 +110,65 @@ export async function seedDemo(): Promise<void> {
   await seedCouncil();
   await seedSamples();
   await markDemoFixtures();
+  await seedLearningProgress();
+}
+
+/**
+ * 学习目标的进度是派生值，不是设定值。
+ *
+ * 这里以前写死 `progress: 38`，而公式按种子自己的数据算出来是 16：用户第一次
+ * 打卡（或复盘、验收任何一步触发重算）就会看到进度"掉"了 22 点——他没有取消
+ * 任何任务，只是那次重算第一次把真话说出来。种子只负责把输入铺好，输出按同一份
+ * 公式算，`tests/integration/demo-progress.test.ts` 守着两者相等。
+ */
+async function seedLearningProgress(): Promise<void> {
+  const config = await getPolicyConfig();
+  const range = weekRange(new Date(), DEMO_TIMEZONE);
+  const [taskRows, checkinRows, recallRows] = await Promise.all([
+    db
+      .select({ status: tasks.status })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.userId, USER_ID),
+          eq(tasks.goalId, "goal_rag"),
+          inArray(tasks.template, [...LEARNING_TEMPLATES]),
+          // 撤回的任务不进分母（与 commands/progress.ts 的同一条规则）。
+          ne(tasks.status, "cancelled"),
+        ),
+      ),
+    db
+      .select({ id: checkins.id })
+      .from(checkins)
+      .where(
+        and(
+          eq(checkins.userId, USER_ID),
+          gte(checkins.date, localDateKey(range.start, DEMO_TIMEZONE)),
+          lt(checkins.date, localDateKey(range.end, DEMO_TIMEZONE)),
+        ),
+      ),
+    db
+      .select({ recallScore: checkins.recallScore })
+      .from(checkins)
+      .where(and(eq(checkins.userId, USER_ID), isNotNull(checkins.recallScore)))
+      .orderBy(desc(checkins.date))
+      .limit(1),
+  ]);
+
+  const progress = computeLearningProgress({
+    acceptedLearningTasks: taskRows.filter((row) =>
+      ["accepted", "done"].includes(row.status),
+    ).length,
+    totalLearningTasks: taskRows.length,
+    latestRecallScore: recallRows[0]?.recallScore ?? null,
+    checkinsThisWeek: checkinRows.length,
+    config: config.learning,
+  });
+
+  await db
+    .update(goals)
+    .set({ progress })
+    .where(and(eq(goals.id, "goal_rag"), eq(goals.userId, USER_ID)));
 }
 
 /** 先把 demo 用到的表清空。单一入口保证重复 seed 不会累积出两份历史。 */
@@ -455,7 +518,7 @@ async function seedGoalsAndTasks(): Promise<void> {
       target: "完成一个可检索、可评估、可部署的 RAG 项目",
       horizon: "6 weeks",
       status: "active",
-      progress: 38,
+      // 进度由 seedLearningProgress() 按公式算出来，这里不写死。
     },
     {
       id: "goal_fitness",
@@ -1572,7 +1635,9 @@ Critic 认为免费资料已足够，建议先完成现有材料。
       stance: "support",
       claim: "内容匹配你当前阶段，但节奏偏快。",
       evidence: [
-        { label: "当前进度", ref: "goal_rag", quote: "检索基础 38%" },
+        // 这里以前引的是「当前进度 38%」——那个数字是写死的，和种子目标按公式
+        // 算出的进度对不上，等于让演示数据自己反驳自己。改成引真实存在的自测记录。
+        { label: "昨天的自测", ref: "chk_yesterday", quote: "回忆分 0.4，rerank 还不熟" },
       ],
       risk: "直接上年包可能跟不上，反而打击信心。",
       recommendation: "试学 + 每周 2 次 25 分钟。",

@@ -149,8 +149,10 @@ describe("goal lifecycle transitions", () => {
   it("leaves progress alone when a goal is completed", async () => {
     // 进度是验收过的任务算出来的。按一下"完成"就把它写成 100，等于给用户看
     // 一个没有发生过的数字——真正的 100% 只能来自任务推进。
+    // 种子的进度由 seedLearningProgress() 按公式算出来，不在这里钉死一个数字
+    // （钉死 38 只能证明"种子里写着 38"，证明不了"完成不改进度"）。
     const before = await goalById();
-    expect(before.progress).toBe(38);
+    expect(Number.isFinite(before.progress)).toBe(true);
 
     await transitionGoal({
       goalId: GOAL_ID,
@@ -164,6 +166,7 @@ describe("goal lifecycle transitions", () => {
   });
 
   it("rejects completed → active and leaves the row untouched", async () => {
+    const before = await goalById();
     await transitionGoal({
       goalId: GOAL_ID,
       userId: DEMO_USER_ID,
@@ -180,7 +183,7 @@ describe("goal lifecycle transitions", () => {
 
     const after = await goalById();
     expect(after.status).toBe("completed");
-    expect(after.progress).toBe(38);
+    expect(after.progress).toBe(before.progress);
     // 失败的动作不留痕：审计里只有那次成功的 complete。
     expect(await goalAuditRows()).toHaveLength(1);
   });
@@ -318,7 +321,8 @@ describe("POST /api/goals/[id]", () => {
     expect(payload.ok).toBe(true);
     expect(payload.data.goal.id).toBe(GOAL_ID);
     expect(payload.data.goal.status).toBe("paused");
-    expect(payload.data.goal.progress).toBe(38);
+    // 接口只是把行原样回传，进度就该是库里那个值。
+    expect(payload.data.goal.progress).toBe((await goalById()).progress);
   });
 
   it("answers 400 for an action that is not in the vocabulary", async () => {
