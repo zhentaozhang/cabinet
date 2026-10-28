@@ -190,6 +190,10 @@ export async function evaluateDissents(userId: string): Promise<{
       if (!updated) return;
       updatedDissent = updated;
 
+      // 信任分是"在现有值上加/减"的量，必须锁住这一行再算再写：
+      // 审计路径（commands/tasks/audit.ts）用 SQL 原子自增，如果它在我们读到旧值之后
+      // 提交，直接 set(before ± delta) 会把那一次已提交的增量抹掉，也会让下面
+      // chief.deviation 审计行里的 before/after 与库里对不上（AGENTS.md 第 2 条）。
       const [agent] = await tx
         .select()
         .from(agents)
@@ -199,7 +203,8 @@ export async function evaluateDissents(userId: string): Promise<{
             eq(agents.userId, userId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (agent) {
         await tx
           .update(agents)
@@ -213,7 +218,8 @@ export async function evaluateDissents(userId: string): Promise<{
         .select()
         .from(agents)
         .where(and(eq(agents.userId, userId), eq(agents.role, "chief")))
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (chief) {
         chiefBefore = chief.trustScore;
         chiefAfter = clamp(chief.trustScore - config.dissent.chiefPenalty);

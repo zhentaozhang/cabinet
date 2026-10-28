@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
@@ -421,5 +421,101 @@ describe("formal dissent ledger", () => {
     expect(
       row.evidence.some((item) => item.quote === "budget_spend_cents = 350"),
     ).toBe(true);
+  });
+});
+
+/**
+ * 印证 dissent 时的信任分不能"读到旧值再写回去"。
+ *
+ * 复现方式是真并发：另一个事务先锁住 ag_critic 这一行并把它改成 57（模拟同一时刻
+ * 审计路径刚提交了一次信任分自增），再让印证流程走完。不同连接、不同事务，没有 mock。
+ * 读-改-写会把自己读到的 50 + 15 = 65 盖上去，把那次已提交的 +7 抹掉。
+ */
+async function waitForLockWaiter(timeoutMs = 5000): Promise<boolean> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const rows = (await db.execute(
+      sql`select count(*)::int as waiting from pg_locks where not granted`,
+    )) as Array<{ waiting: number }>;
+    if (Number(rows[0]?.waiting ?? 0) > 0) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return false;
+}
+
+describe("印证 dissent 与别的信任分写入并发", () => {
+  it("adds the bonus on top of the score the other writer committed", async () => {
+    await db
+      .update(agents)
+      .set({ status: "paused", trustScore: 50 })
+      .where(eq(agents.id, "ag_critic"));
+    await db.insert(dissents).values({
+      id: "dis_race_vindicate",
+      userId: DEMO_USER_ID,
+      councilId: "ccl_course",
+      agentId: "ag_critic",
+      warning: "强行推进会让一个 Agent 进入暂停。",
+      condition: {
+        metric: "agent_paused",
+        operator: "==",
+        threshold: 1,
+        windowDays: 7,
+      },
+      status: "pending",
+      evidence: [],
+      createdAt: daysAgo(8),
+    });
+    await db.insert(auditEvents).values({
+      id: "aud_pause_race",
+      userId: DEMO_USER_ID,
+      actor: "user",
+      action: "agent.update",
+      target: "ag_critic",
+      before: { status: "active" },
+      after: { status: "paused" },
+      hash: "test",
+      prevHash: null,
+      createdAt: daysAgo(3),
+    });
+
+    let locked!: () => void;
+    let release!: () => void;
+    const lockedPromise = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const holder = db.transaction(async (tx) => {
+      await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(eq(agents.id, "ag_critic"))
+        .for("update");
+      locked();
+      await releasePromise;
+      await tx
+        .update(agents)
+        .set({ trustScore: 57 })
+        .where(eq(agents.id, "ag_critic"));
+    });
+    await lockedPromise;
+
+    const pending = evaluateDissents(DEMO_USER_ID);
+    const blocked = await waitForLockWaiter();
+    release();
+    await holder;
+    const result = await pending;
+
+    expect(blocked).toBe(true);
+    expect(result).toEqual({ vindicated: 1, invalidated: 0 });
+
+    const [criticAfter] = await db
+      .select({ trustScore: agents.trustScore })
+      .from(agents)
+      .where(eq(agents.id, "ag_critic"));
+    // 57 是另一个写入者已经提交的值；印证只该在它之上再加自己的 +15。
+    expect(criticAfter.trustScore).toBe(72);
   });
 });
