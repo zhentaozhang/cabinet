@@ -7,6 +7,7 @@ import {
 } from "@/lib/config/pricing";
 import { weekRange } from "@/lib/domain/time";
 import { newId } from "@/lib/ids";
+import { statusImpliesContact } from "@/lib/domain/contact";
 import type { ToolStepStatus } from "@/lib/domain/tool-plan";
 
 /**
@@ -29,6 +30,12 @@ export async function recordRetrievalCall(input: {
   billable: boolean;
 }): Promise<void> {
   const priced = input.billable ? retrievalUnitPriceCents() : 0;
+  // 只有真的发出过请求才可能被计费。`not_connected` 是"根本没有连接器"，
+  // 请求一个字节都没离开进程，而同一件事在预算台账里已经记成 not_contacted
+  //（见 tool-loop 的 settleBudget）。两处若各写一个答案，"本周检索花费"
+  // 会凭空多出一笔，周上限也会被这些没发生的调用一点点耗尽。
+  // 单价照样落库：它记的是"当时的价格"，不是"花掉的钱"。
+  const charged = statusImpliesContact(input.status) ? priced : 0;
   await db.insert(retrievalCalls).values({
     id: newId("rtc"),
     userId: input.userId,
@@ -39,7 +46,7 @@ export async function recordRetrievalCall(input: {
     status: input.status,
     hits: input.hits,
     unitPriceCents: priced,
-    chargedCents: priced,
+    chargedCents: charged,
     latencyMs: Math.max(0, Math.round(input.latencyMs)),
   });
 }

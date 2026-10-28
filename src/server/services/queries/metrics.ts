@@ -14,6 +14,7 @@ import {
 import { addLocalDays, localDateKey, weekRange } from "@/lib/domain/time";
 import { LEARNING_TEMPLATES } from "@/lib/domain/learning";
 import { retrievalUnitPriceCents } from "@/lib/config/pricing";
+import { CONTACT_STATUSES } from "@/lib/domain/contact";
 import { getPolicyConfigFor } from "@/lib/policy/config";
 
 /**
@@ -48,6 +49,12 @@ export async function getWeeklyMetrics(userId: string) {
   ]);
   const now = new Date();
   const endOfToday = addLocalDays(now, 1, timezone);
+
+  // "发出去过"的唯一判据，来自 domain/contact（扣钱与预算台账用的是同一份）。
+  const sent = sql`${retrievalCalls.status} in (${sql.join(
+    CONTACT_STATUSES.map((status) => sql`${status}`),
+    sql`, `,
+  )})`;
 
   // Every aggregate below is independent; one round-trip instead of eight.
   const [
@@ -219,9 +226,12 @@ export async function getWeeklyMetrics(userId: string) {
      */
     db
       .select({
-        requests: sql<number>`count(*)`,
+        // 只数真正发出去的请求。被预算拒掉的调用也落一行台账（那行记的是
+        // "没有产生费用"），把它算成一次请求会让页面上的"本周检索 N 次"
+        // 与"本周检索花费"互相矛盾。谓词与扣钱、与预算台账共用同一份定义。
+        requests: sql<number>`count(*) filter (where ${sent})`,
         charged: sql<number>`coalesce(sum(${retrievalCalls.chargedCents}), 0)`,
-        unpriced: sql<number>`count(*) filter (where ${retrievalCalls.unitPriceCents} = 0)`,
+        unpriced: sql<number>`count(*) filter (where ${sent} and ${retrievalCalls.unitPriceCents} = 0)`,
       })
       .from(retrievalCalls)
       .where(

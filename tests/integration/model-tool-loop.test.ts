@@ -52,6 +52,8 @@ import {
   MODEL_TOOL_COST_CENTS,
   runModelToolLoop,
 } from "@/server/services/commands/tasks/tool-loop";
+import { retrievalBudgetState } from "@/server/services/connectors/ledger";
+import { getWeeklyMetrics } from "@/server/services/queries/metrics";
 import { resetDb } from "../helpers/db";
 
 const originalEnv = { ...process.env };
@@ -579,6 +581,40 @@ describe("runModelToolLoop", () => {
       attempted: true,
       provider: null,
     });
+  });
+
+  it("不给一次没离开进程的调用记钱", async () => {
+    // 没有配置连接器时执行器直接返回 not_connected：一个字节都没发出去。
+    // 同一件事在预算台账里已经是 not_contacted（不扣钱），检索台账也必须一致，
+    // 否则"本周检索花费"凭空多出一笔，周上限还会被这些没发生的调用耗尽。
+    const sink = collect();
+    const { executor } = fakeExecutor({ status: "not_connected", hits: 0 });
+
+    await runModelToolLoop({
+      userId: DEMO_USER_ID,
+      agentId: "ag_research",
+      taskId: "tsk_research",
+      runId: "run_model_tools",
+      timezone: TIMEZONE,
+      task: TASK,
+      allowed: [WEB_SEARCH],
+      grants: [{ resource: "web", scope: "read" }],
+      executors: { web_search: executor },
+      generate: fakeModel([{ tool: "web_search", input: { query: "RAG" } }]),
+      step: sink.step,
+    });
+
+    const [row] = await ledgerRows();
+    expect(row).toMatchObject({ status: "not_connected", charged: 0 });
+    // 单价仍然记下来：它保留的是"当时的价格"，不是"花掉的钱"。
+    expect(await retrievalBudgetState(DEMO_USER_ID)).toMatchObject({
+      spentCents: 0,
+    });
+
+    // 页面上的"本周检索"也只该数真正发出去的请求。
+    const metrics = await getWeeklyMetrics(DEMO_USER_ID);
+    expect(metrics.search.requests).toBe(0);
+    expect(metrics.search.unpricedRequests).toBe(0);
   });
 
   it("does nothing when the Agent declares no connector tool", async () => {
