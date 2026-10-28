@@ -1,4 +1,4 @@
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
@@ -27,6 +27,12 @@ export type CouncilContext = {
   checkins: Array<typeof checkins.$inferSelect>;
   memories: Array<typeof memories.$inferSelect>;
   rejects: Array<typeof auditEvents.$inferSelect>;
+  /**
+   * 近 7 天的任务统计。Chief 的 claim 里那句「近 7 天有 N 个任务，M 个已验收」
+   * 是统计口径，不能拿展示用的 `tasks`（限 12 条）去数——那样任务一多就常年
+   * 停在 12。
+   */
+  taskStats: { last7d: number; accepted: number };
   budget: { limitCents: number; spentCents: number; ratio: number };
 };
 
@@ -46,7 +52,8 @@ export async function loadCouncilContext(
     .select()
     .from(goals)
     .where(eq(goals.userId, userId))
-    .orderBy(desc(goals.createdAt));
+    // created_at 相同（同一批建的目标）时再按 id 收一次，否则返回顺序由物理行序决定。
+    .orderBy(desc(goals.createdAt), desc(goals.id));
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const recentTasks = await db
     .select()
@@ -66,6 +73,13 @@ export async function loadCouncilContext(
     .where(and(eq(memories.userId, userId), eq(memories.status, "active")))
     .orderBy(desc(memories.salience))
     .limit(8);
+  const [taskStats] = await db
+    .select({
+      last7d: sql<number>`(count(*))::int`,
+      accepted: sql<number>`(count(*) filter (where ${tasks.status} in ('accepted', 'done')))::int`,
+    })
+    .from(tasks)
+    .where(and(eq(tasks.userId, userId), gte(tasks.createdAt, since)));
   const recentRejects = await db
     .select()
     .from(auditEvents)
@@ -102,6 +116,10 @@ export async function loadCouncilContext(
     checkins: recentCheckins,
     memories: activeMemories,
     rejects: recentRejects,
+    taskStats: {
+      last7d: taskStats?.last7d ?? 0,
+      accepted: taskStats?.accepted ?? 0,
+    },
     budget: {
       limitCents: budgetLimitCents,
       spentCents,

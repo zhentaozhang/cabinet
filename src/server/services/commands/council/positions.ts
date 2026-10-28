@@ -16,8 +16,19 @@ export function buildCouncilPosition(input: {
   if (!agent) return null;
   const topicLabel = short(topic.trim(), 60);
 
+  // 议题挂在「最近在推的那个目标」上。不能只取第一个活跃目标：一批种下的目标
+  // created_at 相同（同一条 insert），谁被读到由物理行序决定，Chief 就会把任何
+  // 议题都挂到同一个目标上——进度也跟着错，而它还进 computePositionScores。
+  const activeGoals = context.goals.filter(
+    (candidate) => candidate.status === "active",
+  );
   const goal =
-    context.goals.find((candidate) => candidate.status === "active") ??
+    context.tasks
+      .map((task) =>
+        activeGoals.find((candidate) => candidate.id === task.goalId),
+      )
+      .find((candidate) => Boolean(candidate)) ??
+    activeGoals[0] ??
     context.goals[0];
   const latestTask = context.tasks[0];
   const latestCheckin = context.checkins[0];
@@ -28,9 +39,7 @@ export function buildCouncilPosition(input: {
   const pausedCount = context.agents.filter(
     (candidate) => candidate.status === "paused",
   ).length;
-  const acceptedCount = context.tasks.filter((task) =>
-    ["accepted", "done"].includes(task.status),
-  ).length;
+  const { last7d: weeklyTaskCount, accepted: acceptedCount } = context.taskStats;
 
   let stance: CouncilStance = "neutral";
   let claim: string;
@@ -41,7 +50,7 @@ export function buildCouncilPosition(input: {
   if (role === "chief") {
     stance = goal ? "support" : "neutral";
     claim = goal
-      ? `议题「${topicLabel}」可以挂到目标「${goal.title}」上：当前进度 ${Math.round(goalProgress)}%；近 7 天有 ${context.tasks.length} 个任务，${acceptedCount} 个已验收。`
+      ? `议题「${topicLabel}」可以挂到目标「${goal.title}」上：当前进度 ${Math.round(goalProgress)}%；近 7 天有 ${weeklyTaskCount} 个任务，${acceptedCount} 个已验收。`
       : `议题「${topicLabel}」没有可挂靠的进行中目标；推进前需要先定义成功标准。`;
     risk = `批准「${topicLabel}」会占用本周执行资源；当前有 ${pausedCount} 个 Agent 暂停。`;
     recommendation = `批准「${topicLabel}」，但限定本周预算和验收标准。`;
