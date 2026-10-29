@@ -4,6 +4,7 @@ import { dateTime, money, shortDate } from "@/lib/format";
 // 学习模板清单只有一份（domain 里那份）：这里曾经抄了一份，加第三种模板时
 // 页面会悄悄不认它。
 import { LEARNING_TEMPLATES } from "@/lib/domain/learning";
+import { RECALL_CELL_HINT } from "@/lib/presentation/recall-view";
 
 /**
  * Presentation rules for the Today page.
@@ -430,7 +431,7 @@ export function weeklyMetricRows(
       key: "recall",
       label: "回忆正确率",
       value: formatRatioAsPercent(weekly.recallAvg),
-      hint: "Retest 平均分",
+      hint: RECALL_CELL_HINT,
     },
     {
       key: "adherence",

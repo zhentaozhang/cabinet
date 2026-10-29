@@ -26,6 +26,7 @@ import {
   recommendation,
 } from "@/lib/presentation/review-view";
 import { cn, dateTime, shortDate } from "@/lib/format";
+import { recallAverageHint } from "@/lib/presentation/recall-view";
 import {
   Avatar,
   Badge,
@@ -136,10 +137,7 @@ export default async function ReviewPage({
         metrics.recallAvg === null
           ? "—"
           : `${Math.round(metrics.recallAvg * 100)}%`,
-      hint:
-        metrics.recallAvg === null
-          ? "本周没有复测样本，不用 0 代替。"
-          : "0-100%，来自本周检索式复测。",
+      hint: recallAverageHint(metrics.recallAvg),
     },
     {
       label: "学习任务",
