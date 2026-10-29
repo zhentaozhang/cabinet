@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -66,5 +69,57 @@ describe("conflict counters", () => {
   it("never prints a broken count", () => {
     expect(conflictCellDetail(Number.NaN)).toBe("没有互相冲突的事实");
     expect(conflictCellDetail(-1)).toBe("没有互相冲突的事实");
+  });
+});
+
+/**
+ * 页面结构的契约测试。
+ *
+ * 记忆页的列表和右侧两张卡片住在同一个两列网格里（lg:grid-cols-[1.7fr_1fr]）。
+ * 分页条曾经被放在网格这一层，于是它成了第三个直接子元素：右列第一行被它占掉，
+ * 两张卡片（记忆治理 / 三种记忆）被挤到列表下面去，分页条自己浮在右上方。
+ * 这不是文案问题，所以只读源码就能验证：这个网格只能有两个直接子 div。
+ */
+describe("memory page layout", () => {
+  const PAGE = join(process.cwd(), "src/app/memory/page.tsx");
+
+  /** Direct `<div>` children of the element whose opening tag contains `marker`. */
+  function divChildren(source: string, marker: string): string[] {
+    const at = source.indexOf(marker);
+    expect(at).toBeGreaterThan(-1);
+    const open = source.lastIndexOf("<div", at);
+    let i = source.indexOf(">", open) + 1;
+    let depth = 1;
+    let childStart = -1;
+    const children: string[] = [];
+    while (i < source.length && depth > 0) {
+      const nextOpen = source.indexOf("<div", i);
+      const nextClose = source.indexOf("</div>", i);
+      if (nextClose === -1) break;
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        if (depth === 1) childStart = nextOpen;
+        depth += 1;
+        i = nextOpen + 4;
+      } else {
+        depth -= 1;
+        if (depth === 1 && childStart !== -1) {
+          children.push(source.slice(childStart, nextClose + "</div>".length));
+          childStart = -1;
+        }
+        i = nextClose + "</div>".length;
+      }
+    }
+    return children;
+  }
+
+  it("keeps the pager inside the list column, not in the grid", () => {
+    const source = readFileSync(PAGE, "utf8");
+    const children = divChildren(
+      source,
+      'className="grid gap-5 lg:grid-cols-[1.7fr_1fr]"',
+    );
+    expect(children).toHaveLength(2);
+    expect(children[0]).toContain("条 / 共");
+    expect(children[1]).toContain("space-y-5");
   });
 });

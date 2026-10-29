@@ -191,30 +191,32 @@ export default async function MemoryPage({
               />
             ))
           )}
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-label text-faint">
-          <span>
-            第 {data.memories.length === 0 ? 0 : data.offset + 1}–
-            {data.offset + data.memories.length} 条 / 共 {data.total}
-          </span>
-          <div className="flex items-center gap-1.5">
-            {data.offset > 0 ? (
-              <Link
-                href={pageHref(Math.max(0, data.offset - data.limit))}
-                className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
-              >
-                上一页
-              </Link>
-            ) : null}
-            {data.hasMore ? (
-              <Link
-                href={pageHref(data.offset + data.limit)}
-                className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
-              >
-                下一页
-              </Link>
-            ) : null}
+          {/* 分页条必须留在列表这一列里：外层是两列网格（列表 + 右侧卡片），
+              它一旦成为网格的第三个直接子元素，就会占掉右列第一行，把两张卡片
+              挤到列表下面去，而分页条自己浮在右上方。 */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-label text-faint">
+            <span>
+              第 {data.memories.length === 0 ? 0 : data.offset + 1}–
+              {data.offset + data.memories.length} 条 / 共 {data.total}
+            </span>
+            <div className="flex items-center gap-1.5">
+              {data.offset > 0 ? (
+                <Link
+                  href={pageHref(Math.max(0, data.offset - data.limit))}
+                  className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
+                >
+                  上一页
+                </Link>
+              ) : null}
+              {data.hasMore ? (
+                <Link
+                  href={pageHref(data.offset + data.limit)}
+                  className="rounded-md border border-line bg-panel2 px-2 py-1 text-muted hover:border-line2"
+                >
+                  下一页
+                </Link>
+              ) : null}
+            </div>
           </div>
         </div>
 
