@@ -401,6 +401,7 @@ export type TaskNextActionCategory =
   | "adopt_suggestion"
   | "review_approval"
   | "wait"
+  | "start_audit"
   | "wait_audit"
   | "fix_and_resubmit"
   | "inspect_failure"
@@ -434,7 +435,10 @@ const TASK_STATUS_META: Record<
   suggested: { nextActionCategory: "adopt_suggestion" },
   awaiting_approval: { nextActionCategory: "review_approval" },
   running: { nextActionCategory: "wait" },
-  submitted: { nextActionCategory: "wait_audit" },
+  // 验收没有人替你发起：`auditTask` 只由 POST /api/tasks/[id]/audit 与学徒结业
+  // 考试调用，仓库里没有任何定时任务会跑它。等着的状态说成「等」就是把「等你点」
+  // 说成「等系统」。
+  submitted: { nextActionCategory: "start_audit" },
   auditing: { nextActionCategory: "wait_audit" },
   // 验收已经跑完但结论缺一块时，下一步动作是"人来判"，不是"等"也不是"通过"。
   needs_review: { nextActionCategory: "review_decision" },
@@ -458,7 +462,16 @@ const NEXT_ACTION_COPY: Record<
     hint: "确认或拒绝这次动作；批准后 Agent 会继续执行，驳回则不会执行。",
   },
   wait: { label: "等待执行", hint: "执行正在进行，完成后会自动送审。" },
-  wait_audit: { label: "等待验收", hint: "Auditor 正在对照验收标准裁定，此时无需操作。" },
+  start_audit: {
+    label: "发起验收",
+    // 不写方位：「提交给 Auditor 验收」这颗按钮在任务页的操作行里，屏幕窄了会
+    // 换行，指错位置比不指更糟。
+    hint: "验收由人发起：点「提交给 Auditor 验收」才会开始，没有后台任务会自动跑这一步。",
+  },
+  wait_audit: {
+    label: "正在验收",
+    hint: "Auditor 正在对照验收标准裁定，结果会写回验收清单。",
+  },
   review_decision: {
     label: "需要你判定",
     // 说明为什么轮到你：清单里存在"必须判定却没人判定"的条目，Auditor 不代判，
@@ -681,6 +694,12 @@ export function getStatusBannerInfo(
   toolStep?: StepDto,
   /** 「未通过」是 Auditor 判的还是你自己判的（audit.override）。 */
   rejectedByUser = false,
+  /**
+   * 「提交给 Auditor 验收」这颗按钮现在能不能按（`taskActions().audit.allowed`：
+   * 状态是 submitted 且任务有验收者）。`submitted` 的下一句该说「点它」还是
+   * 「先指派 Auditor」，取决于它。
+   */
+  canAudit = true,
 ): {
   badgeLabel: string;
   badgeTone: TaskStatusTone;
@@ -772,18 +791,33 @@ export function getStatusBannerInfo(
     };
   }
 
-  if (status === "submitted" || status === "auditing") {
+  if (status === "submitted") {
     // `submitted` means the product is queued for review; only `auditing` means
-    // the review is actually in flight. Saying "正在裁定" for a queued product
-    // would invent progress the persisted state does not show.
-    const isAuditing = status === "auditing";
+    // the review is actually in flight. 两句话曾经同时错在这一屏：横幅说
+    // 「Auditor 正在…裁定」，下一步说「此时无需操作」，而右边那颗
+    // 「提交给 Auditor 验收」按钮才是唯一能让验收开始的东西——`auditTask` 只有
+    // POST /api/tasks/[id]/audit（学徒结业考试那一处另算）会调用，仓库里没有任何
+    // 定时任务会替用户按下它。产物就那样停在 submitted，页面却在让人别动。
     return {
-      badgeLabel: isAuditing ? "验收中" : "等待 Auditor 验收",
+      badgeLabel: "等待你发起验收",
       badgeTone: "accent",
-      title: isAuditing ? "Auditor 正在逐项裁定" : "产物已提交，等待独立审查",
-      description: isAuditing
-        ? "Auditor 正在对照验收标准与 Checklist 规则逐项核对，判定结果会写回下方验收清单。"
-        : "产物已提交，等待 Auditor 按验收标准与 Checklist 规则开始裁定，此时无需操作。",
+      title: "产物已提交，验收还没开始",
+      description: canAudit
+        ? "产物已提交在案，但裁定还没有开始：点「提交给 Auditor 验收」，Auditor 才会按验收标准与 Checklist 规则逐项核对；这一步没有后台任务会自动跑。"
+        : "产物已提交在案，但这条任务没有验收者，验收按钮现在点不了：先给它指派一位 Auditor，产物才不会一直停在这里。",
+      bannerBorderClass: "border-accent/35",
+      bannerBgClass: "bg-accent/[0.05]",
+      nextActionCategory: "start_audit",
+    };
+  }
+
+  if (status === "auditing") {
+    return {
+      badgeLabel: "验收中",
+      badgeTone: "accent",
+      title: "Auditor 正在逐项裁定",
+      description:
+        "Auditor 正在对照验收标准与 Checklist 规则逐项核对，判定结果会写回下方验收清单。",
       bannerBorderClass: "border-accent/35",
       bannerBgClass: "bg-accent/[0.05]",
       nextActionCategory: "wait_audit",

@@ -95,7 +95,7 @@ describe("getStatusBannerInfo says what the status wants from you", () => {
 
   it("names the auditor while the product is under review", () => {
     const banner = getStatusBannerInfo("submitted", false, false, false);
-    expect(banner.badgeLabel).toBe("等待 Auditor 验收");
+    expect(banner.badgeLabel).toBe("等待你发起验收");
     expect(banner.description).toContain("Checklist");
   });
 
@@ -105,8 +105,31 @@ describe("getStatusBannerInfo says what the status wants from you", () => {
 
     // Both wait on the auditor, but only `auditing` has a review in flight.
     expect(queued.badgeLabel).not.toBe(inFlight.badgeLabel);
-    expect(queued.title).toContain("等待");
-    expect(inFlight.title).not.toContain("等待");
+    expect(queued.title).toContain("验收还没开始");
+    expect(inFlight.title).not.toContain("还没开始");
+  });
+
+  /*
+    验收没有守护进程：`auditTask` 只由 POST /api/tasks/[id]/audit（那颗
+    「提交给 Auditor 验收」按钮）与学徒结业考试调用。横幅曾经写着「Auditor 正在
+    对照验收标准裁定，此时无需操作」，而同一屏右边就是那颗唯一的按钮——一句话
+    说裁定已经在跑，一句话让读者别动，产物却会一直停在 submitted。
+  */
+  it("asks the reader to start the review instead of waiting for a scheduler", () => {
+    const banner = getStatusBannerInfo("submitted", false, false, false);
+    expect(banner.description).toContain("提交给 Auditor 验收");
+    expect(banner.description).toContain("没有后台任务");
+    expect(banner.description).not.toContain("无需操作");
+    expect(getStatusNextAction("submitted")).toMatchObject({
+      category: "start_audit",
+      label: "发起验收",
+    });
+    expect(getStatusNextAction("submitted").hint).toContain("没有后台任务");
+
+    // 没有验收者时那颗按钮按不了，横幅不能让人去点一颗点不动的按钮。
+    const noAuditor = getStatusBannerInfo("submitted", false, false, false, undefined, false, false);
+    expect(noAuditor.description).toContain("没有验收者");
+    expect(noAuditor.description).not.toContain("提交给 Auditor 验收");
   });
 
   it("says the next move once the auditor passed", () => {
@@ -200,7 +223,7 @@ describe("every persisted task status states its next action", () => {
     suggested: "adopt_suggestion",
     awaiting_approval: "review_approval",
     running: "wait",
-    submitted: "wait_audit",
+    submitted: "start_audit",
     auditing: "wait_audit",
     needs_review: "review_decision",
     rejected: "fix_and_resubmit",

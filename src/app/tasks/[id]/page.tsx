@@ -190,7 +190,9 @@ export default async function TaskPage({
     isRejected,
     toolStep,
     // 同一句「未通过」可能是 Auditor 判的，也可能是你自己在判定卡里驳的。
-    rejection.byUser
+    rejection.byUser,
+    // 验收不会自己开始：横幅要么请你去按那颗按钮，要么说明它为什么按不了。
+    actions.audit.allowed
   );
   // The banner states the state and the move it implies. The category is the
   // contract between the two: a status that asks the reader to act must not
