@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
@@ -340,6 +340,17 @@ describe("council closed loop", () => {
   it("counts all the week's tasks in the Chief's claim, not just the ones on screen", async () => {
     // 会议上下文只取最近 12 条任务渲染「最近的任务」，但 Chief 说的是「近 7 天有
     // N 个任务」——那是统计口径，不能被展示用的 limit 截断。
+    // 种子自带的条数会随演示数据改动，期望值按库里实际的数推：这条用例断言的是
+    // 「没有被展示用的 limit 截断」，不是某个具体的种子条数。
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [before] = await db
+      .select({
+        last7d: sql<number>`(count(*))::int`,
+        accepted: sql<number>`(count(*) filter (where ${tasks.status} in ('accepted', 'done')))::int`,
+      })
+      .from(tasks)
+      .where(and(eq(tasks.userId, DEMO_USER_ID), gte(tasks.createdAt, since)));
+
     await db.insert(tasks).values(
       Array.from({ length: 20 }, (_, index) => ({
         id: `tsk_bulk_${index}`,
@@ -355,8 +366,9 @@ describe("council closed loop", () => {
     );
 
     const chief = await chiefPosition("要不要把本周的练习量再加一点？");
-    // 种子里 10 个任务（5 个已验收）+ 上面 20 个已验收 = 30 / 25。
-    expect(chief.claim).toContain("近 7 天有 30 个任务，25 个已验收");
+    expect(chief.claim).toContain(
+      `近 7 天有 ${before.last7d + 20} 个任务，${before.accepted + 20} 个已验收`,
+    );
   });
 
   it("stamps the dissent with the user's own reject-streak limit", async () => {

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
@@ -11,6 +11,7 @@ import {
 import type { Evidence, ProposedChange } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
+import { addLocalDays } from "@/lib/domain/time";
 import { getPolicyConfigFor } from "@/lib/policy/config";
 import { workspaceBudget } from "@/lib/domain/agent-budget";
 import type { PolicyConfig } from "@/lib/domain/policy";
@@ -60,6 +61,11 @@ export const REJECT_RATE_ACTION_THRESHOLD = 0.5;
 
 /** 降粒度时按当前值打折；一次只降一档，避免把要求直接打到地板上。 */
 const POLICY_PROPOSAL_WORD_FACTOR = 0.8;
+
+/**
+ * 反思一次最多回看多少条任务。窗口先由 SQL 收窄，这个上限只防超大工作区。
+ */
+const REFLECTION_TASK_POOL_LIMIT = 200;
 
 /** 与 REFLECTION 里的其它常量一致：低于 20 字的任务描述无法验收。 */
 const POLICY_PROPOSAL_MIN_WORDS_FLOOR = 20;
@@ -147,15 +153,20 @@ export async function runReflection(
     )
     .orderBy(desc(checkins.createdAt))
     .limit(1);
-  const allTasks = await db
+  // 窗口下界放进 SQL：原来是先取「最近创建的 200 条」再在 JS 里按窗口过滤，
+  // 任务多的库里，更早创建、但截止时间还落在窗口内的任务会被这 200 条挤掉，
+  // 晚间完成率的分母就少算了它。先按窗口筛，再截断。
+  const recentTasks = await db
     .select()
     .from(tasks)
-    .where(eq(tasks.userId, userId))
+    .where(
+      and(
+        eq(tasks.userId, userId),
+        or(gte(tasks.createdAt, since), gte(tasks.dueAt, since)),
+      ),
+    )
     .orderBy(desc(tasks.createdAt))
-    .limit(200);
-  const recentTasks = allTasks.filter(
-    (task) => task.createdAt >= since || (task.dueAt && task.dueAt >= since),
-  );
+    .limit(REFLECTION_TASK_POOL_LIMIT);
   const recentRejects = await db
     .select()
     .from(auditEvents)
@@ -225,9 +236,16 @@ export async function runReflection(
   // 撤回的晚间任务不算「没完成」：分母里混进一条自己撤销的任务，完成率就永远
   // 差这一块，洞察会一直建议把晚上的事挪到早上。下面挑候选时本来就排除了
   // cancelled，两处口径必须一致（复盘页的计划遵从率、目标进度也是这么算的）。
+  //
+  // 窗口上界是「今天结束」：排在明天或更晚的晚间任务还没到该做完的时候，把它们
+  // 算成「没完成」会让这条洞察在任务被排到未来时凭空触发（种子里「预约周三 20:00
+  // 口语陪练」原来就是这样算进分母的），而它对用户说的是「过去 7 天内」。
+  // 计划遵从率的 planned 分子也用同一个上界（metrics.ts 的 endOfToday）。
+  const endOfToday = addLocalDays(now, 1, user.timezone);
   const eveningTasks = recentTasks.filter(
     (task) =>
       task.dueAt &&
+      task.dueAt < endOfToday &&
       task.status !== "cancelled" &&
       localHourIn(task.dueAt, user.timezone) >= config.reflection.eveningHour,
   );
@@ -263,7 +281,7 @@ export async function runReflection(
       }
       candidates.push({
         claim: `晚间（${config.reflection.eveningHour}:00 后）安排了 ${eveningTasks.length} 个任务，只完成 ${eveningDone} 个；建议把「${target.title}」移到 ${peak}。`,
-        rationale: `统计口径：过去 ${config.reflection.windowDays} 天内、截止时间在当地 ${config.reflection.eveningHour}:00 之后的任务，完成率 ${Math.round(
+        rationale: `统计口径：过去 ${config.reflection.windowDays} 天内、截止时间在当地 ${config.reflection.eveningHour}:00 之后且已到点（今天含今天）的任务——排在明天或更晚的还没到该做完的时候，不算没完成；完成率 ${Math.round(
           (eveningDone / eveningTasks.length) * 100,
         )}%，低于阈值 ${Math.round(
           config.reflection.eveningCompletionThreshold * 100,

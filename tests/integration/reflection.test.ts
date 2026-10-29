@@ -218,6 +218,84 @@ describe("real reflection", () => {
     expect(second!.claim).toContain("安排了 2 个任务");
     expect(second!.claim).not.toContain("安排了 3 个任务");
   });
+
+  it("does not count an evening task that is not due until tomorrow", async () => {
+    // 「过去 7 天内」不包括还没到点的事：把明天 21:00 的任务算进分母，等于
+    // 因为用户「排了」就宣布他「没做完」——这条洞察会在任务被排到未来时凭空触发。
+    const tz = "Asia/Shanghai";
+    const tomorrow = localDateTimeParts(addLocalDays(new Date(), 1, tz), tz);
+    await db.insert(tasks).values({
+      id: "tsk_evening_tomorrow",
+      userId: DEMO_USER_ID,
+      title: "明天晚上的阅读",
+      description: "排在明天 21:00，现在还没到该做完的时候。",
+      acceptanceCriteria: "读完写三行笔记，至少一个自己的例子。",
+      assigneeId: "ag_coach",
+      auditorId: "ag_auditor",
+      status: "planned",
+      dueAt: zonedTimeToUtc(tomorrow.year, tomorrow.month, tomorrow.day, 21, 0, tz),
+      createdBy: "user",
+      createdAt: new Date(),
+    });
+
+    const first = await runReflection(DEMO_USER_ID);
+    const second = await runReflection(DEMO_USER_ID);
+    expect(first!.claim).toContain("审计驳回");
+    expect(second!.claim).toContain("安排了 2 个任务");
+    expect(second!.claim).not.toContain("安排了 3 个任务");
+  });
+
+  it("keeps an older task that is still inside the window", async () => {
+    // 原来是先取「最近创建的 200 条」再在 JS 里按窗口过滤：任务一多，更早创建、
+    // 截止时间还在窗口内的晚间任务会先被截断掉，分母少一条而结论照旧打印。
+    const tz = "Asia/Shanghai";
+    const yesterday = localDateTimeParts(addLocalDays(new Date(), -1, tz), tz);
+    const fillerCreatedAt = addLocalDays(new Date(), -41, tz);
+    await db.insert(tasks).values(
+      Array.from({ length: 200 }, (_, index) => ({
+        id: `tsk_reflection_filler_${index}`,
+        userId: DEMO_USER_ID,
+        title: `已完成的旧任务 ${index}`,
+        description: "只用来把「最近 200 条」填满，不参与晚间统计。",
+        acceptanceCriteria: "早已验收，与本条洞察无关。",
+        assigneeId: "ag_coach",
+        auditorId: "ag_auditor",
+        status: "done" as const,
+        dueAt: null,
+        createdBy: "user" as const,
+        createdAt: fillerCreatedAt,
+      })),
+    );
+    const olderCreatedAt = addLocalDays(new Date(), -42, tz);
+    await db.insert(tasks).values(
+      ["甲", "乙"].map((label) => ({
+        id: `tsk_evening_old_${label}`,
+        userId: DEMO_USER_ID,
+        title: `更早安排、昨晚才该做完的晚间任务${label}`,
+        description: "创建得比那 200 条都早，但截止时间就在昨晚 21:00。",
+        acceptanceCriteria: "写三行笔记，不抄原文。",
+        assigneeId: "ag_coach",
+        auditorId: "ag_auditor",
+        status: "planned" as const,
+        dueAt: zonedTimeToUtc(
+          yesterday.year,
+          yesterday.month,
+          yesterday.day,
+          21,
+          0,
+          tz,
+        ),
+        createdBy: "user" as const,
+        createdAt: olderCreatedAt,
+      })),
+    );
+
+    const first = await runReflection(DEMO_USER_ID);
+    const second = await runReflection(DEMO_USER_ID);
+    expect(first!.claim).toContain("审计驳回");
+    // 种子自带 2 个已到点的晚间任务，这两条更早创建的也必须算进来。
+    expect(second!.claim).toContain("安排了 4 个任务");
+  });
 });
 
 describe("bi-temporal memory", () => {
