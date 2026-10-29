@@ -25,6 +25,7 @@ import { memoryTypeLabel } from "@/contracts/labels";
 import { sourceLabel } from "@/lib/domain/provenance";
 import {
   APPRENTICE_RETIRED_NOTICE,
+  GRADUATION_EVIDENCE_GAP,
   agentPassRate,
   apprenticeTrainingOpen,
 } from "@/lib/presentation/cabinet-view";
@@ -325,6 +326,7 @@ export default async function AgentPage({
                   <div className="rounded-md border border-violet/25 bg-violet/[0.05] px-3 py-2 text-label text-violet">
                     练习通过：确定性考试只证明练习完成。转正改看真实证据——信任分、成功任务，
                     以及真实运行被验收后的有效审计样本与通过率。
+                    <p className="mt-2 text-muted">{GRADUATION_EVIDENCE_GAP}</p>
                     <GraduateButton />
                   </div>
                 ) : null}

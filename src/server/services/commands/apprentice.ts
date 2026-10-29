@@ -652,6 +652,19 @@ export type GraduateResult = {
  *
  * Before this existed, `practice_passed` had exactly one legal exit (retired)
  * and the `promoted` field on the exam result was hard-coded to false.
+ *
+ * Known gap, recorded here because this function is where it bites: the
+ * evidence it asks for cannot be produced yet. `decideRun` denies any actor
+ * whose `lifecycleStage` is not `active` (src/lib/domain/policy.ts:327-329)
+ * and the apprentice template is granted only `task:read`
+ * (src/contracts/templates.ts:134), so a trainee never runs a live task, never
+ * earns a model-generated artifact, and never accumulates trust, successes or
+ * eligible samples. Every call from a default workspace therefore ends in
+ * `insufficient_samples` / `too_few_successes`; the page states the same thing
+ * (GRADUATION_EVIDENCE_GAP in src/lib/presentation/cabinet-view.ts) instead of
+ * promising that dispatching work will close the gap. Opening a supervised
+ * execution channel is a product decision, not something this command can
+ * assume, so the gate stays as designed.
  */
 export async function graduateApprentice(
   userId: string,

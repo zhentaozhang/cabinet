@@ -64,6 +64,22 @@ describe("decideRun", () => {
     expect(decision.effect).toBe("deny");
   });
 
+  it("denies a practice-passed apprentice even with a task grant", () => {
+    // 转正门槛要的是「练习之后」的真实审计样本，而这里的生命周期判定在授权检查
+    // 之前就把学徒拒了：它跑不出一次 live 运行，样本、成功任务和信任分就永远不动。
+    // 学徒模板的默认授权还只有 task:read，但先命中 lifecycle 这段。
+    const decision = decideRun({
+      actor: actor({ lifecycleStage: "practice_passed" }),
+      task: task(),
+      grants: [{ resource: "task", scope: "read" }],
+      budget,
+      approval: { status: "approved", consumedAt: null },
+      config,
+    });
+    expect(decision.effect).toBe("deny");
+    expect(decision.reason).toContain("practice_passed");
+  });
+
   it("denies non-assignee execution", () => {
     const decision = decideRun({
       actor: actor(),

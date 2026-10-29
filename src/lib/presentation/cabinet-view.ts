@@ -182,3 +182,20 @@ export function apprenticeTrainingOpen(stage: string): boolean {
 /** 已退休的学徒在「学徒转正」卡里该看到的话：没有下一步动作，也别再等考试。 */
 export const APPRENTICE_RETIRED_NOTICE =
   "已退休：这个学徒不再接单，观摩记录与结业考试都已关闭。";
+
+/**
+ * 「练习通过」之后那条转正门槛，在默认工作区里没有任何一条能自己满足。
+ *
+ * 门槛本身没错：src/lib/domain/policy.ts:643-712 的 decideGraduation 要真实审计
+ * 样本、成功任务和信任分，样本还必须来自 live 运行 + 模型生成的产物
+ * （src/lib/domain/provenance.ts:59-66）。问题是学徒跑不出这样一次运行——同一个
+ * 文件的 decideRun 在 `actor.lifecycleStage !== "active"` 这一步就直接 deny
+ * （:327-329），而 src/contracts/templates.ts:134 给学徒的默认授权只有
+ * `task:read`，内部写任务照样被 hasGrant 的 write 检查挡下（policy.ts:405-410）。
+ * 于是不管用户派单、批准还是建常驻授权，样本、成功任务和信任分都不会动，
+ * 「转正」按钮只剩「必然被拒」；练习通过之后唯一能走通的出口是退休。
+ *
+ * 这句话只陈述现状，不替产品决定要不要开一条受监督执行通道。
+ */
+export const GRADUATION_EVIDENCE_GAP =
+  "但按现在的规则，学徒在转正前接不了单：运行前的策略判定会先拒绝非 active 的生命周期，默认授权也只给了只读的任务权限。所以派单不会让有效审计样本、成功任务和信任分增长——这条门槛要等一条「受监督执行」的通道做出来才可能满足。练习通过之后，目前唯一能走通的出口是退休。";

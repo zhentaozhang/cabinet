@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   APPRENTICE_RETIRED_NOTICE,
+  GRADUATION_EVIDENCE_GAP,
   agentHeadcount,
   agentPassRate,
   apprenticeTrainingOpen,
@@ -246,5 +247,29 @@ describe("the retired apprentice page offers no dead buttons", () => {
     expect(page).toContain("{APPRENTICE_RETIRED_NOTICE}");
     expect(APPRENTICE_RETIRED_NOTICE).toContain("已退休");
     expect(APPRENTICE_RETIRED_NOTICE).toContain("不再接单");
+  });
+});
+
+describe("the practice-passed page does not promise evidence it cannot get", () => {
+  const page = readFileSync(
+    join(process.cwd(), "src/app/cabinet/[id]/page.tsx"),
+    "utf8",
+  );
+
+  it("names the gap between the graduation floor and what a trainee may do", () => {
+    // decideRun 在 lifecycleStage !== "active" 处直接 deny，学徒授权又只有 task:read，
+    // 所以「真实审计样本」永远不会因为派单而出现。
+    expect(GRADUATION_EVIDENCE_GAP).toContain("接不了单");
+    expect(GRADUATION_EVIDENCE_GAP).toContain("受监督执行");
+    expect(GRADUATION_EVIDENCE_GAP).toContain("唯一能走通的出口是退休");
+  });
+
+  it("prints it beside the graduation button", () => {
+    const promise = page.indexOf("转正改看真实证据");
+    const note = page.indexOf("{GRADUATION_EVIDENCE_GAP}");
+    const button = page.indexOf("<GraduateButton />");
+    expect(promise).toBeGreaterThan(-1);
+    expect(note).toBeGreaterThan(promise);
+    expect(button).toBeGreaterThan(note);
   });
 });
