@@ -17,6 +17,7 @@ import {
   searchSpendLine,
   secondaryTasks,
   SPEND_LEDGER_NOTE,
+  spendShareLine,
   weeklyMetricRows,
 } from "@/lib/presentation/today-view";
 
@@ -789,6 +790,37 @@ describe("the search card separates a missing price from a free call", () => {
     const page = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
     expect(page).toContain("{searchSpendLine(weekly.search)}");
     expect(page).not.toContain("本周检索未计价（部署未配置单价）");
+  });
+});
+
+describe("the spend share line counts the Agents who can still run", () => {
+  // 消耗卡底部原来印 `data.agents.length 位内阁 Agent 共同分担`，而首页的
+  // allAgents 不过滤状态：已退休的、还在学徒期的 Agent 一次任务都跑不了
+  //（src/lib/domain/policy.ts:323-329），不可能再往这本账里加钱。
+  it("names how many of the headcount can actually take work", () => {
+    const line = spendShareLine({ total: 7, able: 5 });
+    expect(line).toContain("5 位能接单的 Agent 共同分担本周的预算");
+    expect(line).toContain("另有 2 位不在岗或未转正");
+    expect(line).not.toContain("7 位");
+  });
+
+  it("says nothing extra when everyone can take work", () => {
+    expect(spendShareLine({ total: 7, able: 7 })).toBe(
+      "7 位能接单的 Agent 共同分担本周的预算。",
+    );
+  });
+
+  it("does not claim a share when nobody can run anything", () => {
+    const line = spendShareLine({ total: 7, able: 0 });
+    expect(line).toBe("现在没有能接单的 Agent，账上留着的是它们此前的花费。");
+    expect(line).not.toContain("共同分担");
+  });
+
+  it("is what the Today card prints, fed by the same predicate as the form", () => {
+    const page = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
+    expect(page).toContain("spendShareLine({");
+    expect(page).toContain("assigneeBlockReason(agent) === null");
+    expect(page).not.toContain("位内阁 Agent 共同分担");
   });
 });
 

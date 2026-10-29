@@ -510,3 +510,30 @@ export function searchSpendLine(search: {
   // 那时宁可只报次数，也别编一个费用。
   return parts.length > 0 ? parts.join("；") : `本周共 ${search.requests} 次外部检索调用`;
 }
+
+/**
+ * 消耗卡底部那一行「N 位内阁 Agent 共同分担」。
+ *
+ * 原来印的是 `data.agents.length`。首页的 allAgents 不过滤状态
+ *（src/server/services/queries/today.ts），所以已退休的、还没转正的学徒也被算成
+ * 「共同分担」这周的预算。这两类 Agent 一次任务都跑不了：运行前的策略判定先拒绝
+ * 非 active 的 status / lifecycleStage（src/lib/domain/policy.ts:323-329，
+ * 第 91 个 bug 把同一条判据抽成了 assigneeBlockReason），而 retired 在
+ * src/lib/domain/state.ts 的迁移图里没有出口。它们不可能再往这本账里加钱；
+ * 账上留着的是它们不在这本账里之后、也就是停岗或转正前的花费。
+ *
+ * 传进来的是「能接单的人数」，不是人数总和：口径与 QuickCreate 下拉、
+ * createTask 的守卫、Cabinet 页头（cabinet-view.ts 的 agentHeadcount）同源。
+ */
+export function spendShareLine(headcount: {
+  total: number;
+  able: number;
+}): string {
+  const away = Math.max(0, headcount.total - headcount.able);
+  if (headcount.able <= 0) {
+    return "现在没有能接单的 Agent，账上留着的是它们此前的花费。";
+  }
+  const base = `${headcount.able} 位能接单的 Agent 共同分担本周的预算。`;
+  if (away <= 0) return base;
+  return `${base}另有 ${away} 位不在岗或未转正，账上留着的是它们此前的花费。`;
+}

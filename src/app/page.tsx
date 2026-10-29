@@ -21,6 +21,7 @@ import { goalStatusLabel } from "@/contracts/labels";
 import { cn, dateTime, money, timeOnly } from "@/lib/format";
 import { goalProgressHint, goalProgressText } from "@/lib/presentation/goal-view";
 import { checkinMemoryContent } from "@/lib/domain/checkin-memory";
+import { assigneeBlockReason } from "@/lib/domain/policy";
 import {
   briefDecisionLine,
   briefFreshness,
@@ -39,6 +40,7 @@ import {
   secondaryTasks,
   searchSpendLine,
   SPEND_LEDGER_NOTE,
+  spendShareLine,
   weeklyMetricRows,
 } from "@/lib/presentation/today-view";
 import {
@@ -83,6 +85,14 @@ export default async function TodayPage() {
     can never quote two different sources.
   */
   const topSpender = data.topSpender;
+  /*
+    消耗卡底部那行字数的是「还能接单的人」，不是花名册人数：已退休的、
+    还在学徒期的 Agent 一次任务都跑不了（policy.ts:323-329），它们不会再往
+    这本账里加钱。判据与 QuickCreate 的下拉、createTask 的守卫同一份。
+  */
+  const ableAgents = data.agents.filter(
+    (agent) => assigneeBlockReason(agent) === null,
+  ).length;
   /*
     `data.tasks` is every open task, failed and awaiting_approval included.
     Those are waiting on the reader, not progressing, so the counters and the
@@ -658,7 +668,7 @@ export default async function TodayPage() {
                 </p>
               ) : null}
               <div className="mt-2 text-label text-faint">
-                {data.agents.length} 位内阁 Agent 共同分担
+                {spendShareLine({ total: data.agents.length, able: ableAgents })}
               </div>
             </div>
 
