@@ -15,6 +15,7 @@ import {
   yuanToCents,
 } from "@/lib/presentation/task-form";
 import type { AdvancedField, TaskDraftErrors } from "@/lib/presentation/task-form";
+import { goalLinkHint } from "@/lib/presentation/goal-view";
 import { call } from "./shared";
 
 const FIELD =
@@ -595,7 +596,7 @@ export function QuickCreate({
                     ))}
                   </select>
                   <p className="text-label text-faint">
-                    {taskGoal ? "计入目标进度统计" : "未关联至任何长期目标"}
+                    {goalLinkHint(taskGoal || null)}
                   </p>
                 </div>
               </div>

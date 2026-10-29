@@ -91,6 +91,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 ```
 
 - 学习目标进度（默认权重）= 学习任务验收比例 × 0.5 + 最近回忆分 × 0.3 + min(本周打卡次数 / 5, 1) × 0.2；权重和目标打卡数在 `policy_config.learning`。"验收比例"的分母是排出去的任务（含还没做的），但不含已取消的任务——取消是终态，把它留在分母里等于让进度被一条自己撤回的题永久按住。"最近回忆分"取的是最近一次**记下了分数**的打卡：回忆正确率是选填项，把当天的打卡再存一次、留着这一栏空，不该把上一个真实的分数清零（没测 ≠ 测出来 0%）。
+- 目标进度只有学习目标在算：`recalculateGoalProgress` 进门先看 `goals.domain`，不是 `learning` 就直接返回，其他域（健康 / 工作 / 生活）的 `progress` 从创建起就是 0（种子里那个健身目标是写死的 60，见 `src/lib/db/seed.ts:532`）——所以首页不再给它印百分比：目标卡读「—」并说明这类目标不按任务推算，页头那句主目标和早报模板同理。快速创建里的「关联目标」也只记归属：它产生的任务 `template` 是 null（`src/server/services/commands/tasks/create.ts:170`），不进学习任务的分母，不会移动任何数字，原来说的「计入目标进度统计」并不成立。
 - 知识点掌握度：每道学习任务绑定一个知识点（`tasks.topic_key`），验收结论回写 `learning_mastery`，用 SM-2 变体排下次复习——答对走 1 → 3 → round(间隔 × ease) 递增（ease 从 2.5 起，每次 +0.1、夹在 1.3–2.8，间隔上限 60 天），答错把间隔压回 1 天且 ease −0.2。出题时**到期的知识点优先**，标题写成「复习：<知识点>」。
 - 重测：上次学习任务验收通过 ≥ 3 天，且最近 Check-in 有错题标签时，下一题标记为 `learning_retest`。
 - 判卷：清单里的 `judge` 项（"能用自己的话解释 X"）在验收时交给模型判定；没有配 `OPENAI_API_KEY` 时保持"未判定"而不是自动通过，超时/解析失败同样降级为未判定并写明原因。未判定的条目不算失败（任务仍可验收），但审计结论会写明"另有 N 项未判定，未计入本次结论"，学习任务在判卷项未判定时也不推进知识点掌握度——没有结论就不假装复习了一次；之后由用户判定时再补这一次（见上文"人给的结论"）。
@@ -284,7 +285,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->162<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1341<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->163<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1345<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 

@@ -18,7 +18,8 @@ import { fetchTodayPage } from "@/lib/api/pages";
 import { roleMeta } from "@/lib/agents";
 import type { GoalDto } from "@/contracts";
 import { goalStatusLabel } from "@/contracts/labels";
-import { cn, dateTime, money, pct, timeOnly } from "@/lib/format";
+import { cn, dateTime, money, timeOnly } from "@/lib/format";
+import { goalProgressHint, goalProgressText } from "@/lib/presentation/goal-view";
 import {
   briefTaskSnapshot,
   buildTodayActionQueue,
@@ -135,7 +136,9 @@ export default async function TodayPage() {
     data.brief?.narrative ??
     `# 今日早报\n\n目标：${
       activeGoals.length > 0
-        ? activeGoals.map((g) => `${g.title}（${pct(g.progress)}）`).join(" · ")
+        ? activeGoals
+            .map((g) => `${g.title}（${goalProgressText(g.domain, g.progress)}）`)
+            .join(" · ")
         : "没有进行中的目标"
     }\n\n## 今天的关键判断\n- 今天有 ${inFlight.length} 个待推进任务。\n- 有 ${data.approvals.length} 个决定等你。`;
 
@@ -159,7 +162,10 @@ export default async function TodayPage() {
             <span>·</span>
             <span>
               {primaryGoal
-                ? `目标：${primaryGoal.title} (${pct(primaryGoal.progress)})`
+                ? `目标：${primaryGoal.title} (${goalProgressText(
+                    primaryGoal.domain,
+                    primaryGoal.progress,
+                  )})`
                 : data.goals.length > 0
                   ? "没有进行中的目标"
                   : "尚未设定目标"}
@@ -408,7 +414,9 @@ export default async function TodayPage() {
           title="目标进度"
           right={
             primaryGoal ? (
-              <Badge tone="accent">{pct(primaryGoal.progress)}</Badge>
+              <Badge tone={primaryGoal.domain === "learning" ? "accent" : "neutral"}>
+                {goalProgressText(primaryGoal.domain, primaryGoal.progress)}
+              </Badge>
             ) : data.goals.length > 0 ? (
               <Badge tone="neutral">没有进行中的目标</Badge>
             ) : (
@@ -906,13 +914,19 @@ function GoalRow({ goal, muted = false }: { goal: GoalDto; muted?: boolean }) {
             {goalStatusLabel(goal.status)}
           </Badge>
         </span>
-        <span className="mono text-label text-muted">{pct(goal.progress)}</span>
+        <span className="mono text-label text-muted">
+          {goalProgressText(goal.domain, goal.progress)}
+        </span>
       </div>
-      <Progress
-        label={`${goal.title} 的目标进度`}
-        value={goal.progress}
-        tone={goal.domain === "health" ? "teal" : "accent"}
-      />
+      {goal.domain === "learning" ? (
+        <Progress
+          label={`${goal.title} 的目标进度`}
+          value={goal.progress}
+          tone="accent"
+        />
+      ) : (
+        <div className="text-label text-faint">{goalProgressHint(goal.domain)}</div>
+      )}
       <div className="mt-1 text-label text-faint">{goal.target}</div>
       <GoalStatusActions
         goalId={goal.id}
