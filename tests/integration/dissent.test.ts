@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  agentBudgetPeriods,
+  agentBudgetReservations,
   agents,
   auditEvents,
   dissents,
@@ -420,6 +422,110 @@ describe("formal dissent ledger", () => {
     expect(row.status).toBe("vindicated");
     expect(
       row.evidence.some((item) => item.quote === "budget_spend_cents = 350"),
+    ).toBe(true);
+  });
+  /**
+   * 预算异议衡量的必须是台账认识的那笔钱。
+   *
+   * 超时 / 供应商报错 / 进程中断的调用「可能已经花了钱却没报用量」，run 上的
+   * cost_cents 就是默认的 0；这份敞口只记在预算台账的 unknown_charged 行上。
+   * 模型自己挑工具的那几次调用同样不写进任何 run，只在台账留下各自的 settled 行。
+   * 只累加 runs.cost_cents 会把这两笔都当成没花钱——钱真的花掉、供应商没回话的
+   * 那一周，反而把「预算会超」的警告判成没发生。
+   */
+  it("counts the spend the ledger recorded even when no run reported usage", async () => {
+    await db.insert(runs).values([
+      {
+        id: "run_ledger_known",
+        taskId: "tsk_read",
+        agentId: "ag_coach",
+        status: "succeeded",
+        costCents: 200,
+        createdAt: daysAgo(2),
+      },
+      {
+        id: "run_ledger_unknown",
+        taskId: "tsk_read",
+        agentId: "ag_coach",
+        status: "failed",
+        costCents: 0,
+        costSource: "unknown",
+        createdAt: daysAgo(1),
+      },
+    ]);
+    await db.insert(agentBudgetPeriods).values({
+      id: "bpd_ledger",
+      userId: DEMO_USER_ID,
+      agentId: "ag_coach",
+      timezone: "UTC",
+      periodStart: daysAgo(7),
+      periodEnd: daysAgo(0),
+      limitCents: 5_000,
+    });
+    await db.insert(agentBudgetReservations).values([
+      {
+        id: "res_ledger_unknown",
+        userId: DEMO_USER_ID,
+        periodId: "bpd_ledger",
+        agentId: "ag_coach",
+        taskId: "tsk_read",
+        runId: "run_ledger_unknown",
+        state: "unknown_charged",
+        amountCents: 400,
+        createdAt: daysAgo(1),
+      },
+      {
+        id: "res_ledger_tool",
+        userId: DEMO_USER_ID,
+        periodId: "bpd_ledger",
+        agentId: "ag_coach",
+        taskId: "tsk_read",
+        runId: null,
+        state: "settled",
+        amountCents: 3,
+        settledCents: 3,
+        createdAt: daysAgo(1),
+      },
+      {
+        id: "res_ledger_tool_old",
+        userId: DEMO_USER_ID,
+        periodId: "bpd_ledger",
+        agentId: "ag_coach",
+        taskId: "tsk_read",
+        runId: null,
+        state: "settled",
+        amountCents: 5,
+        settledCents: 5,
+        createdAt: daysAgo(30),
+      },
+    ]);
+    await db.insert(dissents).values({
+      id: "dis_budget_ledger",
+      userId: DEMO_USER_ID,
+      councilId: "ccl_course",
+      taskId: "tsk_read",
+      agentId: "ag_treasurer",
+      warning: "本周预算会超过 300 分。",
+      condition: {
+        metric: "budget_spend_cents",
+        operator: ">=",
+        threshold: 300,
+        windowDays: 7,
+      },
+      status: "pending",
+      evidence: [],
+      createdAt: daysAgo(8),
+    });
+
+    const result = await evaluateDissents(DEMO_USER_ID);
+    expect(result).toEqual({ vindicated: 1, invalidated: 0 });
+
+    const [row] = await db
+      .select()
+      .from(dissents)
+      .where(eq(dissents.id, "dis_budget_ledger"));
+    expect(
+      row.evidence.some((item) => item.quote === "budget_spend_cents = 603"),
     ).toBe(true);
   });
 });

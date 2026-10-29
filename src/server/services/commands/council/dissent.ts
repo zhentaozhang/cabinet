@@ -1,6 +1,8 @@
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
 import {
+  agentBudgetReservations,
   agents,
   auditEvents,
   councils,
@@ -53,20 +55,57 @@ export async function measureDissent(
   }
 
   if (metric === "budget_spend_cents") {
-    // Weekly spend is a user-level quantity: a task-scoped dissent still
-    // measures every run the user paid for in the window, not just that task.
-    const [row] = await db
-      .select({ total: sql<number>`coalesce(sum(${runs.costCents}), 0)` })
-      .from(runs)
-      .innerJoin(tasks, eq(tasks.id, runs.taskId))
-      .where(
-        and(
-          eq(tasks.userId, userId),
-          gte(runs.createdAt, start),
-          lte(runs.createdAt, end),
+    // 花的钱要和台账同一口径，否则这条异议会被钱真的花掉的那一周驳倒。
+    //
+    // 只累加 runs.cost_cents 有两个洞：
+    // 1. 超时 / 供应商报错 / 进程中断的调用「可能已经花了钱」，run 上
+    //    cost_cents 保持默认 0（run-usage.ts 与 schema/runs.ts 都写明 null 不等于
+    //    零），这一份敞口只记在预算台账的 unknown_charged 行上；把它们当 0，
+    //    等于让「没报用量」变成「没花钱」——恰恰是 treasurer 那条预算异议要抓的事。
+    // 2. 模型自己挑工具 / MCP 工具每次调用都单独占一份预算（run_id 为空的那批
+    //    reservation），它们的钱从不写进任何 run，只记在台账的 settled_cents 上。
+    //
+    // 两处都只在窗口内累加，run 级 reservation 的 settled 部分不再加一次：
+    // 那笔金额就是 run.cost_cents 本身，重复计入会让同一次调用算成两笔。
+    const inWindow = (column: AnyPgColumn) =>
+      and(gte(column, start), lte(column, end));
+    const [spent, exposure, toolSpend] = await Promise.all([
+      db
+        .select({ total: sql<number>`coalesce(sum(${runs.costCents}), 0)` })
+        .from(runs)
+        .innerJoin(tasks, eq(tasks.id, runs.taskId))
+        .where(and(eq(tasks.userId, userId), inWindow(runs.createdAt))),
+      db
+        .select({
+          total: sql<number>`coalesce(sum(${agentBudgetReservations.amountCents}), 0)`
+        })
+        .from(agentBudgetReservations)
+        .where(
+          and(
+            eq(agentBudgetReservations.userId, userId),
+            isNotNull(agentBudgetReservations.runId),
+            eq(agentBudgetReservations.state, "unknown_charged"),
+            inWindow(agentBudgetReservations.createdAt),
+          ),
         ),
-      );
-    return Number(row?.total ?? 0);
+      db
+        .select({
+          total: sql<number>`coalesce(sum(${agentBudgetReservations.settledCents}), 0)`
+        })
+        .from(agentBudgetReservations)
+        .where(
+          and(
+            eq(agentBudgetReservations.userId, userId),
+            isNull(agentBudgetReservations.runId),
+            inWindow(agentBudgetReservations.createdAt),
+          ),
+        ),
+    ]);
+    return (
+      Number(spent[0]?.total ?? 0) +
+      Number(exposure[0]?.total ?? 0) +
+      Number(toolSpend[0]?.total ?? 0)
+    );
   }
 
   if (metric === "task_failure_count") {
