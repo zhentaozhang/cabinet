@@ -64,3 +64,40 @@ export function briefOrderList(tasks: readonly BriefTask[], limit = 3): string[]
     .slice(0, limit)
     .map((task, index) => [String(index + 1), ". ", task.title, "（", String(task.estimateMin), " 分钟）"].join(""));
 }
+
+export type BriefFreshness = {
+  stale: boolean;
+  label: string;
+  note: string;
+};
+
+/**
+ * 首页「今天的关键判断」那张卡取的是最近一份每日早报（src/server/services/queries/
+ * today.ts:76-81 只按 type = 'daily' 取最新一条），而 `regenerateBrief` 写的是「生成
+ * 那一刻」的本地日期（src/server/services/commands/brief.ts:52 的 period:
+ * localDateKey(now, timezone)，reviews 按 (userId, type, period) 唯一）。跨天之后没人
+ * 点「重新生成早报」，卡里躺的还是昨天（或更早）的正文，标题却写着「今天的关键判断」，
+ * 角落那个「生成于 …」只印时刻，读起来像今天早上刚生成。
+ *
+ * 没日期标记的一条也按「上一份」处理：无法证明它是今天的，就不能替它声称。
+ */
+export function briefFreshness(input: {
+  period: string | null | undefined;
+  todayKey: string;
+}): BriefFreshness {
+  const period =
+    typeof input.period === "string" && input.period.length > 0
+      ? input.period
+      : null;
+  if (period === input.todayKey) {
+    return { stale: false, label: "", note: "" };
+  }
+  const tail = `正文里的数字是那时的快照，点右上角重新生成才会按现在的任务重写。`;
+  return {
+    stale: true,
+    label: period ? `上一份早报 · ${period}` : "上一份早报",
+    note: period
+      ? `这条早报是 ${period} 生成的，今天（${input.todayKey}）还没有重新生成：${tail}`
+      : `这条早报没有日期标记，今天（${input.todayKey}）还没有重新生成：${tail}`,
+  };
+}

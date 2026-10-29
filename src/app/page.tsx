@@ -20,7 +20,12 @@ import type { GoalDto } from "@/contracts";
 import { goalStatusLabel } from "@/contracts/labels";
 import { cn, dateTime, money, timeOnly } from "@/lib/format";
 import { goalProgressHint, goalProgressText } from "@/lib/presentation/goal-view";
-import { briefGoalLine, briefTaskLine } from "@/lib/presentation/brief-view";
+import {
+  briefFreshness,
+  briefGoalLine,
+  briefTaskLine,
+} from "@/lib/presentation/brief-view";
+import { localDateKey } from "@/lib/domain/time";
 import {
   briefTaskSnapshot,
   buildTodayActionQueue,
@@ -88,6 +93,12 @@ export default async function TodayPage() {
     only what it knows. The fallback text below is assembled right now, so for
     that one the current count *is* the snapshot.
   */
+  // 这张卡取的是最近一份每日早报，不是「今天的」：早报按本地日期分份，跨天没重跑
+  // 时卡里还是上一份的正文，标题却写着「今天的关键判断」。
+  const briefState = briefFreshness({
+    period: data.brief?.period ?? null,
+    todayKey: localDateKey(new Date(), data.user.timezone),
+  });
   const briefTaskCount = data.brief
     ? briefTaskSnapshot(data.brief)
     : inFlight.length;
@@ -695,6 +706,11 @@ export default async function TodayPage() {
               right={<BriefButton />}
             />
             <div className="px-5 py-4">
+              {briefState.stale ? (
+                <p className="mb-3 rounded-md border border-line bg-panel2 px-3 py-2 text-label leading-relaxed text-muted">
+                  {briefState.note}
+                </p>
+              ) : null}
               <Markdown content={brief} />
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3">
@@ -721,6 +737,9 @@ export default async function TodayPage() {
               <Badge tone="accent">
                 <Sparkles className="size-2.5" /> {data.counts.proposedInsights} 条洞察待采纳
               </Badge>
+              {briefState.stale ? (
+                <Badge tone="accent">{briefState.label}</Badge>
+              ) : null}
               <span className="ml-auto text-label text-faint">
                 生成于 {dateTime(data.brief?.createdAt, tz)}
               </span>

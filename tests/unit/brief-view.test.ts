@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { briefGoalLine, briefOrderList, briefTaskLine } from "@/lib/presentation/brief-view";
+import {
+  briefFreshness,
+  briefGoalLine,
+  briefOrderList,
+  briefTaskLine,
+} from "@/lib/presentation/brief-view";
 
 function source(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -67,5 +72,42 @@ describe("both brief writers use these rules", () => {
     // 服务端不能自己再 map 一遍目标进度（那份会把非学习目标印成百分比）。
     expect(service).not.toContain("Math.round(g.progress)");
     expect(service).toContain("briefOrderList(");
+  });
+});
+describe("briefFreshness", () => {
+  it("leaves today's brief alone", () => {
+    const state = briefFreshness({ period: "2026-10-29", todayKey: "2026-10-29" });
+    expect(state.stale).toBe(false);
+    expect(state.label).toBe("");
+    expect(state.note).toBe("");
+  });
+
+  it("names the day a rolled-over brief actually belongs to", () => {
+    // reviews 按 (userId, type, period) 唯一，regenerateBrief 写的是生成那一刻的
+    // 本地日期；首页取的是最近一份 daily，所以跨天没重跑时卡里还是上一份。
+    const state = briefFreshness({ period: "2026-10-28", todayKey: "2026-10-29" });
+    expect(state.stale).toBe(true);
+    expect(state.label).toContain("2026-10-28");
+    expect(state.note).toContain("2026-10-28");
+    expect(state.note).toContain("今天（2026-10-29）");
+    expect(state.note).toContain("重新生成");
+  });
+
+  it("does not call an undated brief today's", () => {
+    const state = briefFreshness({ period: null, todayKey: "2026-10-29" });
+    expect(state.stale).toBe(true);
+    expect(state.label).toBe("上一份早报");
+    expect(state.note).toContain("没有日期标记");
+  });
+});
+
+describe("the Today page dates the brief it shows", () => {
+  const page = source("src/app/page.tsx");
+
+  it("compares the stored period with the user's today and says so when it lags", () => {
+    expect(page).toContain("briefFreshness({");
+    expect(page).toContain("localDateKey(new Date(), data.user.timezone)");
+    expect(page).toContain("{briefState.stale ?");
+    expect(page).toContain("{briefState.label}");
   });
 });
