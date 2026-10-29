@@ -69,6 +69,12 @@ export async function decideCouncil(
         ? "否决"
         : "有条件批准";
   const trimmedNote = note.trim();
+  // 没有条件就不能记成「有条件批准」：决议卡只印 decision 的标签 + note，
+  // 跟进任务的验收标准也从这段 note 抄，空的条件会让「有条件」三个字悬空。
+  // 校验层已经挡了 API 入口，这里管的是直接调用（服务边界）。
+  if (decision === "conditions" && !trimmedNote) {
+    throw new ValidationError("Conditional approval needs the conditions written down.");
+  }
 
   const dissentRecords = positions
     .filter((position) => position.isDissent || position.stance === "oppose")
@@ -99,8 +105,9 @@ export async function decideCouncil(
         );
       }
       taskId = newId("tsk");
+      // conditions 一定带着 note（上面校验过），approve 才是没有条件的那种。
       const acceptance =
-        decision === "conditions" && trimmedNote
+        decision === "conditions"
           ? `按内阁条件执行：${trimmedNote}`
           : `完成内阁决议并附执行证据：${council.topic}`;
       await tx.insert(tasks).values({

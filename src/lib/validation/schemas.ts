@@ -36,8 +36,11 @@ export const councilDecisionSchema = z
     decision: z.enum(["approve", "reject", "conditions"]),
     note: z.string().max(2000).default(""),
   })
-  .refine((value) => value.decision !== "reject" || value.note.trim().length > 0, {
-    message: "Rejecting a council decision requires a reason.",
+  // 「有条件批准」和「否决」都必须写下来：决议卡会把 decision 直接印成
+  // 「有条件批准」+ note，跟进任务的验收标准也抄这段 note。note 为空时那个
+  // decision 会被记成有条件的，而条件一个字都没有——所以这里只放过 approve。
+  .refine((value) => value.decision === "approve" || value.note.trim().length > 0, {
+    message: "Rejecting, or approving with conditions, needs a written reason.",
     path: ["note"],
   });
 

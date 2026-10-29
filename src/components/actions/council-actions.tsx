@@ -14,9 +14,15 @@ export function CouncilActions({ councilId }: { councilId: string }) {
   const [msg, setMsg] = useState<string | null>(null);
 
   async function decide(decision: "approve" | "reject" | "conditions") {
-    if (decision === "reject" && !note.trim()) {
-      setMsg("否决必须填写理由（会写入审计）。");
-      toast.error("否决必须填写理由");
+    // 「有条件批准」必须真的写出条件：服务端把 decision 印成「有条件批准」，
+    // 跟进任务的验收标准也抄这段 note，空条件等于记了一次没有条件的条件批准。
+    if (decision !== "approve" && !note.trim()) {
+      const message =
+        decision === "reject"
+          ? "否决必须填写理由（会写入审计）。"
+          : "有条件批准必须写出条件（会写进跟进任务的验收标准）。";
+      setMsg(message);
+      toast.error(message);
       return;
     }
     setBusy(decision);
@@ -51,14 +57,20 @@ export function CouncilActions({ councilId }: { councilId: string }) {
         <Button size="sm" variant="primary" onClick={() => decide("approve")} disabled={busy !== null}>
           批准这个议题
         </Button>
-        <Button size="sm" onClick={() => decide("conditions")} disabled={busy !== null}>
+        <Button
+          size="sm"
+          onClick={() => decide("conditions")}
+          disabled={busy !== null || !note.trim()}
+        >
           有条件批准
         </Button>
         <Button size="sm" variant="danger" onClick={() => decide("reject")} disabled={busy !== null || !note.trim()}>
           否决这个议题
         </Button>
       </div>
-      <div className="text-label text-faint">否决必须填写理由，理由会写入审计链。</div>
+      <div className="text-label text-faint">
+        否决和有条件批准都必须写在上面：否决的理由写入审计链，条件写入跟进任务的验收标准。
+      </div>
       <div role="status" aria-live="polite" className="text-label text-muted">
         {msg}
       </div>

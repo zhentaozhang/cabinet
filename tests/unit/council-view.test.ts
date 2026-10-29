@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { COUNCIL_RULES } from "@/lib/presentation/council-view";
@@ -33,9 +35,22 @@ describe("council rules", () => {
 
   it("keeps the rules the command layer really enforces", () => {
     // assertEvidenceRefs + 每个立场分支至少一条 evidence；
-    // council-actions.tsx 在 reject 且 note 为空时直接 return。
+    // council-actions.tsx 在 reject / conditions 且 note 为空时直接 return。
     const copy = COUNCIL_RULES.join(" ");
     expect(copy).toContain("必须给证据");
     expect(copy).toContain("必须留下理由");
+  });
+
+  it("asks for the conditions behind a conditional approval", async () => {
+    // 传「有条件批准」却什么都不写，决议卡会印出一个没有条件的「有条件批准」，
+    // 跟进任务的验收标准也没有条件可抄。
+    const page = readFileSync(
+      join(process.cwd(), "src/components/actions/council-actions.tsx"),
+      "utf8",
+    );
+    expect(page).toContain('decision !== "approve" && !note.trim()');
+    expect(page).toContain("有条件批准必须写出条件");
+    expect(page).toContain("disabled={busy !== null || !note.trim()}");
+    expect(COUNCIL_RULES.join(" ")).toContain("有条件批准");
   });
 });

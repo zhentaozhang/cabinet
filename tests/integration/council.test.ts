@@ -5,6 +5,7 @@ import {
   agents,
   auditEvents,
   councilPositions,
+  councils,
   dissents,
   goals,
   memories,
@@ -200,6 +201,39 @@ describe("council closed loop", () => {
     expect(
       councilDecisionSchema.safeParse({ decision: "approve", note: "" }).success,
     ).toBe(true);
+  });
+
+  it("requires the conditions before recording a conditional approval", () => {
+    // 决议卡把 decision 直接印成「有条件批准」+ note，跟进任务的验收标准也抄
+    // 这一段；note 为空时用户会看到一次没有任何条件的「有条件批准」。
+    expect(
+      councilDecisionSchema.safeParse({ decision: "conditions", note: "  " })
+        .success,
+    ).toBe(false);
+    expect(
+      councilDecisionSchema.safeParse({
+        decision: "conditions",
+        note: "先试学一个月，完课率达到 60% 再续费",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("refuses to record a conditional approval that carries no condition", async () => {
+    const council = await createCouncil(
+      { topic: "要不要报 8 周训练营？", trigger: "单笔支出 > ¥200" },
+      DEMO_USER_ID,
+    );
+
+    await expect(
+      decideCouncil(council.id, "conditions", "   ", DEMO_USER_ID),
+    ).rejects.toThrow(/condition/i);
+
+    // 被拒绝的那次不能把会议锁死：决议要等用户真的写出条件。
+    const [after] = await db
+      .select({ status: councils.status })
+      .from(councils)
+      .where(eq(councils.id, council.id));
+    expect(after?.status).toBe("open");
   });
 
   it("applies an approval to a task, memory and audit chain once", async () => {
