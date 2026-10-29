@@ -10,6 +10,7 @@ import type { DeliveryRunDto } from "@/contracts/dto/aggregates";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { browserApi } from "@/lib/api/browser";
+import { notifyScopeLine } from "@/lib/presentation/notify-view";
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 
@@ -63,7 +64,7 @@ export function NotifyPrefsForm({ initial }: { initial: NotifyPrefsDto }) {
         <span>
           <span className="block text-body text-ink">用邮件通知我异常</span>
           <span className="mt-1 block text-label leading-relaxed text-faint">
-            只会发需要你动手的事：验收未通过、等你批准、预算拦截、记忆冲突。正常的一天不会收到邮件。
+            {notifyScopeLine()}
           </span>
         </span>
       </label>

@@ -19,6 +19,7 @@ import {
 import type { DeliveryPageDto } from "@/contracts";
 import { fetchDeliveryPage } from "@/lib/api/pages";
 import { dateTime } from "@/lib/format";
+import { NOTIFY_EMPTY_HINT } from "@/lib/presentation/notify-view";
 
 export const metadata: Metadata = {
   title: "通知 · Cabinet",
@@ -117,7 +118,7 @@ export default async function NotificationsPage({
             <EmptyState
               icon={<Inbox className="size-4" />}
               title="还没有需要通知你的事"
-              hint="任务通过验收、预算正常、没有冲突的日子，这里会一直是空的。"
+              hint={NOTIFY_EMPTY_HINT}
             />
           </div>
         ) : (
