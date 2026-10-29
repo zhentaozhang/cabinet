@@ -4,6 +4,7 @@ import "./globals.css";
 import { Shell } from "@/components/shell";
 import { ToastContainer } from "@/components/ui/toast";
 import { fetchShellContext } from "@/lib/api/pages";
+import { demoResetAllowed } from "@/lib/demo";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,7 +37,9 @@ export default async function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full">
-        <Shell context={shellContext}>{children}</Shell>
+        <Shell context={shellContext} demoResetEnabled={demoResetAllowed()}>
+          {children}
+        </Shell>
         <ToastContainer />
       </body>
     </html>

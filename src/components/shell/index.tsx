@@ -23,9 +23,12 @@ import { SidebarBody } from "./sidebar-body";
 export function Shell({
   children,
   context = null,
+  demoResetEnabled = false,
 }: {
   children: React.ReactNode;
   context?: ShellContextDto | null;
+  /** 由服务端 `demoResetAllowed()` 传入：端点在不在，按钮就在不在。 */
+  demoResetEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const { data: session } = authClient.useSession();
@@ -33,7 +36,13 @@ export function Shell({
   const displayName = sessionUser?.name ?? context?.name ?? "Zhen";
   const displayEmail = sessionUser?.email ?? context?.email ?? "demo workspace";
   const showSignOut = Boolean(sessionUser);
-  const showReset = !sessionUser || sessionUser.email === "demo@cabinet.local";
+  // 按钮原来只问「谁在登录」：默认配置（DEMO_MODE=false、
+  // DEMO_RESET_ENABLED=false、AUTH_REQUIRED 未设）下它照样显示，点下去端点
+  // 404，界面只能停在「重置失败」。可见性必须跟 `/api/demo/reset` 的开关同源，
+  // 所以由服务端算好传进来（客户端读不到这两个环境变量）。
+  const showReset =
+    demoResetEnabled &&
+    (!sessionUser || sessionUser.email === "demo@cabinet.local");
 
   const currentItem = NAV.find((item) => matchesHref(pathname, item.href));
   const pageTitle = currentItem?.hint ?? "CABINET";

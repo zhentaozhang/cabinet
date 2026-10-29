@@ -216,6 +216,7 @@ DEMO_MODE=false
 - 可选 `OPENAI_JUDGE_MODEL`：只给判卷用（缺省回落到 `OPENAI_MODEL`）。判卷要的是稳定，所以温度固定 0，和写产物的那次调用互不影响。
 - 可选 `MODEL_TOOL_SELECTION=on`：让模型自己决定调 `web_search` 还是 `web_fetch`（默认关闭，走计划阶段选好的单个工具）。开启后每次工具调用都是一次独立的计费请求，用量按实际 token 记账。
 - `AUTH_REQUIRED=false` 只用于本地；生产环境会自动要求登录（`NODE_ENV=production`），并应设置 `DEMO_MODE=false`、关闭演示登录和 reset。
+- 只有 `DEMO_RESET_ENABLED=true` 且 `DEMO_MODE=true`、不在生产时才出现侧边栏的「重置演示数据」：按钮显隐与 `/api/demo/reset` 读同一个 `demoResetAllowed()`，默认配置下不会摆一个点下去必然 404 的按钮。
 - 演示账号：`demo@cabinet.local` / `cabinet-demo`。
 
 ## 演示路径
@@ -285,7 +286,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->169<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1373<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->169<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1378<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 

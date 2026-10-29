@@ -1,26 +1,12 @@
 import { revalidatePath } from "next/cache";
 import { handleMutation } from "@/lib/api/mutation";
 import { seedDemo } from "@/lib/db/seed";
+import { demoResetAllowed } from "@/lib/demo";
 
-/**
- * Two switches, not one.
- *
- * `seedDemo()` truncates 31 tables including `users`, and the auth gate is
- * fail-open outside production (AUTH_REQUIRED 未设时 getApiUserId 直接返回
- * DEMO_USER_ID), so a dev/staging instance with only DEMO_RESET_ENABLED=true
- * was a one-click, anonymous, whole-database wipe. Demo mode must be opted into
- * as well, and production never qualifies regardless of the flags.
- */
-function isDemoResetAllowed(): boolean {
-  return (
-    process.env.NODE_ENV !== "production" &&
-    process.env.DEMO_MODE === "true" &&
-    process.env.DEMO_RESET_ENABLED === "true"
-  );
-}
+// 开关的判断在 `src/lib/demo.ts`：侧边栏要用同一个答案决定按钮显示不显示。
 
 export async function POST(request: Request) {
-  if (!isDemoResetAllowed()) {
+  if (!demoResetAllowed()) {
     return Response.json(
       { ok: false, error: "Not available", code: "not_found" },
       { status: 404 },

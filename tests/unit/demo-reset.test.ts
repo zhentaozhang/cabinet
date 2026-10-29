@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { POST } from "@/app/api/demo/reset/route";
 import { db } from "@/lib/db";
+import { demoResetAllowed } from "@/lib/demo";
 import { goals } from "@/lib/db/schema";
 import { resetDb } from "../helpers/db";
 
@@ -101,5 +104,55 @@ describe("demo reset endpoint", () => {
 
     const [goal] = await db.select().from(goals).where(eq(goals.id, "goal_rag"));
     expect(goal.title).toBe("6 周学会 RAG");
+  });
+});
+
+describe("demoResetAllowed", () => {
+  it("is false unless both switches are on", () => {
+    delete process.env.DEMO_MODE;
+    delete process.env.DEMO_RESET_ENABLED;
+    env.NODE_ENV = "development";
+    expect(demoResetAllowed()).toBe(false);
+
+    process.env.DEMO_MODE = "true";
+    expect(demoResetAllowed()).toBe(false);
+
+    delete process.env.DEMO_MODE;
+    process.env.DEMO_RESET_ENABLED = "true";
+    expect(demoResetAllowed()).toBe(false);
+  });
+
+  it("is true when both switches are on outside production", () => {
+    process.env.DEMO_MODE = "true";
+    process.env.DEMO_RESET_ENABLED = "true";
+    env.NODE_ENV = "development";
+
+    expect(demoResetAllowed()).toBe(true);
+  });
+
+  it("is false in production even when both switches are on", () => {
+    process.env.DEMO_MODE = "true";
+    process.env.DEMO_RESET_ENABLED = "true";
+    env.NODE_ENV = "production";
+
+    expect(demoResetAllowed()).toBe(false);
+  });
+});
+
+describe("the reset button answers to the endpoint's own switch", () => {
+  const read = (path: string): string =>
+    readFileSync(join(process.cwd(), path), "utf8");
+
+  it("does not show the button on the strength of the session alone", () => {
+    const shell = read("src/components/shell/index.tsx");
+
+    expect(shell).toContain("demoResetEnabled &&");
+    expect(shell).not.toContain("const showReset = !sessionUser");
+  });
+
+  it("gets that flag from the server layout, not from the client", () => {
+    expect(read("src/app/layout.tsx")).toContain(
+      "demoResetEnabled={demoResetAllowed()}",
+    );
   });
 });
