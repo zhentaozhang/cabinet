@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 import {
   agentHeadcount,
@@ -133,3 +136,16 @@ describe("agentPassRate", () => {
   });
 });
 
+
+describe("the Agent list renders the same pass-rate readout as the detail page", () => {
+  const page = readFileSync(join(process.cwd(), "src/app/cabinet/page.tsx"), "utf8");
+
+  it("does not compute its own percentage from the raw counters", () => {
+    // 列表页原本有一份 local successRate：0 通过 / 0 驳回时返回 0，卡片上印「0%」，
+    // 而同一个 Agent 的详情页与复盘页都说「还没有验收记录」。0/0 不是一个比例，
+    // 新工作区里 7 个 Agent 全都会显示成「验收全没过」。
+    expect(page).toContain("agentPassRate(");
+    expect(page).not.toMatch(/function\s+successRate/);
+    expect(page).not.toContain(`{rate}%`);
+  });
+});

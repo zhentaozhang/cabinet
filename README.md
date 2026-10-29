@@ -113,7 +113,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | 今日行动队列 | 「待处理」的构成 = 审批 / 内阁决议 / 待你判定的验收 / 被驳回 / 执行失败 / **等你采纳的建议**（`suggested`）；页头的「N 项任务推进中」「N 项待处理」与「其他推进中的任务」卡片都用 `src/lib/presentation/today-view.ts` 的一处判定，队列里的任务不再出现在下面的列表里 | 建议不是进展：L1 的 Agent 跑完只写一份草稿，任务页自己写着「等待你审核…由主理人确认采纳后方可继续」，把它列进「推进中」等于替用户宣称它自己会往前走（页头还会同时说「0 项待处理」和「1 项进行中」） |
 | 运行前预演 | 任务页的只读面板：把 `decideRun` 的结论翻成「允许 / 需审批 / 拒绝 + 还缺什么」 | 与真实执行读同一份基础策略；不建预算周期行、不写任何状态 |
 | 分离职责 | 只有 auditor 角色、且不是 assignee，才能验收 | Auditor 放弃判定时由用户判定（`audit.override`），但用户的判定不进 Agent 的绩效 |
-| 通过率口径 | Agent 详情页的 Pass rate 在没有任何判定记录时印「—」（提示「还没有验收记录」），有记录才印百分比 | 0/0 不是一个比例：一次都没判过就印「0% · 验收通过率」，等于替这个 Agent 宣布「验收全没过」；复盘页对同一个数早就写「还没有验收记录」，metrics 里的遵从率/复测通过率/目标进度缺样本时也一律给 null 而不用 0 顶替 |
+| 通过率口径 | Agent 详情页与内阁列表卡片上的 Pass rate 都读同一个 `agentPassRate`：没有任何判定记录时印「—」（提示「还没有验收记录」），有记录才印百分比 | 0/0 不是一个比例：一次都没判过就印「0% · 验收通过率」，等于替这个 Agent 宣布「验收全没过」；复盘页对同一个数早就写「还没有验收记录」，metrics 里的遵从率/复测通过率/目标进度缺样本时也一律给 null 而不用 0 顶替。列表卡片曾经自己留了一份 `successRate`：新工作区里 7 个 Agent 一次都没判过，七张卡片同时印「0% · pass」，点进去却是「—」——同一个数在两页上说相反的话 |
 | 运行成本 | 运行横幅和 Agent 页的最近运行列表：token 未上报印「用量未知」，`cost_source = unknown` 时金额印「费用未知」而不是 ¥0.00；只有 `actual` 或 null（这次根本没调模型）才印金额 | 失败/超时的模型调用可能真的到了供应商那边、只是没报用量（`src/lib/llm.ts` 对 timeout / provider_error / empty_response 都记 unknown），台账已把这份敞口记成 `unknownCents`，Agent 页的「本周模型用量」也把「未知」算进去了——同一页的行里再印 ¥0.00 等于说这次没花钱 |
 | 审计运行的用量 | 判卷那次调用会在审计 run 上记下供应商回报的 token 与费用：`mode` 记 `live`、`providerAttemptId` 记本次尝试、`cost_source` 记 `actual`；调用过但没报用量记 `unknown` 且 token 留 null，没判卷（确定性核对）才留 null + `cost_source` 为空。判卷既不预留也不结算，所以它不占周预算上限——连接器页的模型说明照这个写：生成产物与模型选工具用掉的 token 进每周预算台账，判卷那次调用只记在那条审计运行上 | 原来这条 run 无条件写「审计是确定性的、没有供应商、没有用量、没有花费」，而 `judge` 项真的走了一次 temperature 0 的模型调用：结果同一张卡上既印「演示模板」又印「用量未知 · ¥0.00」，判卷的 token 被整条丢掉，事后查账也看不出这次验收花过钱；连接器页那句「用量与费用记在每周预算台账里」同样不成立，会让人以为调低周上限就能挡住判卷的开销 |
 | 审计链 | 每个用户一条 SHA-256 前向哈希链；哈希按「这一行落进 jsonb 之后的样子」算（对象里值为 undefined 的键会被丢掉，数组里的 undefined 记作 null），所以任何人都能从存下来的行重算并验证 | Review 页可验证 |
@@ -285,7 +285,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->169<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1372<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->169<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1373<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 

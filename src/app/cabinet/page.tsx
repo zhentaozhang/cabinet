@@ -21,6 +21,7 @@ import { AUTONOMY_LABELS, roleMeta, statusLabel } from "@/lib/agents";
 import { money } from "@/lib/format";
 import {
   agentHeadcount,
+  agentPassRate,
   escalationPolicyLine,
   tasksPerAgent,
 } from "@/lib/presentation/cabinet-view";
@@ -200,12 +201,6 @@ function CapabilityRow({
   );
 }
 
-function successRate(success: number, fail: number) {
-  const total = success + fail;
-  if (total === 0) return 0;
-  return Math.round((success / total) * 100);
-}
-
 function AgentCard({
   agent,
   taskCount,
@@ -236,7 +231,7 @@ function AgentCard({
   taskCount: number;
 }) {
   const meta = roleMeta(agent.role);
-  const rate = successRate(agent.successCount, agent.failCount);
+  const passRate = agentPassRate(agent);
   return (
     <Link href={`/cabinet/${agent.id}`} className="group block">
       <Card className="h-full transition-colors group-hover:border-line2 group-hover:bg-panel2/60">
@@ -284,7 +279,9 @@ function AgentCard({
             <div className="text-eyebrow uppercase tracking-wider text-faint">trust</div>
           </div>
           <div>
-            <div className="mono text-emphasis text-ink">{rate}%</div>
+            <div className="mono text-emphasis text-ink" title={passRate.hint}>
+              {passRate.value}
+            </div>
             <div className="text-eyebrow uppercase tracking-wider text-faint">pass</div>
           </div>
           <div>
