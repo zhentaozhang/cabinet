@@ -16,6 +16,7 @@ import { Button, Progress } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import type { InsightDto } from "@/contracts";
+import { actionTypeLabel } from "@/contracts/labels";
 import { API_ROUTES } from "@/contracts/routes";
 import { checkinMemoryContent } from "@/lib/domain/checkin-memory";
 import { cn } from "@/lib/format";
@@ -272,6 +273,8 @@ export function ApprovalActions({
   const [days, setDays] = useState(30);
   const [maxCents, setMaxCents] = useState(5_000);
   const isSpend = actionType === "spend";
+  /** 审批的对象是任务的动作类型（external / spend / publish…），不是一律「外部动作」。 */
+  const actionName = actionType ? actionTypeLabel(actionType) : "这次执行";
   /**
    * `admin` and `audit` may never become standing policy — the server rejects
    * them, and an unset actionType is unknown, so the checkbox is only offered
@@ -308,9 +311,9 @@ export function ApprovalActions({
     toast.success(
       decision === "approve"
         ? effectiveRemember
-          ? `已批准，并在 ${days} 天内自动执行同类动作`
-          : "已批准外部动作"
-        : "已拒绝动作",
+          ? `已批准，并在 ${days} 天内自动执行同类动作（${actionName}）`
+          : `已批准：${actionName}`
+        : `已拒绝：${actionName}`,
     );
     router.refresh();
   }

@@ -51,7 +51,13 @@ export async function getTaskData(taskId: string, userId: string) {
     task.auditorId
       ? db.select().from(agents).where(eq(agents.id, task.auditorId))
       : Promise.resolve([]),
-    db.select().from(approvals).where(eq(approvals.taskId, taskId)),
+    // 审批行按时间倒序：一条任务可能留下多行（每次运行花掉一条），没有
+    // ORDER BY 时卡片里的「历史」顺序随物理行序变化，读数没有意义。
+    db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.taskId, taskId))
+      .orderBy(desc(approvals.createdAt), desc(approvals.id)),
     db
       .select()
       .from(auditEvents)

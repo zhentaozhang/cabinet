@@ -1093,3 +1093,49 @@ export function summarizeTaskCitations(
     groundingNote,
   };
 }
+
+/* ------------------------------------------------------------------
+ * Approvals on the task page
+ *
+ * 一条任务可以有多行审批：requestApproval 只对「还在等」的那一行去重
+ *（src/server/services/commands/tasks/approvals.ts:49-50），前面那次运行花掉
+ * 的批准会以 approved 留在表里（同文件 :115-116 明确说「一条任务可以持有
+ * 多次已花费的批准」）。页面原来把 `approvals[0]` 当作「待审批动作」印出来，
+ * 而 getTaskData 的审批查询没有 ORDER BY，于是横幅常常念的是上一轮已经批过
+ * 的那次动作和它的旧理由，跟下面那张卡里真正 pending 的那一行对不上。
+ *
+ * 另外两个同源的错话：动作类型是枚举（external / spend / publish…），
+ * src/contracts/labels.ts:116-121 专门提醒它是「最不该印成 internal_read 的
+ * 字段」，横幅和审批卡却都直接印了键；卡片标题写「需要批准」，即使每一行都
+ * 已经批过、过期或被撤回——那时它只是一份记录。
+ */
+
+/** The approval the reader is actually being asked about, if any. */
+export function pendingApprovalFor<T extends { status: string }>(
+  rows: readonly T[],
+): T | undefined {
+  return rows.find((row) => row.status === "pending");
+}
+
+/**
+ * Pending rows first, the rest in the order they arrived: the card is a queue
+ * at the top and a history below, so a decided row can never cover the one
+ * still waiting.
+ */
+export function pendingApprovalsFirst<T extends { status: string }>(
+  rows: readonly T[],
+): T[] {
+  const pending = rows.filter((row) => row.status === "pending");
+  if (pending.length === 0 || pending.length === rows.length) return [...rows];
+  return [...pending, ...rows.filter((row) => row.status !== "pending")];
+}
+
+/** An approvals card asks for a decision only while one is actually pending. */
+export function approvalCardHeading(hasPending: boolean): {
+  eyebrow: string;
+  title: string;
+} {
+  return hasPending
+    ? { eyebrow: "Approval Required", title: "需要批准" }
+    : { eyebrow: "Approval History", title: "审批记录" };
+}

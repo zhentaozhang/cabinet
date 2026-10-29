@@ -12,6 +12,7 @@ import { statusLabel, statusTone } from "@/contracts/labels";
 import {
   STEP_META,
   TOOL_STATUS_MAP,
+  approvalCardHeading,
   classifyEvidence,
   getChecklistRuleLabel,
   getCitationRelationship,
@@ -22,6 +23,8 @@ import {
   getStatusNextAction,
   getStatusSummary,
   isKnownTaskStatus,
+  pendingApprovalFor,
+  pendingApprovalsFirst,
   resolveFailurePresentation,
   resolveRejectionPresentation,
   summarizeTaskCitations,
@@ -1015,5 +1018,59 @@ describe("the task page hands the banner its rejection attribution", () => {
     // 横幅要能分辨「Auditor 判的」和「你自己判的」，而这个事实只有页面手里
     // 有（override 行）。少传这一位，函数本身再对也没用。
     expect(page).toMatch(/getStatusBannerInfo\([\s\S]{0,400}rejection\.byUser/);
+  });
+});
+
+describe("the approval blocks name the row that is actually waiting", () => {
+  // 一条任务会留下多行审批：approvals.ts 只对「还在等」的那行去重，前面那次
+  // 运行花掉的批准以 approved 留在表里。页面原来印的是 approvals[0]，而查询
+  // 没有 ORDER BY——横幅于是常念上一轮已经批过的动作和它的旧理由。
+  const rows = [
+    { id: "appr_old", status: "approved", action: "external" },
+    { id: "appr_new", status: "pending", action: "spend" },
+  ];
+
+  it("picks the pending approval, not whichever row came back first", () => {
+    expect(pendingApprovalFor(rows)?.id).toBe("appr_new");
+    expect(pendingApprovalFor([rows[0]])).toBeUndefined();
+  });
+
+  it("shows the pending row first so a decided one cannot cover it", () => {
+    expect(pendingApprovalsFirst(rows).map((row) => row.id)).toEqual([
+      "appr_new",
+      "appr_old",
+    ]);
+    expect(pendingApprovalsFirst([rows[0]]).map((row) => row.id)).toEqual(["appr_old"]);
+  });
+
+  it("stops calling a fully decided history a request for approval", () => {
+    expect(approvalCardHeading(true)).toEqual({
+      eyebrow: "Approval Required",
+      title: "需要批准",
+    });
+    expect(approvalCardHeading(false)).toEqual({
+      eyebrow: "Approval History",
+      title: "审批记录",
+    });
+  });
+
+  it("wires the page to the pending row and to the labels, not to the raw keys", () => {
+    const page = readFileSync(join(process.cwd(), "src/app/tasks/[id]/page.tsx"), "utf8");
+    expect(page).toContain("pendingApprovalFor(approvals)");
+    expect(page).toContain("actionTypeLabel(pendingApproval.action)");
+    expect(page).toContain("actionTypeLabel(approval.action)");
+    expect(page).toContain("title={approvalHeading.title}");
+    expect(page).not.toContain("approvals[0].action");
+  });
+
+  it("does not toast a spend approval as an external action", () => {
+    const actions = readFileSync(
+      join(process.cwd(), "src/components/actions/task-actions.tsx"),
+      "utf8",
+    );
+    expect(actions).toContain(
+      'const actionName = actionType ? actionTypeLabel(actionType) : "这次执行";',
+    );
+    expect(actions).not.toContain("已批准外部动作");
   });
 });

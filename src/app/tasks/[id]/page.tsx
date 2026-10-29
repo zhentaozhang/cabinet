@@ -35,6 +35,7 @@ import { isSimulatedSource, sourceLabel } from "@/lib/domain/provenance";
 import {
   STEP_META,
   TOOL_STATUS_MAP,
+  approvalCardHeading,
   classifyEvidence,
   getChecklistRuleLabel,
   getChecklistTypeTag,
@@ -43,6 +44,8 @@ import {
   getStatusBannerInfo,
   getNextActionCopy,
   getStatusSummary,
+  pendingApprovalFor,
+  pendingApprovalsFirst,
   pendingDecisionItems,
   resolveFailurePresentation,
   resolveRejectionPresentation,
@@ -91,6 +94,12 @@ export default async function TaskPage({
   if (!data) notFound();
   const tz = data.timezone;
   const { task, goal, assignee, auditor, runs, steps, artifacts, evidence, approvals, audit, override, actions } = data;
+
+  // 一条任务可能留着多行审批（上次运行花掉的那次是 approved）。横幅只该说
+  // 还在等你的那一条，卡片则按「待批 vs 记录」显示，并把 pending 排在前面。
+  const pendingApproval = pendingApprovalFor(approvals);
+  const approvalRows = pendingApprovalsFirst(approvals);
+  const approvalHeading = approvalCardHeading(Boolean(pendingApproval));
 
   const stepsByRun = new Map<string, typeof steps>();
   for (const step of steps) {
@@ -368,17 +377,17 @@ export default async function TaskPage({
           </div>
         ) : null}
 
-        {/* Hoisted alert if pending approval */}
-        {task.status === "awaiting_approval" && approvals.length > 0 ? (
+        {/* Hoisted alert if pending approval：说的是那行还在等你的审批，不是表里第一行。 */}
+        {task.status === "awaiting_approval" && pendingApproval ? (
           <div className="mt-4 rounded-lg border border-accent/30 bg-accent/10 p-3.5">
             <div className="flex items-start gap-2.5">
               <CircleAlert className="mt-0.5 size-4 shrink-0 text-accent" />
               <div className="min-w-0 flex-1">
                 <div className="text-label font-semibold text-accent">
-                  待审批动作：{approvals[0].action}
+                  待审批动作：{actionTypeLabel(pendingApproval.action)}
                 </div>
                 <div className="mt-1 text-label leading-relaxed text-ink-soft">
-                  {String(approvals[0].payload.reason ?? approvals[0].payload.note ?? "请在右侧审批卡片中确认放行")}
+                  {String(pendingApproval.payload.reason ?? pendingApproval.payload.note ?? "请在右侧审批卡片中确认放行")}
                 </div>
               </div>
             </div>
@@ -1267,13 +1276,17 @@ export default async function TaskPage({
           </Card>
 
           {approvals.length > 0 ? (
-            <Card className="border-accent/25">
-              <CardHeader eyebrow="Approval Required" title="需要批准" />
+            <Card className={pendingApproval ? "border-accent/25" : undefined}>
+              {/* 标题跟着事实走：全部批完/过期之后这里只是一份记录，不再叫人批准。 */}
+              <CardHeader
+                eyebrow={approvalHeading.eyebrow}
+                title={approvalHeading.title}
+              />
               <div className="space-y-3 px-5 py-4">
-                {approvals.map((approval) => (
+                {approvalRows.map((approval) => (
                   <div key={approval.id} className="text-label text-muted">
                     <div className="flex items-center gap-2 font-medium text-ink">
-                      <CircleAlert className="size-3.5 text-accent" /> {approval.action}
+                      <CircleAlert className="size-3.5 text-accent" /> {actionTypeLabel(approval.action)}
                     </div>
                     <div className="mt-1 leading-relaxed">
                       {String(approval.payload.reason ?? approval.payload.note ?? "")}

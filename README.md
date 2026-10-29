@@ -109,6 +109,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | 优先级 | `tasks.priority` 是名次不是分数：P1 最靠前。种子把今天的事记 1、明天记 2，内阁决议生成的任务是 1（`council/decide.ts`），新建任务默认 2 | Review 页的「下一周唯一目标」先按优先级挑、同优先才比截止日期；反着排会让 P1 的任务全被跳过，页面却仍说挑的是「优先级最高的」 |
 | 策略门禁 | 状态、生命周期、自主等级、grant、周预算台账、审批 | 阈值来自 `policy_config`（可按用户被 `policy_overrides` 覆盖），缺失时 fail-closed；Agent 详情页「升级需要」那行由 `config.autonomy` 的四个数拼出来（信任分、成功任务、有效审计样本、**审计通过率**），不是写死的文案——漏掉通过率时，四条全达标却因一半产物被驳回而升不上去的人找不到原因 |
 | 审批 | 外部动作 / 超预算进入审批；批准后消费一次 | 不执行真实外部动作 |
+| 审批卡说的是哪一行 | 一条任务可以留下多行审批（`approvals.ts:49-50` 只对还 pending 的那行去重，以前运行花掉的批准以 `approved` 留在表里）：任务页横幅用 `pendingApprovalFor` 取真正在等你的那一行，卡片用 `pendingApprovalsFirst` 把待批排在最前，动作类型经 `actionTypeLabel` 印成「外部调用 / 产生花费」而不是枚举键，卡片标题在全部批完/过期后改称「审批记录」 | 原来横幅印的是 `approvals[0]`，而 `src/server/services/queries/task.ts` 的审批查询当时没有 `ORDER BY`——第二次审批请求之后，横幅念的是上一轮已经批过的那次动作和它的旧理由，同一张卡里却列着两行；动作类型直接印键（`external` / `spend`），`src/contracts/labels.ts:116-121` 专门提醒它是「最不该印成 `internal_read` 的字段」；批准一条「产生花费」的审批时，toast 还写「已批准外部动作」 |
 | 验收 | 清单项：section / min_words / min_sources / min_evidence / contains / claims_table / manual / judge；页面把「未通过」与「需人工复核」分开数（`undetermined` 的条目 `passed` 也是 false，不能算失败）；驳回面板与顶部横幅按当前状态说话——重新提交后不再显示「被驳回」，人判驳回时署「你的驳回理由」、横幅也写「你驳回了当前产物」而不是 Auditor 的旧结论 | 除 judge 外都是确定性检查；required 项未判定时进入 `needs_review`，不冒充通过 |
 | 验收由谁发起 | `submitted` 的下一步是「发起验收」，不是「等待验收」：`auditTask` 只由 `POST /api/tasks/[id]/audit`（任务页那颗「提交给 Auditor 验收」按钮）和学徒结业考试调用，`pnpm tick` 的维护任务里没有它；任务页横幅按 `canAudit`（`taskActions().audit.allowed`）分两句话——能点就请你按那颗按钮，没有验收者就说清楚它为什么按不了 | 没有守护进程：`submitted` 会一直停在原地。原来横幅写「Auditor 正在裁定、此时无需操作」，而同一屏右边就是那颗唯一的按钮，产物会无限期躺着 |
 | 用户判定 | `needs_review` → 用户在任务页给出 accepted/rejected（`audit.override`，理由必填） | 不改信任分；判成 accepted 时当场重算目标进度（否则同一条数据会因下一次无关重算而变数）、把判卷历史里那次作答标成已接受（与 audit 回填同一字段，避免同一份作答两处说法相反）；推进知识点掌握度并写一条任务记忆；不写 `approvals`（那是执行授权，不是判定记录） |
@@ -295,7 +296,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->172<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1450<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->172<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1456<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 
