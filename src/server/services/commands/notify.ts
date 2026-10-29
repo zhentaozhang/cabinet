@@ -168,13 +168,16 @@ export const notices = {
   }): { subject: string; body: string; href: string } {
     return {
       subject: `记忆冲突：${input.factKey}`,
-      href: "/memory?view=current",
+      href: "/memory?view=history",
       body: [
         `记忆 ${input.factKey} 出现了两个互相矛盾的值。`,
         `新值：${input.value ?? "（空）"}`,
         input.previous ? `旧值：${input.previous}` : "旧值：（无）",
         "",
-        "冲突不会被自动覆盖，需要你确认哪一条为准。",
+        // 旧说法「需要你确认哪一条为准」没有对应的动作：冲突行写入时就已经
+        // validTo = now、status = conflicted，只留在「历史版本」栏，旧的那条
+        // 一个字段都没动、继续被检索。真正能改变现状的只有删除生效行。
+        "旧的那条没有被动过，仍在生效、仍会被检索；新的这条只留作历史，标为「自相矛盾」，不参与检索。没有「二选一」的裁定按钮——要纠正就把生效的那条删掉，下一次写入才会直接落成新事实。",
       ].join("\n"),
     };
   },

@@ -24,6 +24,7 @@ import {
   escalationPolicyLine,
   tasksPerAgent,
 } from "@/lib/presentation/cabinet-view";
+import { conflictCellDetail } from "@/lib/presentation/memory-view";
 import {
   Avatar,
   Badge,
@@ -536,11 +537,7 @@ export default async function CabinetPage() {
               label="记忆"
               value={knowledge.memories.active}
               unit="条有效"
-              detail={
-                knowledge.memories.conflicted > 0
-                  ? `${knowledge.memories.conflicted} 条自相矛盾，待你裁定`
-                  : "没有互相冲突的事实"
-              }
+              detail={conflictCellDetail(knowledge.memories.conflicted)}
               href="/memory"
               alert={knowledge.memories.conflicted > 0}
             />

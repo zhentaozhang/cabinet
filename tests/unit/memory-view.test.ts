@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   MEMORY_GOVERNANCE_LINES,
   MEMORY_HEADER_BADGES,
+  conflictCellDetail,
+  conflictStatHint,
 } from "@/lib/presentation/memory-view";
 
 /**
@@ -40,5 +42,29 @@ describe("memory page promises", () => {
     expect(copy).toContain("近因");
     expect(copy).toContain("过期");
     expect(copy).not.toContain("低置信");
+  });
+});
+
+/**
+ * 冲突计数原来写着「待解决矛盾」（记忆页）与「待你裁定」（内阁页）。两者都
+ * 在暗示一个不存在的动作：冲突行写入时就已 validTo = now，只落在「历史版本」
+ * 栏，生效的那条没有被覆盖，而产品里唯一的写入面是删除。
+ */
+describe("conflict counters", () => {
+  it("points at the tab that actually lists a conflicting row", () => {
+    expect(conflictStatHint(2)).toContain("历史版本");
+    expect(conflictCellDetail(2)).toContain("2 条自相矛盾");
+    expect(conflictStatHint(2)).not.toContain("待解决");
+    expect(conflictCellDetail(2)).not.toContain("待你裁定");
+  });
+
+  it("says there is nothing to resolve when the count is zero", () => {
+    expect(conflictStatHint(0)).toBe("没有互相冲突的事实");
+    expect(conflictCellDetail(0)).toBe("没有互相冲突的事实");
+  });
+
+  it("never prints a broken count", () => {
+    expect(conflictCellDetail(Number.NaN)).toBe("没有互相冲突的事实");
+    expect(conflictCellDetail(-1)).toBe("没有互相冲突的事实");
   });
 });

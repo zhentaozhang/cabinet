@@ -22,6 +22,7 @@ import { memoryTypeLabel } from "@/contracts/labels";
 import {
   MEMORY_GOVERNANCE_LINES,
   MEMORY_HEADER_BADGES,
+  conflictStatHint,
 } from "@/lib/presentation/memory-view";
 
 export const metadata: Metadata = {
@@ -113,7 +114,7 @@ export default async function MemoryPage({
           />
         </Card>
         <Card className="px-4 py-3">
-          <Stat label="Conflicts" value={conflicts} hint="待解决矛盾" />
+          <Stat label="Conflicts" value={conflicts} hint={conflictStatHint(conflicts)} />
         </Card>
         <Card className="px-4 py-3">
           <Stat label="Stale" value={stale} hint="已过期" />

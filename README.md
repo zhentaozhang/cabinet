@@ -117,7 +117,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | 运行成本 | 运行横幅和 Agent 页的最近运行列表：token 未上报印「用量未知」，`cost_source = unknown` 时金额印「费用未知」而不是 ¥0.00；只有 `actual` 或 null（这次根本没调模型）才印金额 | 失败/超时的模型调用可能真的到了供应商那边、只是没报用量（`src/lib/llm.ts` 对 timeout / provider_error / empty_response 都记 unknown），台账已把这份敞口记成 `unknownCents`，Agent 页的「本周模型用量」也把「未知」算进去了——同一页的行里再印 ¥0.00 等于说这次没花钱 |
 | 审计运行的用量 | 判卷那次调用会在审计 run 上记下供应商回报的 token 与费用：`mode` 记 `live`、`providerAttemptId` 记本次尝试、`cost_source` 记 `actual`；调用过但没报用量记 `unknown` 且 token 留 null，没判卷（确定性核对）才留 null + `cost_source` 为空。判卷既不预留也不结算，所以它不占周预算上限——连接器页的模型说明照这个写：生成产物与模型选工具用掉的 token 进每周预算台账，判卷那次调用只记在那条审计运行上 | 原来这条 run 无条件写「审计是确定性的、没有供应商、没有用量、没有花费」，而 `judge` 项真的走了一次 temperature 0 的模型调用：结果同一张卡上既印「演示模板」又印「用量未知 · ¥0.00」，判卷的 token 被整条丢掉，事后查账也看不出这次验收花过钱；连接器页那句「用量与费用记在每周预算台账里」同样不成立，会让人以为调低周上限就能挡住判卷的开销 |
 | 审计链 | 每个用户一条 SHA-256 前向哈希链；哈希按「这一行落进 jsonb 之后的样子」算（对象里值为 undefined 的键会被丢掉，数组里的 undefined 记作 null），所以任何人都能从存下来的行重算并验证 | Review 页可验证 |
-| 记忆 | 证据、scope、冲突、删除、历史；排序 = 词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度，可注入外部 rerank；「待解决矛盾」按整张表数，不看当前这一栏 | 没有 embedding / 向量库（本机 Postgres 无 `vector` 扩展）；写入面只有删除（`DELETE /api/memories/:id`，留 `memory.delete` 审计），没有编辑接口，也没有「按领域要求你确认」的闸门——Agent 写的健康类记忆同样直接生效，所以记忆页不承诺这两件事；冲突按栏数会恒为 0：`writeMemoryFact` 记下矛盾时就把被否掉的那条关掉（`validTo = now`、`status = conflicted`），它只出现在历史栏，而内阁页按整张表会同时写「N 条自相矛盾，待你裁定」 |
+| 记忆 | 证据、scope、冲突、删除、历史；排序 = 词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度，可注入外部 rerank；冲突数按整张表数，不看当前这一栏（记忆页那一格写「都在「历史版本」里」，内阁页那一格写「N 条自相矛盾，都在「历史版本」里」——两边都只是指路，不承诺一次不存在的「二选一」裁定） | 没有 embedding / 向量库（本机 Postgres 无 `vector` 扩展）；写入面只有删除（`DELETE /api/memories/:id`，留 `memory.delete` 审计），没有编辑接口，也没有「按领域要求你确认」的闸门——Agent 写的健康类记忆同样直接生效，所以记忆页不承诺这两件事；冲突按栏数会恒为 0：`writeMemoryFact` 记下矛盾时就把被否掉的那条关掉（`validTo = now`、`status = conflicted`），它只出现在历史栏，而内阁页按整张表会同时数到它；冲突通知的链接指向 `?view=history`（`view=current` 打开的是看不到这条记录的页面），正文说明旧的仍在生效、新的只留作历史，要纠正只能删掉生效行 |
 | 学习任务 | 规则生成；知识点掌握度 + SM-2 间隔重复排期；到期优先复习 | 依赖学习目标和 Check-in；难度仍来自配置；只要上一条学习任务还没了结（含"待你判定"），复用的是同一条，不会每打一次卡再发一道——"先查有没有在手任务、再插入"在同一个事务里按用户加了咨询锁，并发打卡/双击"下一题"也只会排出一道 |
 | 反思 | 规则候选 → 洞察 → 采纳/回滚；`set_policy` 提案走白名单覆盖表 | 候选仍是规则生成，不调用模型 |
 | 内阁 | 用户发起；规则生成 5 个立场；批准/有条件批准生成跟进任务，决议写入程序记忆 | 不自动召集；议题挂在「最近在推的那个活跃目标」上（进度也取它，不是一个随机活跃目标），claim 里的「近 7 天 N 个任务」按 SQL 统计，不受展示用的 12 条上限影响；印证异议时给 Agent 加/减信任分是「锁住这一行再读写」，不会把同一时刻审计路径刚提交的增量覆盖掉，审计行里的前后值也就是库里的值；每位成员一次生成一条立场，没有轮次也没有计时（页面上不写「每人 60 秒 / 最多 2 轮」这种没有实现的说法）；异议的证伪门槛（`audit.rejectStreakLimit`）取自你自己的策略值——洞察把这个键调松或调紧之后，会议写下的条件与真正暂停 Agent 的阈值是同一个数；会议规则按真实门槛写——不声称自动召集，也不声称少了 Critic 就「会议无效」（有效性只看参与人数下限），Auditor 不在内阁里；预算异议按预算台账计量（`runs.cost_cents` + 未知用量敞口 `unknown_charged` + 每次工具调用各自的 hold），不把「没报用量」当「没花钱」；决议日期按你的时区写成「2026-10-29 05:30」，来源记 `system`（你点的只是批准，没有写过这条任务） |
@@ -147,7 +147,7 @@ Auditor 按清单验收（章节 / 字数 / 关键词 / 来源 / 模型判卷）
 | Agent 详情 | `/cabinet/[id]` | 这个 Agent 的宪章、绩效、运行、技能、记忆；「共 N 条，查看记忆」里的 N 是这张表的真实总数，不是卡片窗格的长度（卡片只放五条，查询也只取八条）；绩效卡里的「Tasks」同样是累计经手的全部任务，与旁边的「N 通过 / M 驳回」同一口径 |
 | Task 详情 | `/tasks/[id]` | 验收标准、运行轨迹、产物、审批、审计；运行前策略预演（只读）；待判定时的判定卡与判定后的人判记录 |
 | Review | `/review` | 本周指标、复盘、洞察、异议、审计日志 |
-| Memory | `/memory` | 记住了什么、证据在哪、是否冲突、能否删除；顶部四块数字（条数、平均置信度、待解决矛盾、已过期）都是整库口径，不是当前这页 25 条 |
+| Memory | `/memory` | 记住了什么、证据在哪、是否冲突、能否删除；顶部四块数字（条数、平均置信度、冲突数、已过期）都是整库口径，不是当前这页 25 条 |
 | Council | `/council` | 这次高风险决策各方怎么说、怎么定 |
 | Review / 审计 | `/review/audit` | 完整审计链，可按动作类型筛选、分页 |
 | Settings | `/settings` | 连接器、通知、账号与数据导出/删除（导出为 NDJSON 流） |
@@ -285,7 +285,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->163<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1349<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->164<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1355<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 

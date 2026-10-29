@@ -27,6 +27,23 @@ export const MEMORY_HEADER_BADGES = [
  * 4. retrieval.ts 的排序权重里近因占 0.5、锚点是 lastConfirmedAt ??
  *    createdAt，且 SQL 会过滤掉 expiresAt 已过的行；置信度本身不参与排序。
  */
+/**
+ * 冲突计数在两处页面上出现（记忆页 Conflicts 一格、内阁页知识资产「记忆」格），
+ * 原来分别写「待解决矛盾」与「待你裁定」——都没有对应的动作：冲突行在写入
+ * 的那一刻就已经 validTo = now、status = conflicted，只落在「历史版本」栏，
+ * 生效的那条一个字段都没动。能改变现状的只有删除（见 memory-actions.tsx）。
+ * 所以这两句改成指路：数字在哪一栏能看到，而不是承诺一次不存在的裁定。
+ */
+export function conflictStatHint(conflicts: number): string {
+  if (!Number.isFinite(conflicts) || conflicts <= 0) return "没有互相冲突的事实";
+  return "都在「历史版本」里";
+}
+
+export function conflictCellDetail(conflicts: number): string {
+  if (!Number.isFinite(conflicts) || conflicts <= 0) return "没有互相冲突的事实";
+  return `${Math.trunc(conflicts)} 条自相矛盾，都在「历史版本」里`;
+}
+
 export const MEMORY_GOVERNANCE_LINES = [
   "没有来源事件的记忆不许写入，防止模型编造。",
   "Agent 想改写一条已有事实，必须比原版本更确定；达不到就另存一条「待确认」的冲突，而不是覆盖。",
