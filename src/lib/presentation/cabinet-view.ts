@@ -199,3 +199,39 @@ export const APPRENTICE_RETIRED_NOTICE =
  */
 export const GRADUATION_EVIDENCE_GAP =
   "但按现在的规则，学徒在转正前接不了单：运行前的策略判定会先拒绝非 active 的生命周期，默认授权也只给了只读的任务权限。所以派单不会让有效审计样本、成功任务和信任分增长——这条门槛要等一条「受监督执行」的通道做出来才可能满足。练习通过之后，目前唯一能走通的出口是退休。";
+
+/**
+ * 「技能与考试」卡上的技能状态词。
+ *
+ * skills.status 只有两个真实取值：draft（`apprentice.ts:64` 建行时的默认值）和
+ * active（`apprentice.ts:703-708` 转正时写）。schema 允许 exam，但目前没有任何
+ * 写入面会写它。页面原来调用的是 statusLabel()——那是给 Agent 用的
+ * STATUS_LABELS（src/contracts/labels.ts:160-233），其中 active 读作「在岗」，
+ * 于是一个已经转正的技能在卡片上被印成一位在岗的同事。目标状态遇到过同一件事，
+ * 最后另立了 GOAL_STATUS_LABELS（见 src/contracts/labels.ts:274-286 的注释）。
+ */
+const SKILL_STATUS_COPY: Record<string, string> = {
+  draft: "技能草案",
+  exam: "考试中",
+  active: "已转正",
+};
+
+export function skillStatusLabel(status: string): string {
+  return SKILL_STATUS_COPY[status] ?? status;
+}
+
+/**
+ * skills.eval.status 的词表。取值只有 apprentice.ts:68-72 的 not_started、
+ * :468-476 的 practice_passed、:521-530 的 failed，而页面原来把英文键原样印出来
+ * （「考试：0 / 5 · not_started」）。没有记录时一律按「还没考过」——setup 和种子
+ * 建出来的技能行就是 not_started。
+ */
+const EXAM_STATUS_COPY: Record<string, string> = {
+  not_started: "还没考过",
+  practice_passed: "练习通过",
+  failed: "未通过",
+};
+
+export function examStatusLabel(status: unknown): string {
+  return typeof status === "string" ? (EXAM_STATUS_COPY[status] ?? status) : "还没考过";
+}

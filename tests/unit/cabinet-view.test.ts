@@ -8,6 +8,8 @@ import {
   agentHeadcount,
   agentPassRate,
   apprenticeTrainingOpen,
+  examStatusLabel,
+  skillStatusLabel,
   weeklyBudgetFieldHint,
   escalationPolicyLine,
   tasksPerAgent,
@@ -271,5 +273,44 @@ describe("the practice-passed page does not promise evidence it cannot get", () 
     expect(promise).toBeGreaterThan(-1);
     expect(note).toBeGreaterThan(promise);
     expect(button).toBeGreaterThan(note);
+  });
+});
+
+describe("the skill card uses the skill's own words", () => {
+  it("never calls a skill 在岗", () => {
+    // statusLabel 的 active 是 Agent 的「在岗」；技能转正后 status 也是 active，
+    // 直接复用就会把一份技能印成一位在岗的同事。
+    expect(skillStatusLabel("draft")).toBe("技能草案");
+    expect(skillStatusLabel("active")).toBe("已转正");
+    expect(skillStatusLabel("active")).not.toContain("在岗");
+    // 未知状态原样返回，别替它编一个词。
+    expect(skillStatusLabel("archived")).toBe("archived");
+  });
+
+  it("translates the exam status instead of printing the key", () => {
+    expect(examStatusLabel("not_started")).toBe("还没考过");
+    expect(examStatusLabel("practice_passed")).toBe("练习通过");
+    expect(examStatusLabel("failed")).toBe("未通过");
+    expect(examStatusLabel("failed")).not.toContain("failed");
+    // skills.eval 是 jsonb，行上可能没有这个字段；setup 和种子写的是 not_started。
+    expect(examStatusLabel(undefined)).toBe("还没考过");
+    expect(examStatusLabel(null)).toBe("还没考过");
+  });
+});
+
+describe("the skill card prints no internal keys", () => {
+  const page = readFileSync(
+    join(process.cwd(), "src/app/cabinet/[id]/page.tsx"),
+    "utf8",
+  );
+
+  it("feeds the badge and the exam line from the helpers", () => {
+    expect(page).toContain("{skillStatusLabel(skill.status)}");
+    expect(page).toContain("{examStatusLabel(skill.eval.status)}");
+    // statusLabel 会把技能印成「在岗」；String(...) 还会把 null 印成 "null"。
+    expect(page).not.toContain("{statusLabel(skill.status)}");
+    expect(page).not.toContain("String(skill.eval.status");
+    // label 是内部键（draft / practice / v1），转正后与版本号重复。
+    expect(page).not.toContain("{skill.label}");
   });
 });

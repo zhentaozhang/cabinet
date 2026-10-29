@@ -28,6 +28,8 @@ import {
   GRADUATION_EVIDENCE_GAP,
   agentPassRate,
   apprenticeTrainingOpen,
+  examStatusLabel,
+  skillStatusLabel,
 } from "@/lib/presentation/cabinet-view";
 import { runCostLabel, runTokensLabel } from "@/lib/presentation/run-usage";
 import { completionPercent } from "@/lib/presentation/ratio";
@@ -256,11 +258,13 @@ export default async function AgentPage({
                       <div>
                         <div className="text-label font-medium text-ink">{skill.name}</div>
                         <div className="mt-0.5 text-label text-faint">
-                          v{skill.version} · {skill.label} · {skill.successCount} 通过 / {skill.failCount} 失败
+                          {/* label 是内部键（draft / practice / v1），转正后还会变成「v1 · v1」；
+                              卡上已经有徽章和版本号，这里不再印第三次。 */}
+                          v{skill.version} · {skill.successCount} 通过 / {skill.failCount} 失败
                         </div>
                       </div>
                       <Badge tone={skill.status === "active" ? "teal" : "accent"}>
-                        {statusLabel(skill.status)}
+                        {skillStatusLabel(skill.status)}
                       </Badge>
                     </div>
                     <ol className="mt-3 space-y-1 text-label text-muted">
@@ -274,7 +278,7 @@ export default async function AgentPage({
                     {skill.eval ? (
                       <div className="mt-3 rounded-md border border-line bg-panel2/50 px-3 py-2 text-label text-muted">
                         考试：{String(skill.eval.passed ?? 0)} / {String(skill.eval.required ?? 5)} ·{" "}
-                        {String(skill.eval.status ?? "not_started")}
+                        {examStatusLabel(skill.eval.status)}
                       </div>
                     ) : null}
                   </div>
