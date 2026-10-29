@@ -19,6 +19,11 @@ import type { InsightDto } from "@/contracts";
 import { actionTypeLabel } from "@/contracts/labels";
 import { API_ROUTES } from "@/contracts/routes";
 import { checkinMemoryContent } from "@/lib/domain/checkin-memory";
+import {
+  checkinReportOnlyNote,
+  checkinRowHint,
+  checkinTaskBuckets,
+} from "@/lib/presentation/checkin-view";
 import { cn } from "@/lib/format";
 import { call } from "./shared";
 
@@ -747,7 +752,8 @@ export function ArtifactSubmitForm({
 export function CheckinForm({
   tasks,
 }: {
-  tasks: Array<{ id: string; title: string }>;
+  /** status 决定这一行勾上之后任务会不会真的变成完成，见 checkin-view.ts。 */
+  tasks: Array<{ id: string; title: string; status: string }>;
 }) {
   const router = useRouter();
   const [energy, setEnergy] = useState(3);
@@ -769,12 +775,36 @@ export function CheckinForm({
    * 记忆行（四个字段都空着的打卡只记精力与心情）。这里用同一个函数算一遍正文，
    * 空着就换一句说明。
    */
+  const { closable, reportOnly } = checkinTaskBuckets(tasks);
+  const reportOnlyNote = checkinReportOnlyNote(reportOnly.length);
   const memoryPreview = checkinMemoryContent({
     studyMinutes,
     recallScore: recall === null ? null : recall / 100,
     errorTags: tags,
     note,
   });
+
+  /** 一行复选框：能关掉的任务不加提示，其余在右边写清「只记录」。 */
+  const checkinRow = (t: { id: string; title: string; status: string }) => {
+    const hint = checkinRowHint(t.status);
+    return (
+      <label
+        key={t.id}
+        className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-panel2/40 px-3 py-2 text-label text-muted hover:border-line2"
+      >
+        <input
+          type="checkbox"
+          checked={Boolean(done[t.id])}
+          onChange={(e) => setDone((d) => ({ ...d, [t.id]: e.target.checked }))}
+          className="size-3.5 accent-accent"
+        />
+        <span className="min-w-0 flex-1 truncate">{t.title}</span>
+        {hint ? (
+          <span className="shrink-0 text-label text-faint">{hint}</span>
+        ) : null}
+      </label>
+    );
+  };
 
   async function submit() {
     setBusy(true);
@@ -866,21 +896,16 @@ export function CheckinForm({
 
       <div className="space-y-1.5">
         {/* Every open task, not the first three: a checkbox you cannot reach
-            is a task you cannot report as done. */}
-        {tasks.map((t) => (
-          <label
-            key={t.id}
-            className="flex cursor-pointer items-center gap-2 rounded-md border border-line bg-panel2/40 px-3 py-2 text-label text-muted hover:border-line2"
-          >
-            <input
-              type="checkbox"
-              checked={Boolean(done[t.id])}
-              onChange={(e) => setDone((d) => ({ ...d, [t.id]: e.target.checked }))}
-              className="size-3.5 accent-accent"
-            />
-            <span className="truncate">{t.title}</span>
-          </label>
-        ))}
+            is a task you cannot report as done. Ticking only closes the ones
+            the state machine allows (accepted), so the rest say so on the
+            row instead of looking like a no-op. */}
+        {closable.map(checkinRow)}
+        {reportOnly.map(checkinRow)}
+        {reportOnlyNote ? (
+          <p className="pt-1 text-label leading-relaxed text-faint">
+            {reportOnlyNote}
+          </p>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-3">

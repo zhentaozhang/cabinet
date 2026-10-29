@@ -106,6 +106,33 @@ it("writes a memory row only when the check-in actually says something", async (
     expect(task.status).toBe("planned");
   });
 
+  // 首页卡片上「只记录」那几行就是这条行为的正面说明：自报进 checkins.completed，
+  // 任务行不动、审计链也不多一行（src/lib/presentation/checkin-view.ts）。
+  it("keeps the self-report without moving the task", async () => {
+    await saveCheckin(
+      {
+        energy: 3,
+        mood: 3,
+        note: "",
+        completed: [{ taskId: "tsk_exercise", done: true }],
+      },
+      DEMO_USER_ID,
+    );
+
+    const today = localDateKey(new Date(), "Asia/Shanghai");
+    const [row] = await db
+      .select()
+      .from(checkins)
+      .where(and(eq(checkins.userId, DEMO_USER_ID), eq(checkins.date, today)));
+    expect(row.completed).toEqual([{ taskId: "tsk_exercise", done: true }]);
+
+    const [task] = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, "tsk_exercise"));
+    expect(task.status).toBe("planned");
+  });
+
   it("allows the accepted -> done transition", async () => {
     await db
       .update(tasks)

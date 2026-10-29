@@ -807,7 +807,12 @@ export default async function TodayPage() {
                   </div>
                 ) : (
                   <CheckinForm
-                    tasks={inFlight.map((t) => ({ id: t.id, title: t.title }))}
+                    tasks={inFlight.map((t) => ({
+                      id: t.id,
+                      title: t.title,
+                      // 状态决定勾上之后任务会不会真的变成完成（checkin-view.ts）。
+                      status: t.status,
+                    }))}
                   />
                 )}
               </div>
