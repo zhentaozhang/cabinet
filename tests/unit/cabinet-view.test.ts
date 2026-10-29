@@ -3,11 +3,13 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_LEDGER_NOTE,
   APPRENTICE_RETIRED_NOTICE,
   GRADUATION_EVIDENCE_GAP,
   agentHeadcount,
   agentPassRate,
   apprenticeTrainingOpen,
+  budgetPeriodLabel,
   examStatusLabel,
   skillRecordLine,
   skillStatusLabel,
@@ -338,5 +340,50 @@ describe("the skill card prints no internal keys", () => {
     expect(page).toContain("{skillRecordLine(skill)}");
     expect(page).not.toContain("{skill.successCount}");
     expect(page).not.toContain("{skill.failCount}");
+  });
+});
+describe("the budget card describes the ledger it reads", () => {
+  it("prints the last day of a half-open period", () => {
+    // period_end 是排他的：queries/budget.ts:58 用 addLocalDays(start, 7) 算它，
+    // 查询写的是 period_start <= now < period_end（同文件 :44-46）。
+    // 02/02 起的一本账到 02/09 00:00 为止，02/09 那一整天属于下一本。
+    expect(
+      budgetPeriodLabel(
+        new Date("2026-02-02T00:00:00+08:00"),
+        new Date("2026-02-09T00:00:00+08:00"),
+        "Asia/Shanghai",
+      ),
+    ).toBe("02/02 – 02/08");
+  });
+
+  it("keeps the last day right across a month boundary", () => {
+    expect(
+      budgetPeriodLabel(
+        new Date("2026-02-23T00:00:00+08:00"),
+        new Date("2026-03-02T00:00:00+08:00"),
+        "Asia/Shanghai",
+      ),
+    ).toBe("02/23 – 03/01");
+  });
+
+  it("does not call the ledger model tokens only", () => {
+    // 开 MODEL_TOOL_SELECTION 后，模型每选一次 web_search 会按 3 分预留并结算进
+    // agent_budget_periods（tool-loop.ts:668-733），那 3 分不是 token 估算。
+    expect(AGENT_LEDGER_NOTE).toContain("每周预算台账");
+    expect(AGENT_LEDGER_NOTE).toContain("MODEL_TOOL_SELECTION");
+    expect(AGENT_LEDGER_NOTE).toContain("3 分");
+    expect(AGENT_LEDGER_NOTE).toContain("不要相加");
+    expect(AGENT_LEDGER_NOTE).not.toContain("本周模型用量");
+  });
+
+  it("feeds the label and the period line from the same place", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src/app/cabinet/[id]/page.tsx"),
+      "utf8",
+    );
+    expect(page).toContain("{AGENT_LEDGER_NOTE}");
+    expect(page).toContain("budgetPeriodLabel(budget.periodStart, budget.periodEnd, tz)");
+    expect(page).not.toContain("本周模型用量（");
+    expect(page).not.toContain("本周模型用量占预算比例");
   });
 });

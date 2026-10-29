@@ -1,4 +1,6 @@
 import { passRate } from "@/contracts/labels";
+import { addLocalDays } from "@/lib/domain/time";
+import { shortDate } from "@/lib/format";
 
 /**
  * The Cabinet card footer counts the tasks each Agent has carried.
@@ -259,4 +261,40 @@ export function skillRecordLine(skill: {
     ? Math.max(0, Math.trunc(skill.failCount))
     : 0;
   return failed > 0 ? `${version} · 结业考试失败 ${failed} 次` : version;
+}
+
+/**
+ * 「绩效」卡里那条预算进度说的到底是什么钱。
+ *
+ * 这一行原来写作「本周模型用量（… 已结算 + … 未知）」，紧跟着一句「金额由已上报的
+ * token 按配置费率估算」。账本比这句话宽：src/server/services/queries/budget.ts 的
+ * settledCents / unknownCents 直接来自 agent_budget_periods，而同一张表也被
+ * src/server/services/commands/tasks/tool-loop.ts:668-733 写入——开启
+ * MODEL_TOOL_SELECTION 后，模型每选一次 web_search 就按 3 分
+ * （tool-loop.ts:302 的 MODEL_TOOL_COST_CENTS）预留，成功后以 known_usage 结算进
+ * settledCents。那 3 分不是 token 估算，是一次检索预留。首页那张消耗卡在同一个
+ * 地方错过一次（src/lib/presentation/today-view.ts 的 SPEND_LEDGER_NOTE）。
+ */
+export const AGENT_LEDGER_NOTE =
+  "这一格读的是每周预算台账：模型 token 的估算，加上开启 MODEL_TOOL_SELECTION 后模型选工具的检索按每次 3 分预留进来的部分。检索的实际单价另记在检索台账里，两个口径不要相加。";
+
+/**
+ * 预算周期印成「起 – 止」时，止要取最后一天，不能取排他的那端。
+ *
+ * agent_budget_periods.period_end 是开区间：src/server/services/queries/budget.ts:58
+ * 用 addLocalDays(periodStart, 7, timezone) 算它，而查询用的是
+ * `period_start <= now < period_end`（同文件 :44-46）。页面原来直接把 periodEnd
+ * 印成区间的另一头，于是周一到周日的账显示成「02/02 – 02/09」——读起来是八天，
+ * 而 02/09 那一整天属于下一本账。
+ */
+export function budgetPeriodLabel(
+  start: Date | string,
+  endExclusive: Date | string,
+  timeZone: string,
+): string {
+  // 页面拿到的是 DTO 里已经序列化的 ISO 串。
+  const end =
+    typeof endExclusive === "string" ? new Date(endExclusive) : endExclusive;
+  const lastDay = addLocalDays(end, -1, timeZone);
+  return `${shortDate(start, timeZone)} – ${shortDate(lastDay, timeZone)}`;
 }

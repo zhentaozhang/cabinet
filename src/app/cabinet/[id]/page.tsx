@@ -24,10 +24,12 @@ import { money, pct, relative, shortDate, timeOnly } from "@/lib/format";
 import { memoryTypeLabel } from "@/contracts/labels";
 import { sourceLabel } from "@/lib/domain/provenance";
 import {
+  AGENT_LEDGER_NOTE,
   APPRENTICE_RETIRED_NOTICE,
   GRADUATION_EVIDENCE_GAP,
   agentPassRate,
   apprenticeTrainingOpen,
+  budgetPeriodLabel,
   examStatusLabel,
   skillRecordLine,
   skillStatusLabel,
@@ -185,17 +187,17 @@ export default async function AgentPage({
               </div>
               <div>
                 <div className="mb-1 flex items-center justify-between text-label text-faint">
-                  <span>本周模型用量（{money(budget.settledCents)} 已结算 + {money(budget.unknownCents)} 未知）</span>
+                  <span>本周预算台账（{money(budget.settledCents)} 已结算 + {money(budget.unknownCents)} 未知）</span>
                   <span className="mono">{budget.limitCents > 0 ? pct(weekUsedPct) : "—"}</span>
                 </div>
                 <Progress
                   value={budget.limitCents > 0 ? weekUsedPct : 0}
                   tone="accent"
-                  label="本周模型用量占预算比例"
+                  label="本周预算台账占用比例"
                 />
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-label text-faint">
                   <span className="mono">
-                    {shortDate(budget.periodStart, tz)} – {shortDate(budget.periodEnd, tz)}
+                    {budgetPeriodLabel(budget.periodStart, budget.periodEnd, tz)}
                   </span>
                   <span>· {budget.timezone}</span>
                   {budget.reservedCents > 0 ? (
@@ -206,9 +208,7 @@ export default async function AgentPage({
                     <span className="text-accent">· 本周含台账上线前的运行，历史花费未知</span>
                   ) : null}
                 </div>
-                <p className="mt-1 text-label text-faint">
-                  金额由已上报的 token 按配置费率估算，不等同于账单；预算是本周的模型调用额度。
-                </p>
+                <p className="mt-1 text-label text-faint">{AGENT_LEDGER_NOTE}</p>
               </div>
             </div>
           </Card>
