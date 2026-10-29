@@ -36,6 +36,7 @@ import {
   pickLearningTask,
   queuedTaskIds,
   secondaryTasks,
+  SPEND_LEDGER_NOTE,
   weeklyMetricRows,
 } from "@/lib/presentation/today-view";
 import {
@@ -625,14 +626,15 @@ export default async function TodayPage() {
             right={<Badge tone="neutral">{weekly.weekKey}</Badge>}
           />
           <div className="grid grid-cols-1 divide-y divide-line md:grid-cols-2 md:divide-y-0 md:divide-x">
-            {/* 模型推理费用 */}
+            {/* 模型推理与工具预留：这本账是 agent_budget_periods，不是纯
+                token 账单（见 SPEND_LEDGER_NOTE）。 */}
             <div className="p-5">
               <div className="flex items-center justify-between">
                 <div className="text-label font-medium uppercase tracking-[0.14em] text-faint">
-                  模型推理费用 (Model Tokens)
+                  模型推理与工具预留 (Budget Ledger)
                 </div>
                 <Badge tone={weekly.costCents > 0 ? "accent" : "neutral"}>
-                  按 Token 计量
+                  预算台账口径
                 </Badge>
               </div>
               <div className="mt-2 text-page font-semibold tracking-tight text-ink tabular-nums font-mono">
@@ -676,11 +678,12 @@ export default async function TodayPage() {
                       ? "本周检索未计价（部署未配置单价）"
                       : `已计价 ${money(weekly.search.estimatedCents)}，另有 ${weekly.search.unpricedRequests} 次未计价`}
               </p>
-              <div className="mt-2 text-label text-faint">
-                Token 消耗与外部检索属于两条独立曲线，并列展示不相加
-              </div>
             </div>
           </div>
+          {/* 两列的钱不是同一个口径，说明写在一处，避免各列自己编一句话。 */}
+          <p className="border-t border-line/70 px-5 py-3 text-label leading-relaxed text-faint">
+            {SPEND_LEDGER_NOTE}
+          </p>
         </Card>
 
         {/* 周度指标概览 */}

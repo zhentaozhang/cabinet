@@ -459,3 +459,20 @@ export function weeklyMetricRows(
     },
   ];
 }
+
+/**
+ * 消耗卡两列的口径说明（原来写的是「Token 消耗与外部检索属于两条独立曲线，
+ * 并列展示不相加」）。
+ *
+ * 左列的数字是 `weeklyMetrics.costCents`，读的是 agent_budget_periods 的
+ * settled + unknown —— 这是一本每周预算台账，不是纯粹的 token 账单：
+ * MODEL_TOOL_SELECTION=on 时，模型每选一次 web_search，tool-loop 都会按
+ * MODEL_TOOL_COST_CENTS（3 分）先预留、再以 known_usage 结算进这本台账
+ *（tool-loop.ts:668-733）；而按计划执行的单工具路径只过检索的周上限，不占
+ * 这本账。右列的数字读 retrieval_calls 的 charged_cents，按调用时快照单价计。
+ *
+ * 所以同一次检索会在两边各留一个数，两列本来就不该相加；把它们说成
+ * 「互不相干的两条曲线」，等于说左列里没有检索的钱。
+ */
+export const SPEND_LEDGER_NOTE =
+  "左列读每周预算台账：模型 token，加上开启 MODEL_TOOL_SELECTION 后模型选工具的检索按每次 3 分预留进来的部分；右列读检索台账，按调用时的单价记。同一次检索会在两边各留一个数，口径不同，不要相加。";

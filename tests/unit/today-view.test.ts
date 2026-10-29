@@ -15,6 +15,7 @@ import {
   pickLearningTask,
   queuedTaskIds,
   secondaryTasks,
+  SPEND_LEDGER_NOTE,
   weeklyMetricRows,
 } from "@/lib/presentation/today-view";
 
@@ -694,6 +695,29 @@ describe("the Today page renders the view model it was handed", () => {
 
   it("does not claim there is no learning task while one waits in the queue", () => {
     expect(page).toContain("待处理队列");
+  });
+});
+
+describe("the spend card does not call the budget ledger two separate curves", () => {
+  // 左列读 agent_budget_periods（settled + unknown），MODEL_TOOL_SELECTION=on
+  // 时模型每选一次 web_search 都会按 MODEL_TOOL_COST_CENTS（3 分）结算进这本账
+  // （src/server/services/commands/tasks/tool-loop.ts:668-733）。旧文案说两列
+  // 「属于两条独立曲线」，等于说左列里没有检索的钱。
+  it("says what each column reads and that they must not be added", () => {
+    expect(SPEND_LEDGER_NOTE).toContain("每周预算台账");
+    expect(SPEND_LEDGER_NOTE).toContain("MODEL_TOOL_SELECTION");
+    expect(SPEND_LEDGER_NOTE).toContain("3 分");
+    expect(SPEND_LEDGER_NOTE).toContain("检索台账");
+    expect(SPEND_LEDGER_NOTE).toContain("不要相加");
+    expect(SPEND_LEDGER_NOTE).not.toContain("独立曲线");
+  });
+
+  it("renders that note once for the card instead of per column", () => {
+    const page = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
+    expect(page).toContain("{SPEND_LEDGER_NOTE}");
+    expect(page).not.toContain("两条独立曲线");
+    expect(page).not.toContain("按 Token 计量");
+    expect(page).toContain("预算台账口径");
   });
 });
 
