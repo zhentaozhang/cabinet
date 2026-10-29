@@ -223,3 +223,30 @@ export function weeklyNarrativeState(input: {
         "点右上角「生成本周复盘」会写入本周这条。",
   };
 }
+
+/**
+ * 「管理时间」那行字。
+ *
+ * `weeklyMetrics.managementMinutes` 是**这一周**的合计，不是每天：实测分支是
+ * `sum(user_actions.duration_ms) / 60000`（src/server/services/queries/metrics.ts:180-188），
+ * 估算分支是「这一周的人工决策次数 × minutesPerDecision」。种子里三条 60 / 60 / 48 秒的
+ * 操作合计 2.8 分钟，正好对上 `reviews.metrics.managementMin = 2.8`
+ * （src/lib/db/seed.ts:1774-1795）；测试里一条 90 秒的操作得到 1.5
+ * （tests/integration/metrics-samples.test.ts:184）。
+ *
+ * 这段文字原来写的是「管理时间约 2.8 分钟/天」：把一周的总量当成一天的均值，
+ * 同一句话里的单位把它放大了七倍。它还会被存进 `reviews.narrative`，复盘页
+ * 原样印出来，读者无从对照。现在按实际口径说话，并把「实测 / 估算」写在括号里
+ * ——估算值必须标出算法，不能读成实测（docs/superpowers/specs/2026-10-22-data-trust-design.md:111）。
+ */
+export function managementTimeLine(input: {
+  minutes: number | null;
+  source: "measured" | "estimated";
+}): string {
+  if (input.minutes === null) return "- 本周还没有管理时间样本。";
+  const head = "- 本周管理时间约 " + input.minutes.toFixed(1) + " 分钟";
+  if (input.source === "estimated") {
+    return head + "（估算：按这一周的人工决策次数推算，不是实测），不纳入学习效果判断。";
+  }
+  return head + "（实测：这一周的操作耗时合计，不是每天的均值）。";
+}

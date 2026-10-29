@@ -323,6 +323,10 @@ export async function getWeeklyMetrics(userId: string) {
   // No measured actions and no user-decision samples means we have nothing to
   // report — not "zero minutes".
   const decisionSamples = Number(decisionRow?.count ?? 0);
+  // 这一周的总时长，**不是每天**：实测是 sum(user_actions.duration_ms) / 60000，
+  // 估算是「本周人工决策次数 × minutesPerDecision」。周复盘叙事原来把这行印成
+  // 「分钟/天」，把一周的总量当成一天的均值（七倍）。文案现在在
+  // src/lib/presentation/review-view.ts 的 managementTimeLine，改单位只改那里。
   const managementMinutes =
     actionsMs > 0
       ? actionsMs / 60000

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { tasks } from "@/lib/db/schema";
+import { tasks, userActions } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { regenerateWeeklyReview } from "@/server/services/commands/reviews";
 import { createGoal, createTask } from "@/server/services/engine";
@@ -95,5 +95,28 @@ describe("weekly review narrative — 已验收名单", () => {
     // 又被挡在窗外：两篇复盘都不提它。「完成」发生在验收那一刻。
     expect(review.narrative).toContain("完成 1 个学习任务");
     expect(review.narrative).toContain("已验收：解释事件循环");
+  });
+});
+
+/**
+ * 「管理时间」这一行原来写「约 X 分钟/天」，而 X 是这一周的合计
+ * （sum(user_actions.duration_ms) / 60000，见 src/server/services/queries/metrics.ts:180-188）：
+ * 把一周的总量当成一天的均值，同一句话里的单位把它放大了七倍，而且这句话会
+ * 存进 reviews.narrative 被复盘页原样印出来。
+ */
+describe("weekly review narrative — 管理时间", () => {
+  it("reports the weekly total without pretending it is a daily average", async () => {
+    await db.insert(userActions).values({
+      id: "ua_review_narrative",
+      userId: DEMO_USER_ID,
+      action: "approve",
+      durationMs: 90_000,
+    });
+
+    const review = await regenerateWeeklyReview(DEMO_USER_ID);
+
+    expect(review.narrative).toMatch(/本周管理时间约 \d+\.\d 分钟/);
+    expect(review.narrative).toContain("实测");
+    expect(review.narrative).not.toContain("/天");
   });
 });

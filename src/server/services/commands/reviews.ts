@@ -6,6 +6,7 @@ import { logAuditTx } from "@/lib/audit";
 import { localDateKey, weekRange } from "@/lib/domain/time";
 import { LEARNING_TEMPLATES } from "@/lib/domain/learning";
 import { getWeeklyMetrics } from "../queries/metrics";
+import { managementTimeLine } from "@/lib/presentation/review-view";
 
 export async function regenerateWeeklyReview(userId: string) {
   const metrics = await getWeeklyMetrics(userId);
@@ -92,11 +93,14 @@ export async function regenerateWeeklyReview(userId: string) {
     weakTopics.length > 0
       ? `- 先重测「${weakTopics[0]}」，再进入新内容。`
       : "- 保持一次小练习，并记录回忆正确率。",
-    metrics.managementMinutes === null
-      ? "- 本周还没有管理时间样本。"
-      : metrics.managementMinutesSource === "estimated"
-        ? "- 管理时间目前是估算值，不纳入学习效果判断。"
-        : `- 管理时间约 ${metrics.managementMinutes.toFixed(1)} 分钟/天。`,
+    // 这一行原来自己拼了一个「每天」的单位：managementMinutes 是本周合计，写错就等于
+    // 把一周的总量说成一天的量。口径与文案搬到了 review-view（测试覆盖三态）。
+    managementTimeLine({
+      minutes: metrics.managementMinutes,
+      // metrics 那边的字段是从聚合行推出来的普通 string（DTO 层才用 z.enum 收紧），
+      // 这里显式收窄，而不是在 helper 里放宽成 string。
+      source: metrics.managementMinutesSource === "estimated" ? "estimated" : "measured",
+    }),
   ].join("\n");
 
   return db.transaction(async (tx) => {

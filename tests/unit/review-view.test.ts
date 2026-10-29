@@ -8,6 +8,7 @@ import {
   DISSENT_STATUS,
   OPEN_TASK_STATUS,
   listPageState,
+  managementTimeLine,
   pickFocusTask,
   recommendation,
   weeklyNarrativeState,
@@ -477,5 +478,41 @@ describe("the review page labels the narrative with its own week", () => {
   it("stamps the page header with the week the metrics are computed for", () => {
     expect(page).toContain("Review · {metrics.weekKey}");
     expect(page).not.toContain("Review · {data.weekly?.period");
+  });
+});
+
+describe("managementTimeLine", () => {
+  // managementMinutes 是这一周的合计（实测是 user_actions.duration_ms 的本周求和，
+  // 估算是本周人工决策次数 × minutesPerDecision），原来那句「分钟/天」把一周的
+  // 总量写成了每天的量，读起来大七倍。
+  it("calls the weekly total a weekly total", () => {
+    const line = managementTimeLine({ minutes: 2.8, source: "measured" });
+    expect(line).toContain("本周管理时间约 2.8 分钟");
+    expect(line).toContain("实测");
+    expect(line).not.toContain("分钟/天");
+    expect(line).not.toContain("/天");
+  });
+
+  it("marks the estimated branch as an estimate, not a measurement", () => {
+    const line = managementTimeLine({ minutes: 0.5, source: "estimated" });
+    expect(line).toContain("本周管理时间约 0.5 分钟");
+    expect(line).toContain("估算");
+    expect(line).toContain("不是实测");
+    expect(line).not.toContain("分钟/天");
+  });
+
+  it("keeps saying there is no sample instead of printing 0", () => {
+    const line = managementTimeLine({ minutes: null, source: "estimated" });
+    expect(line).toBe("- 本周还没有管理时间样本。");
+    expect(line).not.toContain("0.0");
+  });
+
+  it("keeps the narrative's unit in one place", () => {
+    const command = readFileSync(
+      join(process.cwd(), "src/server/services/commands/reviews.ts"),
+      "utf8",
+    );
+    expect(command).toContain("managementTimeLine({");
+    expect(command).not.toContain("分钟/天");
   });
 });
