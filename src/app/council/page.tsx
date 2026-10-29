@@ -21,7 +21,10 @@ import {
 } from "@/components/ui";
 import { CouncilActions, NewCouncilForm } from "@/components/actions";
 import { Markdown } from "@/components/markdown";
-import { COUNCIL_RULES } from "@/lib/presentation/council-view";
+import {
+  COUNCIL_RULES,
+  resolutionDissentLine,
+} from "@/lib/presentation/council-view";
 
 export const metadata: Metadata = {
   title: "Council · Cabinet",
@@ -259,9 +262,13 @@ export default async function CouncilPage() {
                       : "未生成跟进任务；"}
                     已写入程序记忆。
                   </div>
+                  {/* 否决的会议不登记证伪条件，那句话不能再说「已归档」。 */}
                   {council.resolution.dissents.length > 0 ? (
                     <div className="text-danger">
-                      {council.resolution.dissents.length} 条正式异议已归档。
+                      {resolutionDissentLine(
+                        council.resolution.decision,
+                        council.resolution.dissents.length,
+                      )}
                     </div>
                   ) : null}
                   <div className="text-label text-faint">

@@ -153,6 +153,10 @@ export async function decideCouncil(
       status: "active",
     });
 
+    // 否决不登记异议：dissents 行是一笔「未来会被证伪的赌注」，要有跟进任务
+    // 和观察窗口才判定得了。否决没有任务，写进去就永远停在 pending。
+    // resolution.dissents 仍然记着当时谁反对，页面按 decision 分两句话
+    //（src/lib/presentation/council-view.ts 的 resolutionDissentLine）。
     if (decision !== "reject") {
       for (const dissent of dissentRecords) {
         const position = positions.find(

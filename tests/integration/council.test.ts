@@ -355,6 +355,15 @@ describe("council closed loop", () => {
     expect(decided.resolution?.taskId).toBeNull();
     expect(decided.resolution?.memoryId).toBeTruthy();
 
+    // 否决没有跟进任务，dissents 表里一行都没有——所以决议卡不能再声称
+    // 「N 条正式异议已归档」（页面按 decision 分两句话）。
+    expect(decided.resolution?.dissents.length).toBeGreaterThan(0);
+    const dissentRows = await db
+      .select({ id: dissents.id })
+      .from(dissents)
+      .where(eq(dissents.councilId, council.id));
+    expect(dissentRows).toHaveLength(0);
+
     const [memory] = await db
       .select()
       .from(memories)

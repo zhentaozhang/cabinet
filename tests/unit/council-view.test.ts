@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { COUNCIL_RULES } from "@/lib/presentation/council-view";
+import {
+  COUNCIL_RULES,
+  resolutionDissentLine,
+} from "@/lib/presentation/council-view";
 
 /**
  * 内阁页的「会议规则」是对用户的行为承诺，所以测试问的是「这句能不能兑现」。
@@ -52,5 +55,39 @@ describe("council rules", () => {
     expect(page).toContain("有条件批准必须写出条件");
     expect(page).toContain("disabled={busy !== null || !note.trim()}");
     expect(COUNCIL_RULES.join(" ")).toContain("有条件批准");
+  });
+});
+
+/**
+ * 决议卡上那句异议说明也要能兑现：`decideCouncil` 只在批准的路径里插
+ * `dissents` 行，所以否决的会议不该说「已归档」。
+ */
+describe("the dissent line on a decided council", () => {
+  it("files dissents only when the decision created a task to observe", () => {
+    expect(resolutionDissentLine("approve", 2)).toContain("2 条正式异议已登记");
+    expect(resolutionDissentLine("conditions", 1)).toContain("自动判定");
+    expect(resolutionDissentLine("approve", 2)).not.toContain("已归档");
+  });
+
+  it("does not say a rejected council filed dissents", () => {
+    const line = resolutionDissentLine("reject", 2) ?? "";
+    expect(line).toContain("2 位 Agent 当时持反对意见");
+    expect(line).toContain("没有登记证伪条件");
+    expect(line).not.toContain("已登记");
+    expect(line).not.toContain("已归档");
+  });
+
+  it("says nothing when nobody dissented", () => {
+    expect(resolutionDissentLine("approve", 0)).toBeNull();
+    expect(resolutionDissentLine("reject", 0)).toBeNull();
+  });
+
+  it("renders the line instead of the old fixed sentence", () => {
+    const page = readFileSync(
+      join(process.cwd(), "src/app/council/page.tsx"),
+      "utf8",
+    );
+    expect(page).toContain("resolutionDissentLine(");
+    expect(page).not.toContain("条正式异议已归档");
   });
 });
