@@ -54,6 +54,7 @@ export const API_ROUTES = {
   connectors: "/api/connectors",
   notifications: "/api/notifications",
   notificationsRun: "/api/notifications/run",
+  notificationRequeue: (id: string) => `/api/notifications/${id}/requeue`,
   connectorTest: "/api/connectors/test",
   verifyAudit: "/api/audit/verify",
   setup: "/api/setup",

@@ -10,7 +10,11 @@ import {
   EmptyState,
   SectionTitle,
 } from "@/components/ui";
-import { DeliverNowButton, NotifyPrefsForm } from "@/components/actions";
+import {
+  DeliverNowButton,
+  NotifyPrefsForm,
+  RequeueButton,
+} from "@/components/actions";
 import {
   deliveryStatusLabel,
   deliveryStatusTone,
@@ -150,6 +154,14 @@ export default async function NotificationsPage({
                     {item.attempts > 0 ? `（已尝试 ${item.attempts} 次）` : ""}
                   </p>
                 ) : null}
+                {item.status === "failed" ? (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <RequeueButton id={item.id} />
+                    <span className="text-label text-faint">
+                      重投会把退避次数清零、重新排队；审计链会记一笔。
+                    </span>
+                  </div>
+                ) : null}
                 {item.status === "pending" ? (
                   <p className="mt-1.5 flex items-center gap-1.5 text-label text-faint">
                     <Clock className="size-3" aria-hidden />
@@ -172,7 +184,7 @@ export default async function NotificationsPage({
           </li>
           <li className="flex items-start gap-2">
             <Send className="mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden />
-            同一件事一天最多发一次（按你的时区算那一天）；投递失败会按 1 分钟、5 分钟、15 分钟退避重试，四次后标记失败。
+            同一件事一天最多发一次（按你的时区算那一天）；投递失败会按 1 分钟、5 分钟、15 分钟退避重试，四次后标记失败；失败的那条可以点「重投」，退避次数清零后重新排队。
           </li>
           <li className="flex items-start gap-2">
             <Clock className="mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden />

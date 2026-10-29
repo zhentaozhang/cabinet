@@ -1,6 +1,8 @@
-import { and, asc, eq, lte, or } from "drizzle-orm";
+import { and, asc, eq, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
+import { logAuditTx } from "@/lib/audit";
+import { ConflictError, NotFoundError } from "@/lib/domain/errors";
 import { newId } from "@/lib/ids";
 import { outbox, users, type OutboxRow } from "@/lib/db/schema";
 import {
@@ -370,4 +372,59 @@ export async function deliverOutbox(
   }
 
   return report;
+}
+/**
+ * Put a failed row back in the queue.
+ *
+ * A failed row is terminal for the runner: `deliverOutbox` claims only
+ * `pending` / `sending`, so once MAX_ATTEMPTS is spent the mail is still owed
+ * but nothing will ever try it again. Until now the only recovery was an UPDATE
+ * in psql — the page could show 失败 and offer nothing next to it.
+ *
+ * `attempts` resets to zero so the next pass gets the whole backoff budget
+ * again. The audit row keeps the fact that the row already failed, so this is a
+ * deliberate retry rather than a silent one; `nextAttemptAt` moves to the
+ * database clock (AGENTS.md rule 3) so the row is due immediately.
+ */
+export async function requeueOutbox(
+  userId: string,
+  outboxId: string,
+): Promise<{ id: string; kind: string }> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(outbox)
+      .set({
+        status: "pending",
+        attempts: 0,
+        lastError: null,
+        claimToken: null,
+        nextAttemptAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(outbox.id, outboxId),
+          eq(outbox.userId, userId),
+          eq(outbox.status, "failed"),
+        ),
+      )
+      .returning({ id: outbox.id, kind: outbox.kind });
+    if (!row) {
+      const [existing] = await tx
+        .select({ status: outbox.status })
+        .from(outbox)
+        .where(and(eq(outbox.id, outboxId), eq(outbox.userId, userId)));
+      if (!existing) throw new NotFoundError("Notification not found");
+      throw new ConflictError(
+        `Only a failed notification can be requeued; this one is ${existing.status}.`,
+      );
+    }
+    await logAuditTx(tx, {
+      userId,
+      actor: "user",
+      action: "notify.requeue",
+      target: row.id,
+      after: { kind: row.kind },
+    });
+    return row;
+  });
 }

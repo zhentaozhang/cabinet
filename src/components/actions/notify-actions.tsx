@@ -161,3 +161,36 @@ export function DeliverNowButton() {
     </Button>
   );
 }
+/**
+ * Retry a notification whose four attempts were spent.
+ *
+ * The runner only claims pending/sending rows, so a failed one would never be
+ * tried again: the page could show 失败 and offer nothing beside it. The toast
+ * says the row is queued rather than sent, because this click does not talk to
+ * SMTP — 「现在投递一次」 does that.
+ */
+export function RequeueButton({ id }: { id: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  async function requeue() {
+    setBusy(true);
+    const result = await browserApi.mutate(API_ROUTES.notificationRequeue(id), {
+      method: "POST",
+    });
+    setBusy(false);
+
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success("已重新排队，退避次数清零；点「现在投递一次」可以直接试");
+    router.refresh();
+  }
+
+  return (
+    <Button onClick={requeue} disabled={busy} variant="outline">
+      {busy ? "重新排队中…" : "重投"}
+    </Button>
+  );
+}

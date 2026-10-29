@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { approvals, outbox, users } from "@/lib/db/schema";
+import { approvals, auditEvents, outbox, users } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { notifyKindLabel } from "@/contracts";
 import { auditTask, createTask, runTask } from "@/server/services/engine";
 import {
   deliverOutbox,
   decideDelivery,
+  requeueOutbox,
 } from "@/server/services/commands/delivery";
 import {
   enqueueNotification,
@@ -456,5 +457,92 @@ describe("delivery", () => {
     expect(decideDelivery({ status: "pending", createdAt: at }, null, at).action).toBe(
       "skip",
     );
+  });
+});
+describe("requeueing a failed notification", () => {
+  beforeEach(async () => {
+    await updateNotifyPrefs(DEMO_USER_ID, {
+      notifyEnabled: true,
+      quietFrom: 0,
+      quietTo: 0,
+    });
+  });
+
+  it("returns a failed row to the queue and delivers it on the next pass", async () => {
+    await enqueueNotification({
+      userId: DEMO_USER_ID,
+      kind: "budget",
+      targetType: "task",
+      targetId: "tsk_requeue",
+      subject: "s",
+      body: "b",
+    });
+    // Four attempts spent: the runner only claims pending/sending, so without
+    // a requeue this row is owed but unreachable from the product.
+    await db.update(outbox).set({
+      status: "failed",
+      attempts: 4,
+      lastError: "连接被拒绝",
+    });
+    const [before] = await db.select().from(outbox);
+
+    const requeued = await requeueOutbox(DEMO_USER_ID, before.id);
+    expect(requeued.id).toBe(before.id);
+
+    const [row] = await db.select().from(outbox);
+    expect(row.status).toBe("pending");
+    expect(row.attempts).toBe(0);
+    expect(row.lastError).toBeNull();
+    expect(row.nextAttemptAt.getTime()).toBeLessThanOrEqual(Date.now() + 1000);
+
+    const report = await deliverOutbox({ sender: okSender });
+    expect(report.sent).toBe(1);
+    const [sent] = await db.select().from(outbox);
+    expect(sent.status).toBe("sent");
+
+    // The retry is deliberate, so the chain keeps the fact that it failed once.
+    const audits = await db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.userId, DEMO_USER_ID), eq(auditEvents.action, "notify.requeue")));
+    expect(audits).toHaveLength(1);
+    expect(audits[0].target).toBe(before.id);
+  });
+
+  it("refuses a row that has not failed, and says which state it is in", async () => {
+    await enqueueNotification({
+      userId: DEMO_USER_ID,
+      kind: "budget",
+      targetType: "task",
+      targetId: "tsk_sent_already",
+      subject: "s",
+      body: "b",
+    });
+    await deliverOutbox({ sender: okSender });
+    const [row] = await db.select().from(outbox);
+    expect(row.status).toBe("sent");
+
+    await expect(requeueOutbox(DEMO_USER_ID, row.id)).rejects.toThrow(/failed/);
+    const [after] = await db.select().from(outbox);
+    expect(after.status).toBe("sent");
+  });
+
+  it("answers not found for another account's row", async () => {
+    await enqueueNotification({
+      userId: DEMO_USER_ID,
+      kind: "budget",
+      targetType: "task",
+      targetId: "tsk_other_owner",
+      subject: "s",
+      body: "b",
+    });
+    await db.update(outbox).set({ status: "failed", attempts: 4 });
+    const [row] = await db.select().from(outbox);
+
+    await expect(requeueOutbox("usr_someone_else", row.id)).rejects.toThrow(
+      /not found/i,
+    );
+    const [after] = await db.select().from(outbox);
+    expect(after.status).toBe("failed");
   });
 });
