@@ -18,6 +18,7 @@ import {
   SectionTitle,
 } from "@/components/ui";
 import { fetchConnectorStatus } from "@/lib/api/pages";
+import { modelMissingHint } from "@/lib/presentation/connectors-view";
 
 export const metadata: Metadata = {
   title: "设置 · Cabinet",
@@ -72,10 +73,7 @@ export default async function SettingsPage() {
                   {model.provider} / {model.model}
                 </span>
               ) : (
-                <>
-                  所有 Agent 步骤无法真实执行，任务会停在生成草稿前。需要设置{" "}
-                  <code className="mono text-ink">{model.envVar}</code>。
-                </>
+                modelMissingHint(demoMode, model.envVar)
               )
             }
             owner={OWNER_DEPLOY}
