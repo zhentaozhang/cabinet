@@ -181,3 +181,45 @@ export function pickFocusTask<T extends FocusTaskInput>(
     });
   return open[0];
 }
+
+export type WeeklyNarrativeState = {
+  stale: boolean;
+  title: string;
+  note: string;
+};
+
+/**
+ * 「本周叙事」那张卡手里只有一条叙事，来自最近一次生成的周复盘：`reviews` 按
+ * (userId, type, period) 唯一，`regenerateWeeklyReview` 每次写的都是「生成那一刻」
+ * 的那一周（`reviews.ts:108` 的 `period: metrics.weekKey`）。跨周之后如果没人再点
+ * 「生成本周复盘」，这张卡里躺的就是上一周的叙事，标题却仍写「本周叙事」——
+ * 而同一页的六张指标卡与「本周改了什么」都是本周现算的（`metrics.weekKey`），
+ * 两段时间被并成了一周。
+ *
+ * 空叙事故意不算 stale：那种情况有卡内的空状态说话，它已经写明本周还没生成。
+ */
+export function weeklyNarrativeState(input: {
+  period: string | null | undefined;
+  currentWeekKey: string;
+  hasNarrative: boolean;
+}): WeeklyNarrativeState {
+  const currentWeekKey = input.currentWeekKey;
+  const period =
+    typeof input.period === "string" && input.period.length > 0
+      ? input.period
+      : null;
+  if (!input.hasNarrative || period === currentWeekKey) {
+    return { stale: false, title: "本周叙事", note: "" };
+  }
+  return {
+    stale: true,
+    title: period ? `上一份复盘叙事（${period}）` : "上一份复盘叙事",
+    note: period
+      ? `这条叙事是 ${period} 那份周复盘，本周（${currentWeekKey}）还没重跑：` +
+        "上面的指标与「本周改了什么」都是本周现算的，别把两段时间当成一周。" +
+        "点右上角「生成本周复盘」会写入本周这条。"
+      : `这条叙事没有周期标记，本周（${currentWeekKey}）还没重跑：` +
+        "上面的指标与「本周改了什么」都是本周现算的。" +
+        "点右上角「生成本周复盘」会写入本周这条。",
+  };
+}

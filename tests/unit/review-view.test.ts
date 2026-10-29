@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { TaskStatus } from "@/contracts/dto/entities";
@@ -8,6 +10,7 @@ import {
   listPageState,
   pickFocusTask,
   recommendation,
+  weeklyNarrativeState,
   type AutonomyDecision,
 } from "@/lib/presentation/review-view";
 
@@ -409,5 +412,70 @@ describe("picking next week's single goal", () => {
     const tasks = [task("a", { priority: 1 }), task("b", { priority: 3 })];
     pickFocusTask(tasks);
     expect(tasks.map((t) => t.id)).toEqual(["a", "b"]);
+  });
+});
+describe("weeklyNarrativeState", () => {
+  it("leaves a narrative from this week alone", () => {
+    const state = weeklyNarrativeState({
+      period: "2026-W44",
+      currentWeekKey: "2026-W44",
+      hasNarrative: true,
+    });
+    expect(state.stale).toBe(false);
+    expect(state.title).toBe("本周叙事");
+    expect(state.note).toBe("");
+  });
+
+  it("names the week a rolled-over narrative actually belongs to", () => {
+    // reviews 按 (userId, type, period) 唯一，regenerateWeeklyReview 写的是生成
+    // 那一刻的那一周；跨周没重跑时这张卡里还是上一周的叙事，而同一页的指标
+    // 与「本周改了什么」都是本周现算的。
+    const state = weeklyNarrativeState({
+      period: "2026-W43",
+      currentWeekKey: "2026-W44",
+      hasNarrative: true,
+    });
+    expect(state.stale).toBe(true);
+    expect(state.title).toContain("2026-W43");
+    expect(state.title).not.toBe("本周叙事");
+    expect(state.note).toContain("2026-W43");
+    expect(state.note).toContain("本周（2026-W44）");
+    expect(state.note).toContain("本周改了什么");
+  });
+
+  it("does not call an unstamped narrative this week's", () => {
+    const state = weeklyNarrativeState({
+      period: null,
+      currentWeekKey: "2026-W44",
+      hasNarrative: true,
+    });
+    expect(state.stale).toBe(true);
+    expect(state.title).toBe("上一份复盘叙事");
+    expect(state.note).toContain("没有周期标记");
+  });
+
+  it("leaves the empty state to say there is no narrative yet", () => {
+    const state = weeklyNarrativeState({
+      period: "2026-W43",
+      currentWeekKey: "2026-W44",
+      hasNarrative: false,
+    });
+    expect(state.stale).toBe(false);
+    expect(state.title).toBe("本周叙事");
+  });
+});
+
+describe("the review page labels the narrative with its own week", () => {
+  const page = readFileSync(join(process.cwd(), "src/app/review/page.tsx"), "utf8");
+
+  it("renders the narrative title and the stale note from weeklyNarrativeState", () => {
+    expect(page).toContain("weeklyNarrativeState({");
+    expect(page).toContain("title={narrative.title}");
+    expect(page).toContain("{narrative.stale ?");
+  });
+
+  it("stamps the page header with the week the metrics are computed for", () => {
+    expect(page).toContain("Review · {metrics.weekKey}");
+    expect(page).not.toContain("Review · {data.weekly?.period");
   });
 });

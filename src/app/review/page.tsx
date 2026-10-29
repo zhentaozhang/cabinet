@@ -24,6 +24,7 @@ import {
   listPageState,
   pickFocusTask,
   recommendation,
+  weeklyNarrativeState,
 } from "@/lib/presentation/review-view";
 import { cn, dateTime, shortDate } from "@/lib/format";
 import { recallAverageHint } from "@/lib/presentation/recall-view";
@@ -124,6 +125,13 @@ export default async function ReviewPage({
   // 待判定既不在分子也不在分母：它是"还没判"，不是"判过了"。
   const pendingReview = metrics.sample.pendingReview;
   const decisions = data.weekly?.decisions ?? [];
+  // 叙事来自身份为 (user, type, period) 的最近一份周复盘，指标卡却是本周现算的：
+  // 跨周之后没重跑时，这张卡必须说清自己是哪一周的，不能顶着「本周」两个字。
+  const narrative = weeklyNarrativeState({
+    period: data.weekly?.period ?? null,
+    currentWeekKey: metrics.weekKey,
+    hasNarrative: Boolean(data.weekly?.narrative),
+  });
 
   const metricCards: Array<{ label: string; value: string; hint: string }> = [
     {
@@ -182,7 +190,7 @@ export default async function ReviewPage({
         <div>
           <div className="mb-2 flex items-center gap-2 text-eyebrow font-medium uppercase tracking-[0.2em] text-faint">
             <ClipboardCheck className="size-3 text-accent" />
-            Review · {data.weekly?.period ?? "—"}
+            Review · {metrics.weekKey}
           </div>
           <h1 className="text-page font-semibold tracking-tight text-ink">周复盘</h1>
           <p className="mt-1.5 text-label text-muted">
@@ -230,7 +238,7 @@ export default async function ReviewPage({
         <Card className="mt-5">
           <CardHeader
             eyebrow="Narrative"
-            title="本周叙事"
+            title={narrative.title}
             right={
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Badge tone="neutral" title="由 regenerateWeeklyReview 规则脚本按本周指标拼接，没有调用模型">
@@ -243,6 +251,11 @@ export default async function ReviewPage({
             }
           />
           <div className="px-5 py-4">
+            {narrative.stale ? (
+              <p className="mb-3 rounded-md border border-line bg-panel2 px-3 py-2 text-label leading-relaxed text-muted">
+                {narrative.note}
+              </p>
+            ) : null}
             {data.weekly?.narrative ? (
               <Markdown content={data.weekly.narrative} />
             ) : (
