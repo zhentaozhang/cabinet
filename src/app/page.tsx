@@ -20,6 +20,7 @@ import type { GoalDto } from "@/contracts";
 import { goalStatusLabel } from "@/contracts/labels";
 import { cn, dateTime, money, timeOnly } from "@/lib/format";
 import { goalProgressHint, goalProgressText } from "@/lib/presentation/goal-view";
+import { checkinMemoryContent } from "@/lib/domain/checkin-memory";
 import {
   briefFreshness,
   briefGoalLine,
@@ -99,6 +100,11 @@ export default async function TodayPage() {
     period: data.brief?.period ?? null,
     todayKey: localDateKey(new Date(), data.user.timezone),
   });
+  // 「已写入记忆」不是这句话的默认答案：一条既没学习时长、也没回忆分 / 薄弱点 /
+  // 备注的打卡不会生成记忆行（checkins.ts 里 if (memoryContent) 才插）。
+  const yesterdayMemory = data.yesterdayCheckin
+    ? checkinMemoryContent(data.yesterdayCheckin)
+    : "";
   const briefTaskCount = data.brief
     ? briefTaskSnapshot(data.brief)
     : inFlight.length;
@@ -818,9 +824,18 @@ export default async function TodayPage() {
                     <div className="basis-full text-label text-muted">
                       “{data.yesterdayCheckin.note}”
                     </div>
-                    <Badge tone="teal">
-                      <CheckCircle2 className="size-2.5" /> 已写入记忆
-                    </Badge>
+                    {yesterdayMemory ? (
+                      <Badge tone="teal">
+                        <CheckCircle2 className="size-2.5" /> 已写入记忆
+                      </Badge>
+                    ) : (
+                      <Badge
+                        tone="neutral"
+                        title="这条 check-in 没有学习时长、回忆正确率、薄弱点和备注，按写入规则不会生成记忆行"
+                      >
+                        没有内容可写入记忆
+                      </Badge>
+                    )}
                   </div>
                 ) : (
                   <div className="text-label text-faint">还没有昨天的 check-in。</div>

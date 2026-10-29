@@ -5,6 +5,7 @@ import { newId } from "@/lib/ids";
 import { logAuditTx } from "@/lib/audit";
 import { assertTransition } from "@/lib/domain/state";
 import { localDateKey } from "@/lib/domain/time";
+import { checkinMemoryContent } from "@/lib/domain/checkin-memory";
 import { ValidationError } from "@/lib/domain/errors";
 import { getWorkspace } from "../queries/workspace";
 import { getPolicyConfigFor } from "@/lib/policy/config";
@@ -108,16 +109,13 @@ export async function saveCheckin(
         and(eq(memories.userId, userId), eq(memories.sourceEventId, checkinId)),
       );
 
-    const memoryContent = [
-      studyMinutes > 0 ? `学习 ${studyMinutes} 分钟` : null,
-      recallScore !== null
-        ? `回忆正确率 ${Math.round(recallScore * 100)}%`
-        : null,
-      errorTags.length > 0 ? `薄弱点：${errorTags.join("、")}` : null,
-      input.note.trim() || null,
-    ]
-      .filter(Boolean)
-      .join("；");
+    // 正文与首页徽章共用同一个函数：为空就不写记忆行（见 checkin-memory.ts）。
+    const memoryContent = checkinMemoryContent({
+      studyMinutes,
+      recallScore,
+      errorTags,
+      note: input.note,
+    });
 
     if (memoryContent) {
       await tx.insert(memories).values({

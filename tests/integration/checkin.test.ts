@@ -56,6 +56,38 @@ describe("check-in", () => {
     expect(task.status).toBe("planned");
   });
 
+it("writes a memory row only when the check-in actually says something", async () => {
+    const today = localDateKey(new Date(), "Asia/Shanghai");
+    const memoryFor = (checkinId: string) =>
+      db
+        .select()
+        .from(memories)
+        .where(
+          and(eq(memories.userId, DEMO_USER_ID), eq(memories.sourceEventId, checkinId)),
+        );
+
+    // 全空的打卡：既不写记忆行，首页也就不该印「已写入记忆」。
+    await saveCheckin({ energy: 3, mood: 3, note: "  ", completed: [] }, DEMO_USER_ID);
+    const [empty] = await db
+      .select()
+      .from(checkins)
+      .where(and(eq(checkins.userId, DEMO_USER_ID), eq(checkins.date, today)));
+    expect(await memoryFor(empty.id)).toHaveLength(0);
+
+    // 同一天重新提交、这次写了备注：删旧插新，只留一条，正文就是那句备注。
+    await saveCheckin(
+      { energy: 3, mood: 3, note: "把相似度换成了余弦", completed: [] },
+      DEMO_USER_ID,
+    );
+    const rows = await memoryFor(empty.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].content).toBe("把相似度换成了余弦");
+    expect(rows[0].domain).toBe("checkin");
+
+    // 再提交一次、这次清空：旧记忆被删掉，不留一条说反了的记录。
+    await saveCheckin({ energy: 3, mood: 3, note: "", completed: [] }, DEMO_USER_ID);
+    expect(await memoryFor(empty.id)).toHaveLength(0);
+  });
   it("does not bypass the audit state machine for a planned task", async () => {
     await saveCheckin(
       {
