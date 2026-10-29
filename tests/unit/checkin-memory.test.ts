@@ -47,4 +47,17 @@ describe("the memory badge reads the same rule the writer reads", () => {
     // 徽章不能再无条件印「已写入记忆」：空打卡要走另一句。
     expect(page).toContain("没有内容可写入记忆");
   });
+
+  it("does not promise a memory write the form may not perform", () => {
+    // 打卡表单下面原来无条件写「会写入记忆，供明天使用」，而四个字段都空着的
+    // 打卡根本不会插记忆行。现在它用同一个函数先算正文，空着就换一句。
+    const form = source("src/components/actions/task-actions.tsx");
+    expect(form).toContain("checkinMemoryContent(");
+    expect(form).toContain("memoryPreview");
+    expect(form).toContain("没有内容可写入记忆");
+    // 那句话必须挂在 memoryPreview 的三元里，而不是直接印在 span 里。
+    const promise = form.indexOf('? "会写入记忆，供明天使用"');
+    expect(promise).toBeGreaterThan(-1);
+    expect(form.indexOf("{memoryPreview")).toBeLessThan(promise);
+  });
 });

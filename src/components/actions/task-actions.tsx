@@ -17,6 +17,7 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import type { InsightDto } from "@/contracts";
 import { API_ROUTES } from "@/contracts/routes";
+import { checkinMemoryContent } from "@/lib/domain/checkin-memory";
 import { cn } from "@/lib/format";
 import { call } from "./shared";
 
@@ -756,6 +757,22 @@ export function CheckinForm({
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  const tags = errorTags
+    .split(/[，,]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  /**
+   * 保存按钮下面那句「会写入记忆」不能无条件写：saveCheckin 只在正文非空时插
+   * 记忆行（四个字段都空着的打卡只记精力与心情）。这里用同一个函数算一遍正文，
+   * 空着就换一句说明。
+   */
+  const memoryPreview = checkinMemoryContent({
+    studyMinutes,
+    recallScore: recall === null ? null : recall / 100,
+    errorTags: tags,
+    note,
+  });
+
   async function submit() {
     setBusy(true);
     const data = await call("/api/checkin", "POST", {
@@ -764,10 +781,7 @@ export function CheckinForm({
       note,
       studyMinutes,
       recallScore: recall === null ? null : recall / 100,
-      errorTags: errorTags
-        .split(/[，,]/)
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      errorTags: tags,
       completed: tasks.map((t) => ({ taskId: t.id, done: Boolean(done[t.id]) })),
     });
     setBusy(false);
@@ -921,7 +935,9 @@ export function CheckinForm({
           {saved ? "已保存" : "完成 check-in"}
         </Button>
         <span className="text-label text-faint" aria-live="polite">
-          会写入记忆，供明天使用
+          {memoryPreview
+            ? "会写入记忆，供明天使用"
+            : "没有内容可写入记忆：学习时长、回忆正确率、薄弱点和备注都空着，这次只记精力和心情。"}
         </span>
       </div>
     </div>
