@@ -20,6 +20,7 @@ import type { GoalDto } from "@/contracts";
 import { goalStatusLabel } from "@/contracts/labels";
 import { cn, dateTime, money, timeOnly } from "@/lib/format";
 import { goalProgressHint, goalProgressText } from "@/lib/presentation/goal-view";
+import { briefGoalLine, briefTaskLine } from "@/lib/presentation/brief-view";
 import {
   briefTaskSnapshot,
   buildTodayActionQueue,
@@ -132,15 +133,17 @@ export default async function TodayPage() {
 
   const learningTask = pickLearningTask(data.tasks, { excludeIds: inQueue });
 
+  /*
+    兜底早报与 `regenerateBrief` 写的正文共用同一组句子（src/lib/presentation/
+    brief-view.ts）。以前这里手写了一版、服务端手写了一版，点「重新生成早报」后
+    存下来的正文就和这屏对不上：暂停的目标仍被当成方向、非学习目标那个没人再算的
+    百分比照印、失败任务被数成「待推进」。
+  */
   const brief =
     data.brief?.narrative ??
-    `# 今日早报\n\n目标：${
-      activeGoals.length > 0
-        ? activeGoals
-            .map((g) => `${g.title}（${goalProgressText(g.domain, g.progress)}）`)
-            .join(" · ")
-        : "没有进行中的目标"
-    }\n\n## 今天的关键判断\n- 今天有 ${inFlight.length} 个待推进任务。\n- 有 ${data.approvals.length} 个决定等你。`;
+    `# 今日早报\n\n目标：${briefGoalLine(data.goals)}\n\n## 今天的关键判断\n- ${briefTaskLine(
+      data.tasks,
+    )}\n- 有 ${data.approvals.length} 个决定等你。`;
 
   const weekly = data.weeklyMetrics;
   const metricRows = weeklyMetricRows(weekly);

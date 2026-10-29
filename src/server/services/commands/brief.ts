@@ -3,6 +3,12 @@ import { reviews } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
 import { localDateKey, localDateTimeParts } from "@/lib/domain/time";
 import { getTodayData } from "../queries/today";
+import {
+  briefGoalLine,
+  briefOrderList,
+  briefTaskLine,
+} from "@/lib/presentation/brief-view";
+import { inFlightTasks } from "@/lib/presentation/today-view";
 
 export async function regenerateBrief(userId: string) {
   const data = await getTodayData(userId);
@@ -11,23 +17,31 @@ export async function regenerateBrief(userId: string) {
   // 出现两个日期（标题 26 日、period 与页头 27 日）。
   const now = new Date();
   const today = localDateTimeParts(now, data.user.timezone);
+  const inFlight = inFlightTasks(data.tasks);
   const lines = [
     `# ${today.month}月${today.day}日 早报`,
     "",
-    `目标：${data.goals.map((g) => `${g.title}（${Math.round(g.progress)}%）`).join(" · ")}`,
+    /*
+      「目标」与「今天有 N 个待推进任务」这两行有专门的函数（src/lib/presentation/
+      brief-view.ts）：首页那条兜底早报用的是同一对函数。以前这里自己 map 了
+      `data.goals` 的每个目标、数的是整张 `tasks` 表，于是「重新生成早报」写下的
+      正文会和同一屏的页头对不上——暂停目标照样算方向、健身目标那个写死的 60%
+      照样印、失败任务被数成「待推进」。
+    */
+    `目标：${briefGoalLine(data.goals)}`,
     "",
     "## 今天的关键判断",
-    data.tasks.length > 0
-      ? `- 今天有 ${data.tasks.length} 个待推进任务，优先处理已提交待验收的。`
-      : "- 今天没有待推进任务，适合复盘或补弱项。",
+    `- ${briefTaskLine(data.tasks)}`,
     `- 需要你决定：${data.approvals.length} 个审批${data.council ? " + 1 个内阁会议" : ""}。`,
     "",
     "## 建议顺序",
-    ...data.tasks.slice(0, 3).map((t, i) => `${i + 1}. ${t.title}（${t.estimateMin} 分钟）`),
+    ...briefOrderList(data.tasks),
   ];
   const content = lines.join("\n");
   const metrics = {
-    tasks: data.tasks.length,
+    // 徽章上写「基于 N 个任务」，N 必须是正文那个数：推进中的任务，
+    // 不含失败与等审批的（正文那行由 briefTaskLine 现算，同一子集）。
+    tasks: inFlight.length,
     decisions: data.approvals.length,
   };
   await db
