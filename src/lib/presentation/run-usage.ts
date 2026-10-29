@@ -31,3 +31,35 @@ export function runCostLabel(input: {
   if (input.costSource === "unknown") return "费用未知";
   return money(Number.isFinite(input.costCents) ? input.costCents : 0);
 }
+
+/**
+ * 一行 step 上的耗时与 token。
+ *
+ * 步骤行记的是这次运行的轨迹，不是账单：`run.ts` 的 context / plan / submit
+ * 三步写的是估算（`ti: 220`、`latency: 90`），`audit.ts` 与 `apprentice.ts`
+ * 的确定性步骤写的是固定常数（80/40 tok、100ms），连没调模型的 `suggest`
+ * 路径也写了 120/240。这个分层是有意为之——
+ * `tests/integration/model-usage-accounting.test.ts` 明写「估算只留在 step
+ * 行上，不能污染 run 的实测值」。问题在任务页把两层印成了同一种样子：演示
+ * 运行的横幅写着「用量未知 · ¥0.00」，下面每个步骤却写着「100ms · 120 tok」，
+ * 同一张卡片上两份说法互相打脸。这里把步骤口径写出来：没调用模型就说没调用，
+ * 有数字就标明是估算。
+ */
+export function stepTraceLabel(input: {
+  latencyMs: number;
+  tokensIn: number;
+  tokensOut: number;
+}): string {
+  const latency = Number.isFinite(input.latencyMs)
+    ? Math.max(0, Math.round(input.latencyMs))
+    : 0;
+  const tokens =
+    (Number.isFinite(input.tokensIn) ? Math.max(0, input.tokensIn) : 0) +
+    (Number.isFinite(input.tokensOut) ? Math.max(0, input.tokensOut) : 0);
+  if (tokens <= 0) return `${latency}ms · 未调用模型`;
+  return `${latency}ms · 约 ${tokens} tok`;
+}
+
+/** 步骤行的悬停说明：真实用量与费用只看上面那一行的 measured / 未知口径。 */
+export const STEP_TRACE_TITLE =
+  "步骤行是运行的轨迹：耗时与 token 是步骤级记录（确定性步骤是估算，不是供应商回报），真实用量与费用只看上面那一行的 measured / 未知口径。";

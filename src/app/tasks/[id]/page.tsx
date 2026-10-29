@@ -50,7 +50,12 @@ import {
   tallyChecklist,
   checklistBadge,
 } from "@/lib/presentation/task-view";
-import { runCostLabel, runTokensLabel } from "@/lib/presentation/run-usage";
+import {
+  STEP_TRACE_TITLE,
+  runCostLabel,
+  runTokensLabel,
+  stepTraceLabel,
+} from "@/lib/presentation/run-usage";
 import {
   Avatar,
   Badge,
@@ -517,8 +522,14 @@ export default async function TaskPage({
                                     </Badge>
                                   ) : null}
 
-                                  <span className="text-label text-faint">
-                                    {step.latencyMs}ms · {step.tokensIn + step.tokensOut} tok
+                                  {/* 步骤行的耗时与 token 是轨迹记录（确定性步骤是估算），
+                                      不是供应商账单；真实用量与费用看上面那一行的
+                                      measured / 未知口径。 */}
+                                  <span
+                                    className="text-label text-faint"
+                                    title={STEP_TRACE_TITLE}
+                                  >
+                                    {stepTraceLabel(step)}
                                   </span>
                                 </div>
 
