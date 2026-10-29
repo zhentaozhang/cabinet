@@ -73,8 +73,8 @@ export function buildCouncilPosition(input: {
   } else if (role === "researcher") {
     stance = "neutral";
     claim = latestMemory
-      ? `围绕「${topicLabel}」找到 ${context.memories.length} 条相关记忆，最高显著性来自「${short(latestMemory.content)}」。`
-      : `围绕「${topicLabel}」没有可引用的历史记忆；当前只能基于议题本身判断。`;
+      ? `围绕「${topicLabel}」按议题词检索到 ${context.memories.length} 条相关记忆，打分最高的是「${short(latestMemory.content)}」。`
+      : `围绕「${topicLabel}」没有检索到相关的历史记忆；当前只能基于议题本身判断。`;
     risk = `「${topicLabel}」的证据不足时，结论可能只是叙事。`;
     recommendation = `先为「${topicLabel}」补 1 条可核验来源，再进入执行。`;
     evidence = latestMemory

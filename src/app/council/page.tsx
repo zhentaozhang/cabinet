@@ -265,12 +265,12 @@ export default async function CouncilPage() {
                     </div>
                   ) : null}
                   <div className="text-label text-faint">
-                    决定已记录在审计日志；下次遇到类似议题会作为判例。
+                    决定已记录在审计日志，并写进程序记忆；下一个议题提到相同的说法时，它会作为一条相关记忆被检索出来。
                   </div>
                 </div>
               ) : (
                 <div className="text-label text-muted">
-                  决定已记录在审计日志；下次遇到类似议题会作为判例。
+                  决定已记录在审计日志，并写进程序记忆；下一个议题提到相同的说法时，它会作为一条相关记忆被检索出来。
                 </div>
               )}
             </div>

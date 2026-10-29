@@ -14,6 +14,7 @@ import {
 import type { FalsificationCondition } from "@/lib/db/schema";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { workspaceBudget } from "@/lib/domain/agent-budget";
+import { retrieveMemories } from "@/lib/memory/retrieval";
 import { loadWeeklyUsage } from "../tasks/execution";
 import type {
   CouncilPositionDraft,
@@ -54,8 +55,12 @@ export type CouncilContext = {
   };
 };
 
+/** 会议最多带多少条记忆进立场：与检索默认条数一致。 */
+export const COUNCIL_MEMORY_LIMIT = 8;
+
 export async function loadCouncilContext(
   userId: string,
+  topic: string,
 ): Promise<CouncilContext> {
   const allAgents = await db
     .select()
@@ -84,12 +89,17 @@ export async function loadCouncilContext(
     .where(eq(checkins.userId, userId))
     .orderBy(desc(checkins.date))
     .limit(7);
-  const activeMemories = await db
-    .select()
-    .from(memories)
-    .where(and(eq(memories.userId, userId), eq(memories.status, "active")))
-    .orderBy(desc(memories.salience))
-    .limit(8);
+  // 议题相关的记忆：走 retrieval.ts 的混合打分（词面命中、3-gram 相似、近因、显著性），
+  // 只留真正沾到议题词的条目。原来是「全库显著性最高的 8 条」——议题完全不参与筛选，
+  // 但 Researcher 的 claim 写的是「围绕议题找到 N 条相关记忆」，还可能把它们当证据引用：
+  // 8 条里一条与议题无关的记忆也能被说成「相关」，并作为该立场的唯一证据。
+  // 一条都没沾上时这里为空，Researcher 会如实说没有可引用的历史记忆，证据退回最近任务。
+  const retrievedMemories = await retrieveMemories(userId, topic, {
+    limit: COUNCIL_MEMORY_LIMIT,
+  });
+  const activeMemories = retrievedMemories.filter(
+    (row) => row.scores.relevance > 0 || row.scores.trigram > 0,
+  );
   const [taskStats] = await db
     .select({
       last7d: sql<number>`(count(*))::int`,

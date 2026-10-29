@@ -45,6 +45,26 @@ async function chiefPosition(topic: string) {
   return chief;
 }
 
+/** 只跑一次会议，取指定角色那一条立场（Researcher 的 claim 里写着引用了几条记忆）。 */
+async function rolePosition(topic: string, role: string) {
+  const council = await createCouncil(
+    { topic, trigger: "单笔支出 > ¥200" },
+    DEMO_USER_ID,
+  );
+  const positions = await db
+    .select()
+    .from(councilPositions)
+    .where(eq(councilPositions.councilId, council.id));
+  const agentRows = await db
+    .select()
+    .from(agents)
+    .where(eq(agents.userId, DEMO_USER_ID));
+  const agentId = agentRows.find((agent) => agent.role === role)?.id;
+  const position = positions.find((row) => row.agentId === agentId);
+  if (!position) throw new Error(role + " position missing");
+  return position;
+}
+
 /** 让最近的活儿落在某个目标上：任务的 createdAt 决定「最近」，目标的进度单独标出来。 */
 async function latestWorkOn(goalId: string): Promise<void> {
   const stale = new Date(Date.now() - 60 * 60 * 1000);
@@ -410,5 +430,67 @@ describe("council closed loop", () => {
     const criticDissent = dissentRows.find((row) => row.agentId === criticId);
     expect(criticDissent?.condition.threshold).toBe(5);
     expect(dissentRows.every((row) => row.condition.threshold !== 2)).toBe(true);
+  });
+
+  /**
+   * Researcher 的 claim 说「围绕议题找到 N 条相关记忆」，但会议上下文原来是全库
+   * 显著性最高的 8 条，议题根本不让参与筛选：一条与议题无关的记忆会被说成「相关」，
+   * 还会作为该立场的唯一证据被引用（evidence 里只有它一条 memory 引用）。现在按
+   * src/lib/memory/retrieval.ts 的混合打分取，只留沾到议题词的条目。
+   */
+  it("feeds the Researcher the memories that mention the topic", async () => {
+    await db.delete(memories).where(eq(memories.userId, DEMO_USER_ID));
+    await db.insert(memories).values([
+      {
+        id: "mem_unrelated_council",
+        userId: DEMO_USER_ID,
+        type: "semantic",
+        domain: "health",
+        content: "夜里两点还在刷手机，第二天精力只有 2/5。",
+        confidence: 0.9,
+        salience: 0.99,
+        evidence: [{ label: "打卡", ref: "chk_night", quote: "精力 2/5" }],
+        status: "active",
+      },
+      {
+        id: "mem_topic_council",
+        userId: DEMO_USER_ID,
+        type: "semantic",
+        domain: "learning",
+        content: "上次咨询：8 周训练营的完课率只有 40%，先按月验证。",
+        confidence: 0.7,
+        salience: 0.2,
+        evidence: [{ label: "咨询记录", ref: "ccl_old", quote: "完课率 40%" }],
+        status: "active",
+      },
+    ]);
+
+    const researcher = await rolePosition("要不要报 8 周训练营？", "researcher");
+    expect(researcher.claim).toContain("1 条相关记忆");
+    expect(researcher.claim).toContain("完课率");
+    // 全库显著性最高的那条与议题无关，不能进「相关记忆」。
+    expect(researcher.claim).not.toContain("刷手机");
+    expect(researcher.evidence[0]?.ref).toBe("memory:mem_topic_council");
+  });
+
+  it("says so when no memory mentions the topic", async () => {
+    await db.delete(memories).where(eq(memories.userId, DEMO_USER_ID));
+    await db.insert(memories).values({
+      id: "mem_unrelated_only",
+      userId: DEMO_USER_ID,
+      type: "semantic",
+      domain: "health",
+      content: "夜里两点还在刷手机，第二天精力只有 2/5。",
+      confidence: 0.9,
+      salience: 0.99,
+      evidence: [{ label: "打卡", ref: "chk_night", quote: "精力 2/5" }],
+      status: "active",
+    });
+
+    const researcher = await rolePosition("要不要把厨房的刀换成一套新的？", "researcher");
+    expect(researcher.claim).toContain("没有检索到相关的历史记忆");
+    expect(
+      researcher.evidence.some((item) => (item.ref ?? "").startsWith("memory:")),
+    ).toBe(false);
   });
 });
