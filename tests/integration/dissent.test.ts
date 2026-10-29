@@ -139,6 +139,10 @@ describe("formal dissent ledger", () => {
       );
     expect(precedent).toBeDefined();
     expect(precedent.content).toContain("判例");
+    // 判例正文说人话：中文指标名与量词，不是内部键 `agent_paused` 或裸数字。
+    expect(precedent.content).toContain("7 天内暂停 = 1 次");
+    expect(precedent.content).toContain("实测 1 次");
+    expect(precedent.content).not.toContain("agent_paused");
     expect(precedent.value).toBe("vindicated:1");
 
     const auditRows = await db
@@ -193,7 +197,10 @@ describe("formal dissent ledger", () => {
       .from(dissents)
       .where(eq(dissents.id, "dis_invalidate"));
     expect(row.status).toBe("invalidated");
-    expect(row.evidence.some((item) => item.label === "复盘测量")).toBe(true);
+    const measured = row.evidence.find((item) => item.label === "复盘测量");
+    expect(measured).toBeDefined();
+    // 引文同样是给人读的：条件写成「7 天内驳回 ≥ 99 次」，实测值带量词。
+    expect(measured?.quote).toMatch(/^7 天内驳回 ≥ 99 次，实测 \d+ 次$/);
 
     const [criticAfter] = await db
       .select()
@@ -421,7 +428,7 @@ describe("formal dissent ledger", () => {
       .where(eq(dissents.id, "dis_budget_scope"));
     expect(row.status).toBe("vindicated");
     expect(
-      row.evidence.some((item) => item.quote === "budget_spend_cents = 350"),
+      row.evidence.some((item) => item.quote === "7 天内支出 ≥ ¥3.00，实测 ¥3.50"),
     ).toBe(true);
   });
   /**
@@ -525,7 +532,7 @@ describe("formal dissent ledger", () => {
       .from(dissents)
       .where(eq(dissents.id, "dis_budget_ledger"));
     expect(
-      row.evidence.some((item) => item.quote === "budget_spend_cents = 603"),
+      row.evidence.some((item) => item.quote === "7 天内支出 ≥ ¥3.00，实测 ¥6.03"),
     ).toBe(true);
   });
 });

@@ -14,6 +14,7 @@ import type { Evidence, FalsificationCondition } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { assertTransition } from "@/lib/domain/state";
+import { dissentConditionText, dissentValueText } from "@/lib/domain/dissent-metric";
 import { factSlug, writeMemoryFact } from "../memory/facts";
 import { clamp } from "../../shared/numbers";
 
@@ -164,12 +165,16 @@ export async function evaluateDissents(userId: string): Promise<{
 
     const value = await measureDissent(userId, dissent);
     const met = dissentConditionMet(value, dissent.condition);
+    // 引文与下面的判例都写给人看：内部键和「分」只留在审计行的 after 里，
+    // 那里机器要按原样比对（同一个条件在两处的措辞来自同一个函数）。
+    const conditionText = dissentConditionText(dissent.condition);
+    const measured = dissentValueText(dissent.condition.metric, value);
     const evidence: Evidence[] = [
       ...dissent.evidence,
       {
         label: "复盘测量",
         ref: `dissent:${dissent.id}`,
-        quote: `${dissent.condition.metric} = ${value}`,
+        quote: `${conditionText}，实测 ${measured}`,
       },
     ];
 
@@ -279,7 +284,7 @@ export async function evaluateDissents(userId: string): Promise<{
         agentId: dissent.agentId,
         type: "procedural",
         domain: "council",
-        content: `判例（${topic}）：${dissent.warning} 已被现实印证。测量值 ${value}，阈值 ${dissent.condition.operator} ${dissent.condition.threshold}。`,
+        content: `判例（${topic}）：${dissent.warning} 已被现实印证。${conditionText}，实测 ${measured}。`,
         confidence: 0.9,
         salience: config.dissent.precedentSalience,
         evidence,

@@ -1760,7 +1760,7 @@ Critic 认为免费资料已足够，建议先完成现有材料。
         {
           label: "复盘测量",
           ref: "dissent:dis_seed_membership",
-          quote: "budget_spend_cents = 52000",
+          quote: "7 天内支出 ≥ ¥480.00，实测 ¥520.00",
         },
       ],
       evaluatedAt: at(-2, 9),

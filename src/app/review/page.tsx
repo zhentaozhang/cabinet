@@ -28,6 +28,7 @@ import {
 } from "@/lib/presentation/review-view";
 import { cn, dateTime, shortDate } from "@/lib/format";
 import { recallAverageHint } from "@/lib/presentation/recall-view";
+import { dissentConditionText } from "@/lib/domain/dissent-metric";
 import {
   Avatar,
   Badge,
@@ -533,10 +534,10 @@ export default async function ReviewPage({
                           <span className="text-label font-medium text-ink">
                             {agent?.name ?? dissent.agentId}
                           </span>
+                          {/* 条件是「7 天内支出 ≥ ¥480.00」这种人话：metric 是内部键，
+                              阈值带的是那个键的单位（分），原样印出来会把 ¥480 说成 48000。 */}
                           <span className="text-label text-faint">
-                            {dissent.condition.metric} {dissent.condition.operator}{" "}
-                            {dissent.condition.threshold} ·{" "}
-                            {dissent.condition.windowDays} 天
+                            {dissentConditionText(dissent.condition)}
                           </span>
                         </div>
                         <p className="mt-1.5 text-label leading-relaxed text-muted">
