@@ -291,7 +291,7 @@ pnpm verify            # 等价于 bash scripts/verify.sh
 
 它依次跑 `tsx scripts/doc-facts.ts --check`、`drizzle-kit migrate`、`tsc --noEmit`、`eslint`、`vitest run --maxWorkers=1 --no-file-parallelism`、`next build`。第一步不碰数据库、只读 README，比对生成块与扫描结果，不一致就打印 diff 并退出码 1——数字过期是最便宜的失败，所以排在创建临时库之前。migrate 这一步在**临时新建的库**上跑，因为长期存在的本地库通常是 `pnpm db:push` 建的、`drizzle.__drizzle_migrations` 是空的，直接 migrate 会在 0000 上撞已存在的对象。
 
-测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->171<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1422<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
+测试文件与用例数由扫描生成，不手写：<!-- doc-facts:testFiles -->171<!-- /doc-facts:testFiles --> 个 `tests/**/*.test.ts`、<!-- doc-facts:testCases -->1426<!-- /doc-facts:testCases --> 条用例声明（`test(` / `it(` 调用点；`it.each` 在运行时按数据集展开成多行，所以这个静态计数和 vitest 报的 passed 不是同一个口径）。改完代码跑 `pnpm doc:facts` 重写这些数字，`pnpm verify` 会替你检查有没有漏。
 
 2026-10-27 在当前分支实测：`vitest run` 报 1335 passed / 0 failed，typecheck / lint / build 均通过（`bash scripts/verify.sh` exit 0）。没有调用真实模型，也没有做浏览器 E2E。通过/失败计数不写在这里——它每次运行都不同，写下来就是下一条会过期的数字。
 
@@ -313,6 +313,7 @@ gh run watch
 - **只有检索是真的**：`web_search` 接了 Brave（Tavily 作为可重试的兜底），命中的来源落库为 `evidence` 行，产物必须用 `[cite:evd_x]` 引用它们。日历、预订、支付仍然没有连接器，这些工具步骤会记 `not_connected` 或 `unauthorized`。
 - **不是自治多 Agent**：没有 Agent 间消息、协商或自动委派；内阁由用户发起，立场由规则生成。
 - **用户判定带出状态、记忆和复习排期，但不动 Agent 绩效**：`needs_review` 由用户判成 accepted/rejected，会写任务状态、审计行、一条任务记忆，并推进该知识点的复习排期（学习任务）；不会补算 Agent 绩效（信任分只认 Auditor 给出的结论），但判成 accepted 时会当场重算目标进度：进度是按任务状态现算的，这一行已经是 accepted，不重算就等于让页面显示一个当时并不成立的数字，等下一次打卡触发重算时再自己跳上去。判定记录会显示在任务页验收卡片上方（`audit.override` 单独取一条，不受审计时间线 10 条窗口影响）。
+- 学徒页的两个训练入口（记录观摩、参加考试）只在还能训练时出现：`src/lib/presentation/cabinet-view.ts` 的 `apprenticeTrainingOpen` 把 `active`（已转正）、`practice_passed`（只剩转正）、`retired`（已退休）都排除掉。原来页面手写「不等于 active 且不等于 practice_passed」，正好漏了 retired——退休学徒页上仍摆着两个按钮，点哪个都只会拿到一句报错（`recordApprenticeObservation` 抛「已退休的学徒不能再记录观摩。」、`runApprenticeExam` 抛「Apprentice is retired and cannot take the exam.」），下面的「记录满 N 条才能参加考试」也已经是空话。退休时卡片改印一句已退休说明。
 - **学徒考试是模拟**：考试产物由确定性模板生成；5 条验收项必须全部通过；考试前需要 5 条显式记录的观摩证据（只有 mentor 的真实模型运行、且任务已验收才算）。练习通过只把阶段推进到 `practice_passed`，不授予生产技能、不加信任分、不提等级。
 - **早报、周复盘、反思候选是规则/模板**：不调用模型。反思能提出真实的策略覆盖（`set_policy`，16 个白名单键，可回滚），但"要不要提出"本身是规则判断，不是模型分析。
 - **记忆检索没有 embedding**：排序是词面命中 + 字符 3-gram 相似度 + 时间衰减 + 重要度；本机 Postgres 没有 `vector` 扩展，所以没有向量检索。`retrieveMemories` 留了 `rerank` 钩子，接外部重排模型不需要改调用方。

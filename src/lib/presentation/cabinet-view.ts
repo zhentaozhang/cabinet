@@ -164,3 +164,21 @@ export function weeklyBudgetFieldHint(input: {
 function finiteOr(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
+/**
+ * 学徒卡片上那两个入口（记录观摩、运行结业考试）还能不能出现。
+ *
+ * 判断只由 `agents.lifecycle_stage` 决定。页面原来写的是「不等于 active 且不等于
+ * practice_passed」就显示——于是 retired 的学徒页上仍然摆着两个按钮：
+ * `recordApprenticeObservation` 对已退休的学徒直接抛「已退休的学徒不能再记录观摩。」
+ * （src/server/services/commands/apprentice.ts:87-92），`runApprenticeExam` 抛
+ * 「Apprentice is retired and cannot take the exam.」（同文件 :184-186）。点哪个都只会
+ * 拿到一句报错，按钮承诺的动作后端一律不做；同一段下面的「记录满 N 条才能参加考试」
+ * 也已经是句空话。转正之后（active）同理：技能已是 v1，考试不再有意义。
+ */
+export function apprenticeTrainingOpen(stage: string): boolean {
+  return stage !== "active" && stage !== "practice_passed" && stage !== "retired";
+}
+
+/** 已退休的学徒在「学徒转正」卡里该看到的话：没有下一步动作，也别再等考试。 */
+export const APPRENTICE_RETIRED_NOTICE =
+  "已退休：这个学徒不再接单，观摩记录与结业考试都已关闭。";

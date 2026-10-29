@@ -23,7 +23,11 @@ import {
 import { money, pct, relative, shortDate, timeOnly } from "@/lib/format";
 import { memoryTypeLabel } from "@/contracts/labels";
 import { sourceLabel } from "@/lib/domain/provenance";
-import { agentPassRate } from "@/lib/presentation/cabinet-view";
+import {
+  APPRENTICE_RETIRED_NOTICE,
+  agentPassRate,
+  apprenticeTrainingOpen,
+} from "@/lib/presentation/cabinet-view";
 import { runCostLabel, runTokensLabel } from "@/lib/presentation/run-usage";
 import { completionPercent } from "@/lib/presentation/ratio";
 import {
@@ -86,6 +90,8 @@ export default async function AgentPage({
   const weekUsedCents = budget.settledCents + budget.unknownCents;
   const weekUsedPct =
     budget.limitCents > 0 ? (weekUsedCents / budget.limitCents) * 100 : 0;
+  // 已退休 / 已转正的学徒不再练也不再考：两个入口一个都不能留（见 apprenticeTrainingOpen）。
+  const trainingOpen = apprenticeTrainingOpen(agent.lifecycleStage);
 
   return (
     <div>
@@ -322,6 +328,11 @@ export default async function AgentPage({
                     <GraduateButton />
                   </div>
                 ) : null}
+                {agent.lifecycleStage === "retired" ? (
+                  <div className="mb-3 rounded-md border border-line bg-panel2 px-3 py-2 text-label text-muted">
+                    {APPRENTICE_RETIRED_NOTICE}
+                  </div>
+                ) : null}
                 {apprenticeship ? (
                   <>
                     <div className="mb-2 flex items-center justify-between text-label text-muted">
@@ -342,12 +353,13 @@ export default async function AgentPage({
                           : "accent"
                       }
                     />
-                    <p className="mt-2 text-label leading-relaxed text-faint">
-                      只有 mentor 的真实模型运行、且任务已验收通过，才能被记录为一次观摩；
-                      记录满 {apprenticeship.required} 条才能参加考试。
-                    </p>
-                    {agent.lifecycleStage !== "active" &&
-                    agent.lifecycleStage !== "practice_passed" ? (
+                    {trainingOpen ? (
+                      <p className="mt-2 text-label leading-relaxed text-faint">
+                        只有 mentor 的真实模型运行、且任务已验收通过，才能被记录为一次观摩；
+                        记录满 {apprenticeship.required} 条才能参加考试。
+                      </p>
+                    ) : null}
+                    {trainingOpen ? (
                       <div className="mt-3">
                         <ObservationRecorder
                           candidates={apprenticeship.candidates}

@@ -3,8 +3,10 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import {
+  APPRENTICE_RETIRED_NOTICE,
   agentHeadcount,
   agentPassRate,
+  apprenticeTrainingOpen,
   weeklyBudgetFieldHint,
   escalationPolicyLine,
   tasksPerAgent,
@@ -203,5 +205,46 @@ describe("the budget box does not save a cleared field as a permission", () => {
       "utf8",
     );
     expect(page).toContain("limitCents={budget.limitCents}");
+  });
+});
+describe("apprenticeTrainingOpen", () => {
+  it("keeps the training controls while the apprentice is still in training", () => {
+    // shadowing → drafting → examining 是练习阶段；这三个阶段后端都还真能记录观摩 / 考试。
+    expect(apprenticeTrainingOpen("shadowing")).toBe(true);
+    expect(apprenticeTrainingOpen("drafting")).toBe(true);
+    expect(apprenticeTrainingOpen("examining")).toBe(true);
+  });
+
+  it("hides them once there is nothing left to do", () => {
+    // active = 已转正，practice_passed = 只剩转正这一个动作。
+    expect(apprenticeTrainingOpen("active")).toBe(false);
+    expect(apprenticeTrainingOpen("practice_passed")).toBe(false);
+    // retired：记录观摩抛「已退休的学徒不能再记录观摩。」、考试抛
+    // 「Apprentice is retired and cannot take the exam.」——入口留着就只是两个必然失败的按钮。
+    expect(apprenticeTrainingOpen("retired")).toBe(false);
+  });
+});
+
+describe("the retired apprentice page offers no dead buttons", () => {
+  const page = readFileSync(
+    join(process.cwd(), "src/app/cabinet/[id]/page.tsx"),
+    "utf8",
+  );
+
+  it("gates both controls on the lifecycle stage", () => {
+    expect(page).toContain("apprenticeTrainingOpen(agent.lifecycleStage)");
+    // 原来这里是手写的不等式，正好漏掉了 retired。
+    expect(page).not.toContain('agent.lifecycleStage !== "active" &&');
+    // 两个入口都必须落在 trainingOpen 里：把条件改回旧写法就会重新出现。
+    const gate = page.indexOf("{trainingOpen ? (");
+    expect(gate).toBeGreaterThan(-1);
+    expect(page.indexOf("<ObservationRecorder")).toBeGreaterThan(gate);
+    expect(page.indexOf("<ExamButton />")).toBeGreaterThan(gate);
+  });
+
+  it("says it is retired instead of staying silent", () => {
+    expect(page).toContain("{APPRENTICE_RETIRED_NOTICE}");
+    expect(APPRENTICE_RETIRED_NOTICE).toContain("已退休");
+    expect(APPRENTICE_RETIRED_NOTICE).toContain("不再接单");
   });
 });
