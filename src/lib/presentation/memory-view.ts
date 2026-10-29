@@ -44,6 +44,24 @@ export function conflictCellDetail(conflicts: number): string {
   return `${Math.trunc(conflicts)} 条自相矛盾，都在「历史版本」里`;
 }
 
+/**
+ * 「Stale」那一格的说明。
+ *
+ * 这一格数的是 memories.expires_at 已经过去的行（queries/memory.ts:75），
+ * 但**没有任何写入面会写这个字段**：memory/facts.ts:20-22 明说故意不设 TTL
+ * （policy_config 里没有保留期这一项，在代码里挑一个常量等于把策略藏起来），
+ * lib/memory/decay.ts:9 也只衰减分数、不碰 expiresAt。读取端是现成的
+ * （retrieval.ts:281 会把过期行排除在检索之外），写入端没人填。
+ *
+ * 所以这一格在现有写入面上恒为 0，而原来那句 hint 只写「已过期」，读起来
+ * 像一次「没有过期记忆」的健康检查。这里改成直说计数口径：0 表示还没有
+ * 记忆被设了到期时间，不是「检查过了，都新鲜」。
+ */
+export function staleStatHint(stale: number): string {
+  if (!Number.isFinite(stale) || stale <= 0) return "还没有记忆设到期时间";
+  return "已过期，不再参与检索";
+}
+
 export const MEMORY_GOVERNANCE_LINES = [
   "没有来源事件的记忆不许写入，防止模型编造。",
   "Agent 想改写一条已有事实，必须比原版本更确定；达不到就另存一条「待确认」的冲突，而不是覆盖。",

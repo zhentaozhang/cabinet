@@ -8,6 +8,7 @@ import {
   MEMORY_HEADER_BADGES,
   conflictCellDetail,
   conflictStatHint,
+  staleStatHint,
 } from "@/lib/presentation/memory-view";
 
 /**
@@ -69,6 +70,36 @@ describe("conflict counters", () => {
   it("never prints a broken count", () => {
     expect(conflictCellDetail(Number.NaN)).toBe("没有互相冲突的事实");
     expect(conflictCellDetail(-1)).toBe("没有互相冲突的事实");
+  });
+});
+
+/**
+ * 「Stale」那一格数的是 memories.expires_at 已经过去的行（queries/memory.ts:75），
+ * 而现有写入面一个都不写这个字段：memory/facts.ts:20-22 明说故意不设 TTL，
+ * lib/memory/decay.ts:9 只衰减分数。于是这个计数器恒为 0，旧的 hint「已过期」
+ * 却让一个恒为 0 的数字读起来像「检查过了，没有过期记忆」。
+ */
+describe("the stale counter", () => {
+  const PAGE = join(process.cwd(), "src/app/memory/page.tsx");
+
+  it("says nothing has an expiry instead of calling a zero a clean bill of health", () => {
+    expect(staleStatHint(0)).toContain("还没有记忆设到期时间");
+    expect(staleStatHint(0)).not.toContain("已过期");
+    // 计数坏了也不能印出「已过期」这种结论。
+    expect(staleStatHint(Number.NaN)).toBe(staleStatHint(0));
+    expect(staleStatHint(-1)).toBe(staleStatHint(0));
+  });
+
+  it("says what an actually expired row means for retrieval", () => {
+    // retrieval.ts:281 真的会把过期行排除在检索之外，所以这一支可以这么说。
+    expect(staleStatHint(3)).toContain("已过期");
+    expect(staleStatHint(3)).toContain("不再参与检索");
+  });
+
+  it("feeds the tile from the same rule", () => {
+    const page = readFileSync(PAGE, "utf8");
+    expect(page).toContain("hint={staleStatHint(stale)}");
+    expect(page).not.toContain('hint="已过期"');
   });
 });
 

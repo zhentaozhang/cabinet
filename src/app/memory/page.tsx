@@ -23,6 +23,7 @@ import {
   MEMORY_GOVERNANCE_LINES,
   MEMORY_HEADER_BADGES,
   conflictStatHint,
+  staleStatHint,
 } from "@/lib/presentation/memory-view";
 
 export const metadata: Metadata = {
@@ -117,7 +118,9 @@ export default async function MemoryPage({
           <Stat label="Conflicts" value={conflicts} hint={conflictStatHint(conflicts)} />
         </Card>
         <Card className="px-4 py-3">
-          <Stat label="Stale" value={stale} hint="已过期" />
+          {/* 这一格数的是 expires_at 已过的行，而眼下没有任何写入面会设它：hint 必须说清
+              计数口径，否则 0 读起来像「检查过、都新鲜」。 */}
+          <Stat label="Stale" value={stale} hint={staleStatHint(stale)} />
         </Card>
       </div>
 
