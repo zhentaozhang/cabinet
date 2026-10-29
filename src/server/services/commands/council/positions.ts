@@ -105,8 +105,14 @@ export function buildCouncilPosition(input: {
           ]
         : [{ label: "Coach 状态", ref: `agent:${agent.id}`, quote: agent.title }];
   } else if (role === "treasurer") {
+    // 额度是分桶的：全工作区能花的是各 Agent 额度之和，不是某个 Agent 的上限。
+    // 原来的写法拿「全工作区花费 / 单 Agent 上限」当百分比、拿「单 Agent 上限 -
+    // 全工作区花费」当剩余，于是剩余额度是没有任何 Agent 能花的数字。
     const percent = Math.round(context.budget.ratio * 100);
-    const remaining = context.budget.limitCents - context.budget.spentCents;
+    const remaining = Math.max(
+      0,
+      context.budget.limitCents - context.budget.spentCents,
+    );
     const costEfficiency = Math.max(
       0,
       Math.min(
@@ -115,14 +121,21 @@ export function buildCouncilPosition(input: {
       ),
     );
     stance = costEfficiency < config.council.score.base ? "oppose" : "support";
-    claim = `议题「${topicLabel}」相关支出：本周预算已用 ${percent}%（${context.budget.spentCents}/${context.budget.limitCents} 分），剩余 ${remaining} 分。`;
+    const tightest = context.budget.tightest;
+    claim =
+      context.budget.limitCents > 0
+        ? `议题「${topicLabel}」相关支出：各 Agent 额度合计 ${context.budget.limitCents} 分，已用 ${percent}%（${context.budget.spentCents}/${context.budget.limitCents} 分），剩余 ${remaining} 分${tightest ? `；最紧的是 ${tightest.name}（${tightest.spentCents}/${tightest.limitCents} 分）` : ""}。`
+        : `议题「${topicLabel}」相关支出：本周没有设 Agent 预算上限（0 表示不设上限），已记账 ${context.budget.spentCents} 分。`;
     risk = `「${topicLabel}」若超支会挤压后续实验和资料预算。`;
     recommendation = `为「${topicLabel}」设硬上限；超过上限需二次审批。`;
     evidence = [
       {
         label: "预算执行",
         ref: `agent:${agent.id}`,
-        quote: `${context.budget.spentCents}/${context.budget.limitCents}`,
+        quote:
+          context.budget.limitCents > 0
+            ? `${context.budget.spentCents}/${context.budget.limitCents}`
+            : `${context.budget.spentCents}（无上限）`,
       },
     ];
   } else {

@@ -104,6 +104,39 @@ describe("council closed loop", () => {
     }
   });
 
+  /**
+   * 财务官报的「本周已用」必须是能花的额度：额度按 Agent 分桶，一周能花的是各桶
+   * 之和。原来它拿各 Agent 花费之和去除以单个 Agent 的上限（策略默认 60000 分），
+   * 种子部署里 7 个 Agent 的额度合计才 7200 分，于是报出「剩余 60000 分」——一笔
+   * 没有任何 Agent 拿得到的额度。
+   */
+  it("reports the Treasurer's budget against the caps that actually exist", async () => {
+    const council = await createCouncil(
+      { topic: "要不要报 8 周训练营？", trigger: "单笔支出 > ¥200" },
+      DEMO_USER_ID,
+    );
+    const agentRows = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.userId, DEMO_USER_ID));
+    const treasurerId = agentRows.find((agent) => agent.role === "treasurer")?.id;
+    const positions = await db
+      .select()
+      .from(councilPositions)
+      .where(eq(councilPositions.councilId, council.id));
+    const treasurer = positions.find((position) => position.agentId === treasurerId);
+    if (!treasurer) throw new Error("treasurer position missing");
+
+    const capacity = agentRows.reduce(
+      (sum, agent) => sum + (agent.budgetCents > 0 ? agent.budgetCents : 0),
+      0,
+    );
+    expect(capacity).toBeGreaterThan(0);
+    expect(treasurer.claim).toContain("额度合计");
+    expect(treasurer.claim).toContain(`${capacity} 分`);
+    expect(treasurer.claim).toContain("最紧的是");
+    expect(treasurer.claim).not.toContain("本周预算已用");
+  });
   it("always lets the Critic oppose and name the topic", async () => {
     const topic = "要不要买 ¥899 年包会员？";
     const council = await createCouncil(

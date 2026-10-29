@@ -36,7 +36,7 @@ export async function createCouncil(
   // 读全局默认，会议就会替你写下一个和别人不一样的门槛：复盘页写着「>= 2 次
   // 驳回即证伪」，而你的 Agent 到第 5 次才停。
   const config = await getPolicyConfigFor(userId);
-  const context = await loadCouncilContext(userId, config.budget.weeklyLimitCents);
+  const context = await loadCouncilContext(userId);
   const id = newId("ccl");
 
   await db.insert(councils).values({

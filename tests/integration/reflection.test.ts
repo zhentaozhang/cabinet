@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
+  agentBudgetPeriods,
   agents,
   checkins,
   insights,
@@ -14,6 +15,7 @@ import {
   addLocalDays,
   localDateKey,
   localDateTimeParts,
+  startOfLocalWeek,
   zonedTimeToUtc,
 } from "@/lib/domain/time";
 import { retrieveMemories } from "@/lib/memory/retrieval";
@@ -85,6 +87,88 @@ describe("real reflection", () => {
     expect(await runReflection(userId)).toBeNull();
   });
 
+  /**
+   * 周预算的额度是按 Agent 分桶的：每个桶的 limit 是 min(该 Agent 预算, 策略默认
+   * 上限)。所以工作区一周能花的是各桶之和，不存在「工作区总上限」。下面两个用例
+   * 钉住这一点——原来「各 Agent 花费之和 ÷ 单个 Agent 上限」的算法会把每个 Agent
+   * 都在额度内的正常工作区读成超支（40000×7 分 ÷ 60000 = 466%）。
+   */
+  async function seedBudgetBuckets(
+    userId: string,
+    spendByRole: Record<string, number>,
+  ): Promise<{ id: string; name: string; role: string }[]> {
+    const timezone = "Asia/Shanghai";
+    const periodStart = startOfLocalWeek(new Date(), timezone);
+    const periodEnd = addLocalDays(periodStart, 7, timezone);
+    const rows = await db
+      .select()
+      .from(agents)
+      .where(eq(agents.userId, userId));
+    for (const agent of rows) {
+      await db.insert(agentBudgetPeriods).values({
+        id: `bpd_${agent.id}_${periodStart.getTime()}`,
+        userId,
+        agentId: agent.id,
+        timezone,
+        periodStart,
+        periodEnd,
+        limitCents: 60_000,
+        settledCents: spendByRole[agent.role] ?? 0,
+      });
+    }
+    return rows.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      role: agent.role,
+    }));
+  }
+
+  async function seedBudgetWorkspace(userId: string): Promise<void> {
+    await db.insert(users).values({
+      id: userId,
+      email: `${userId}@cabinet.local`,
+      name: "Budget Workspace",
+      emailVerified: true,
+      timezone: "Asia/Shanghai",
+      updatedAt: new Date(),
+    });
+    await setupWorkspace({ userId, timezone: "Asia/Shanghai" });
+    // budgetCents = 0 表示「听策略的」，于是每个 Agent 的额度都是策略默认上限。
+    await db.update(agents).set({ budgetCents: 0 }).where(eq(agents.userId, userId));
+  }
+
+  it("measures budget pressure per Agent, not against one ceiling for the workspace", async () => {
+    const userId = "usr_budget_buckets";
+    await seedBudgetWorkspace(userId);
+    await seedBudgetBuckets(userId, {
+      chief: 40_000,
+      researcher: 40_000,
+      coach: 40_000,
+      treasurer: 40_000,
+      auditor: 40_000,
+      apprentice: 40_000,
+      critic: 40_000,
+    });
+
+    // 每个 Agent 用了自己 60000 额度的 67%，全工作区 280000/420000 = 67%：没有压力。
+    expect(await runReflection(userId)).toBeNull();
+  });
+
+  it("names the Agent that is actually close to its cap", async () => {
+    const userId = "usr_budget_tight";
+    await seedBudgetWorkspace(userId);
+    const agentsRows = await seedBudgetBuckets(userId, { coach: 54_000 });
+    const tight = agentsRows.find((agent) => agent.role === "coach");
+    if (!tight) throw new Error("coach missing");
+
+    const insight = await runReflection(userId);
+    expect(insight).not.toBeNull();
+    expect(insight!.claim).toContain(tight.name);
+    expect(insight!.claim).toContain("90%");
+    expect(insight!.claim).toContain("54000/60000");
+    expect(insight!.rationale).toContain("额度");
+    expect(insight!.evidence[0].ref).toBe(`agent:${tight.id}`);
+  });
   it("uses low energy check-ins as a real signal", async () => {
     await db.insert(checkins).values({
       id: "chk_low",

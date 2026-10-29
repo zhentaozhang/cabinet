@@ -12,6 +12,7 @@ import type { Evidence, ProposedChange } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
 import { getPolicyConfigFor } from "@/lib/policy/config";
+import { workspaceBudget } from "@/lib/domain/agent-budget";
 import type { PolicyConfig } from "@/lib/domain/policy";
 import { loadWeeklyUsage } from "./tasks/execution";
 import { getWorkspace } from "../queries/workspace";
@@ -303,44 +304,50 @@ export async function runReflection(
 
   // Budget pressure reads the weekly ledger; unused reservations are reported
   // separately and never merged into settled spend.
+  //
+  // 判据：额度是**按 Agent 分桶**的（每个桶的 limit 是 min(agents.budgetCents,
+  // config.budget.weeklyLimitCents)），工作区一周能花的是这些桶之和，不存在
+  // 「工作区总上限」。原来的写法把 7 个 Agent 的花费相加、再除以单个 Agent 的
+  // 上限：每个 Agent 都在自己额度内、加起来超过一个上限时，洞察会声称「本周预算
+  // 已用 133%」，凭这个建议收紧审批；额度设得比上限小的部署里（种子就是 200–3000
+  // 分）则永远触发不了，因为分子最多只有分母的几分之一。现在按真实额度算，并报
+  // 最紧的那个 Agent —— 卡住的正是它。
   const weeklyUsage = await Promise.all(
     allAgents.map((agent) => loadWeeklyUsage(agent.id, user.timezone)),
   );
-  const spentCents = weeklyUsage.reduce(
-    (sum, usage) => sum + usage.settledCents + usage.unknownCents,
-    0,
-  );
+  const workspaceBudgetView = workspaceBudget(weeklyUsage);
   const reservedCents = weeklyUsage.reduce(
     (sum, usage) => sum + usage.reservedCents,
     0,
   );
-  const budgetRatio =
-    config.budget.weeklyLimitCents > 0
-      ? spentCents / config.budget.weeklyLimitCents
-      : 0;
-  if (budgetRatio >= config.reflection.budgetPressureRatio) {
-    const treasurer =
-      allAgents.find((agent) => agent.role === "treasurer") ?? allAgents[0];
-    if (treasurer) {
-      candidates.push({
-        claim: `本周预算已用 ${Math.round(budgetRatio * 100)}%（${spentCents}/${config.budget.weeklyLimitCents} 分），建议把非必要支出改成二次审批。`,
-        rationale: `按周预算台账汇总（已结算 ${spentCents} 分，未结算预留 ${reservedCents} 分），预算上限 ${config.budget.weeklyLimitCents} 分；触发阈值 ${Math.round(
-          config.reflection.budgetPressureRatio * 100,
-        )}%。`,
-        confidence: config.reflection.confidence,
-        evidence: [
-          {
-            label: "预算执行",
-            ref: `agent:${treasurer.id}`,
-            quote: `${spentCents}/${config.budget.weeklyLimitCents}`,
-          },
-        ],
-        proposedChange: {
-          type: "add_rule",
-          rule: "预算使用超过阈值时，非必要支出必须二次审批。",
+  const tightestAgent =
+    workspaceBudgetView.tightest === null
+      ? null
+      : (allAgents[workspaceBudgetView.tightest.index] ?? null);
+  if (
+    workspaceBudgetView.tightest &&
+    tightestAgent &&
+    workspaceBudgetView.tightest.ratio >= config.reflection.budgetPressureRatio
+  ) {
+    const tightest = workspaceBudgetView.tightest;
+    candidates.push({
+      claim: `「${tightestAgent.name}」这周的预算已用 ${Math.round(tightest.ratio * 100)}%（${tightest.spentCents}/${tightest.limitCents} 分），建议把非必要支出改成二次审批。`,
+      rationale: `周预算按 Agent 分桶记账：每个 Agent 的额度 = min(该 Agent 的预算, 策略默认上限 ${config.budget.weeklyLimitCents} 分)，全工作区合计 ${workspaceBudgetView.limitCents} 分；最紧的是 ${tightestAgent.name}（${tightestAgent.role}）已用 ${tightest.spentCents}/${tightest.limitCents} 分。全工作区已用 ${workspaceBudgetView.spentCents} 分（未上报用量的调用按预留计入 unknown），另有未结算预留 ${reservedCents} 分；触发阈值 ${Math.round(
+        config.reflection.budgetPressureRatio * 100,
+      )}%。`,
+      confidence: config.reflection.confidence,
+      evidence: [
+        {
+          label: "预算执行",
+          ref: `agent:${tightestAgent.id}`,
+          quote: `${tightest.spentCents}/${tightest.limitCents}`,
         },
-      });
-    }
+      ],
+      proposedChange: {
+        type: "add_rule",
+        rule: "预算使用超过阈值时，非必要支出必须二次审批。",
+      },
+    });
   }
 
   const paused = allAgents.filter((agent) => agent.status === "paused");

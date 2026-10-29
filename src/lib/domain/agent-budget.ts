@@ -136,3 +136,63 @@ export function planSettlement(input: SettlementInput): Settlement {
     overrun: settledCents > input.reservedCents,
   };
 }
+
+/**
+ * Workspace-level view of the weekly ledger.
+ *
+ * The enforced cap is per Agent: each period bucket's limit is
+ * min(agents.budgetCents, config.budget.weeklyLimitCents), so in one week the
+ * workspace can legitimately spend the SUM of those limits. Comparing total
+ * spend against a single Agent's ceiling (what the reflection insight and the
+ * treasurer's line used to do) manufactures a pressure number: seven Agents each
+ * comfortably inside their own cap still read as over budget, and the headroom
+ * it reports is money no Agent can actually spend.
+ */
+export type WorkspaceBudgetInput = {
+  limitCents: number;
+  settledCents: number;
+  unknownCents: number;
+};
+
+export type WorkspaceBudget = {
+  /** Sum of the per-Agent caps this period actually enforces; 0 = no cap set. */
+  limitCents: number;
+  spentCents: number;
+  /** spent / limitCents, NOT clamped: a real overrun has to stay visible. */
+  ratio: number;
+  /**
+   * The Agent closest to its own cap (`index` is the row's index). An Agent with
+   * no cap cannot be close to anything, so it never wins here.
+   */
+  tightest: {
+    index: number;
+    limitCents: number;
+    spentCents: number;
+    ratio: number;
+  } | null;
+};
+
+export function workspaceBudget(rows: WorkspaceBudgetInput[]): WorkspaceBudget {
+  let limitCents = 0;
+  let spentCents = 0;
+  let tightest: WorkspaceBudget["tightest"] = null;
+  const cents = (value: number) =>
+    Number.isFinite(value) ? Math.max(0, value) : 0;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const spent = cents(row.settledCents) + cents(row.unknownCents);
+    spentCents += spent;
+    if (row.limitCents <= 0) continue;
+    limitCents += row.limitCents;
+    const ratio = spent / row.limitCents;
+    if (tightest === null || ratio > tightest.ratio) {
+      tightest = { index, limitCents: row.limitCents, spentCents: spent, ratio };
+    }
+  }
+  return {
+    limitCents,
+    spentCents,
+    ratio: limitCents > 0 ? spentCents / limitCents : 0,
+    tightest,
+  };
+}

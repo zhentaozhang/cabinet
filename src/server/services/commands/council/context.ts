@@ -13,6 +13,7 @@ import {
 } from "@/lib/db/schema";
 import type { FalsificationCondition } from "@/lib/db/schema";
 import { getPolicyConfig } from "@/lib/policy/config";
+import { workspaceBudget } from "@/lib/domain/agent-budget";
 import { loadWeeklyUsage } from "../tasks/execution";
 import type {
   CouncilPositionDraft,
@@ -33,12 +34,28 @@ export type CouncilContext = {
    * 停在 12。
    */
   taskStats: { last7d: number; accepted: number };
-  budget: { limitCents: number; spentCents: number; ratio: number };
+  /**
+   * 工作区这一周的预算视图。额度是按 Agent 分桶的（每桶 min(该 Agent 预算,
+   * 策略默认上限)），所以 `limitCents` 是各桶之和，`ratio` 是总和之下的比例；
+   * `tightest` 是离自己上限最近的那个 Agent（谁先卡住由它决定）。
+   */
+  budget: {
+    limitCents: number;
+    spentCents: number;
+    reservedCents: number;
+    ratio: number;
+    tightest: {
+      name: string;
+      role: string;
+      spentCents: number;
+      limitCents: number;
+      ratio: number;
+    } | null;
+  };
 };
 
 export async function loadCouncilContext(
   userId: string,
-  budgetLimitCents: number,
 ): Promise<CouncilContext> {
   const allAgents = await db
     .select()
@@ -103,8 +120,13 @@ export async function loadCouncilContext(
   const weeklyUsage = await Promise.all(
     allAgents.map((agent) => loadWeeklyUsage(agent.id, timezone)),
   );
-  const spentCents = weeklyUsage.reduce(
-    (sum, usage) => sum + usage.settledCents + usage.unknownCents,
+  const budgetView = workspaceBudget(weeklyUsage);
+  const tightestAgent =
+    budgetView.tightest === null
+      ? null
+      : (allAgents[budgetView.tightest.index] ?? null);
+  const reservedCents = weeklyUsage.reduce(
+    (sum, usage) => sum + usage.reservedCents,
     0,
   );
 
@@ -121,12 +143,20 @@ export async function loadCouncilContext(
       accepted: taskStats?.accepted ?? 0,
     },
     budget: {
-      limitCents: budgetLimitCents,
-      spentCents,
-      ratio:
-        budgetLimitCents > 0
-          ? Math.min(1, spentCents / budgetLimitCents)
-          : 0,
+      limitCents: budgetView.limitCents,
+      spentCents: budgetView.spentCents,
+      reservedCents,
+      ratio: budgetView.ratio,
+      tightest:
+        budgetView.tightest && tightestAgent
+          ? {
+              name: tightestAgent.name,
+              role: tightestAgent.role,
+              spentCents: budgetView.tightest.spentCents,
+              limitCents: budgetView.tightest.limitCents,
+              ratio: budgetView.tightest.ratio,
+            }
+          : null,
     },
   };
 }
