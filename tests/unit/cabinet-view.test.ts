@@ -10,6 +10,7 @@ import {
   agentPassRate,
   apprenticeTrainingOpen,
   budgetPeriodLabel,
+  capabilityNote,
   examStatusLabel,
   skillRecordLine,
   skillStatusLabel,
@@ -385,5 +386,50 @@ describe("the budget card describes the ledger it reads", () => {
     expect(page).toContain("budgetPeriodLabel(budget.periodStart, budget.periodEnd, tz)");
     expect(page).not.toContain("本周模型用量（");
     expect(page).not.toContain("本周模型用量占预算比例");
+  });
+});
+
+// 能力矩阵底部那句话。原来只要 implemented 为空就印「声明的工具一个都没接入」，
+// 于是两件事被说错：没声明任何工具的 Agent 被说成「声明了但没接入」；
+// 声明了 mcp: 工具的 Agent 右上方刚写着「运行期解析」，下面又说它一步也执行不了。
+describe("capabilityNote", () => {
+  it("stays quiet when a static tool really runs", () => {
+    expect(
+      capabilityNote({ declared: ["read_notes", "quiz"], implemented: ["web_search"], mcp: [], unknown: [] }),
+    ).toBeNull();
+  });
+
+  it("says nothing was declared when the list is empty", () => {
+    const note = capabilityNote({ declared: [], implemented: [], mcp: [], unknown: [] });
+    expect(note).toContain("没有声明任何工具");
+    expect(note).not.toContain("一个都没接入");
+  });
+
+  it("does not call a runtime-resolved MCP tool unable to run", () => {
+    const note = capabilityNote({
+      declared: [],
+      implemented: [],
+      mcp: ["mcp:github:issue_search", "mcp:docs:read"],
+      unknown: [],
+    });
+    expect(note).toContain("运行期");
+    expect(note).not.toContain("只能靠模型自身能力干活");
+  });
+
+  it("keeps the plain sentence for declared-only rosters", () => {
+    const note = capabilityNote({
+      declared: ["read_notes", "quiz", "dispatch"],
+      implemented: [],
+      mcp: [],
+      unknown: [],
+    });
+    expect(note).toContain("一个都没接入");
+    expect(note).toContain("只能靠模型自身能力干活");
+  });
+
+  it("feeds the row from one rule instead of an inline ternary", () => {
+    const page = readFileSync(join(process.cwd(), "src/app/cabinet/page.tsx"), "utf8");
+    expect(page).toContain("capabilityNote(buckets)");
+    expect(page).not.toContain("声明的工具一个都没接入");
   });
 });

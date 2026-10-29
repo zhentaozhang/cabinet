@@ -127,6 +127,40 @@ export function agentPassRate(input: {
   return { value: `${passRate(success, fail)}%`, hint: "验收通过率" };
 }
 
+/**
+ * 能力矩阵里那一行字，只在「一个静态工具都没执行器」时出现。
+ *
+ * 原来判据是 `buckets.implemented.length === 0`，于是两件事被说错：
+ * ① 一个工具都没声明的 Agent 被印成「声明的工具一个都没接入」——它什么也没声明；
+ * ② 声明了 `mcp:` 工具的 Agent，右上方刚标着「运行期解析」（执行器在
+ * src/server/services/commands/tasks/tool-loop.ts），下面这句又说它只能靠模型自身
+ * 能力干活——同一张卡片里两句话互相矛盾，且后者是错的。
+ *
+ * MCP 工具由运行期解析，静态注册表没有资格替它回答「能不能执行」（见
+ * src/lib/domain/tool-plan.ts:75 与 src/app/cabinet/page.tsx 的 capabilityBucket），
+ * 所以这一层只能说「静态注册表里没有已接入的」，不能替运行期下结论。
+ */
+export function capabilityNote(buckets: {
+  declared: readonly unknown[];
+  implemented: readonly unknown[];
+  mcp: readonly unknown[];
+  unknown: readonly unknown[];
+}): string | null {
+  if (buckets.implemented.length > 0) return null;
+  const total =
+    buckets.declared.length +
+    buckets.implemented.length +
+    buckets.mcp.length +
+    buckets.unknown.length;
+  if (total === 0) {
+    return "这个 Agent 没有声明任何工具，只能靠模型自身能力干活。";
+  }
+  if (buckets.mcp.length > 0) {
+    return "静态注册表里没有已接入的工具；标着「运行期解析」的 MCP 工具由运行期提供执行器，那一次运行会不会真的调用，取决于它自己的授权与解析结果。";
+  }
+  return "这个 Agent 声明的工具一个都没接入，目前只能靠模型自身能力干活。";
+}
+
 /** 只做 ¥X.XX：这一层不引 UI 工具（src/lib/format.ts 的 money 会带进 clsx）。 */
 function yuan(cents: number): string {
   return `¥${(cents / 100).toFixed(2)}`;

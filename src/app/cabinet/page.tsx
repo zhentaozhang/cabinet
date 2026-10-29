@@ -22,6 +22,7 @@ import { money } from "@/lib/format";
 import {
   agentHeadcount,
   agentPassRate,
+  capabilityNote,
   escalationPolicyLine,
   tasksPerAgent,
 } from "@/lib/presentation/cabinet-view";
@@ -191,10 +192,8 @@ function CapabilityRow({
             {tool} · 未登记
           </span>
         ))}
-        {buckets.implemented.length === 0 ? (
-          <span className="text-label text-faint">
-            这个 Agent 声明的工具一个都没接入，目前只能靠模型自身能力干活。
-          </span>
+        {capabilityNote(buckets) ? (
+          <span className="text-label text-faint">{capabilityNote(buckets)}</span>
         ) : null}
       </div>
     </div>
