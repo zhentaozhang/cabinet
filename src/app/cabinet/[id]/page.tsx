@@ -29,6 +29,7 @@ import {
   agentPassRate,
   apprenticeTrainingOpen,
   examStatusLabel,
+  skillRecordLine,
   skillStatusLabel,
 } from "@/lib/presentation/cabinet-view";
 import { runCostLabel, runTokensLabel } from "@/lib/presentation/run-usage";
@@ -259,8 +260,9 @@ export default async function AgentPage({
                         <div className="text-label font-medium text-ink">{skill.name}</div>
                         <div className="mt-0.5 text-label text-faint">
                           {/* label 是内部键（draft / practice / v1），转正后还会变成「v1 · v1」；
-                              卡上已经有徽章和版本号，这里不再印第三次。 */}
-                          v{skill.version} · {skill.successCount} 通过 / {skill.failCount} 失败
+                              卡上已经有徽章和版本号，这里不再印第三次。成功次数没有写入面、
+                              失败次数只数结业考试，所以这一行交给 skillRecordLine。 */}
+                          {skillRecordLine(skill)}
                         </div>
                       </div>
                       <Badge tone={skill.status === "active" ? "teal" : "accent"}>

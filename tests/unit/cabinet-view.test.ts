@@ -9,6 +9,7 @@ import {
   agentPassRate,
   apprenticeTrainingOpen,
   examStatusLabel,
+  skillRecordLine,
   skillStatusLabel,
   weeklyBudgetFieldHint,
   escalationPolicyLine,
@@ -298,6 +299,27 @@ describe("the skill card uses the skill's own words", () => {
   });
 });
 
+describe("the skill card does not score a skill nobody has run", () => {
+  it("shows the version and nothing else while there is no record", () => {
+    // skills.success_count 没有任何写入面（apprentice.ts 只写 failCount 与 eval），
+    // 所以「0 通过」不是零分，是没人记过；失败次数 0 也不该印。
+    expect(skillRecordLine({ version: 1, failCount: 0 })).toBe("v1");
+    expect(skillRecordLine({ version: 1, failCount: 0 })).not.toContain("通过");
+  });
+
+  it("names the exam when an attempt failed", () => {
+    const line = skillRecordLine({ version: 1, failCount: 1 });
+    expect(line).toContain("结业考试失败 1 次");
+    expect(line).not.toContain("通过");
+  });
+
+  it("does not print NaN or a negative count", () => {
+    expect(skillRecordLine({ version: Number.NaN, failCount: 0 })).toBe("v1");
+    expect(skillRecordLine({ version: 2, failCount: -3 })).toBe("v2");
+    expect(skillRecordLine({ version: 2, failCount: Number.NaN })).toBe("v2");
+  });
+});
+
 describe("the skill card prints no internal keys", () => {
   const page = readFileSync(
     join(process.cwd(), "src/app/cabinet/[id]/page.tsx"),
@@ -312,5 +334,9 @@ describe("the skill card prints no internal keys", () => {
     expect(page).not.toContain("String(skill.eval.status");
     // label 是内部键（draft / practice / v1），转正后与版本号重复。
     expect(page).not.toContain("{skill.label}");
+    // 「通过 / 失败」把没有写入面的成功数和只数考试的失败次数当成技能成绩。
+    expect(page).toContain("{skillRecordLine(skill)}");
+    expect(page).not.toContain("{skill.successCount}");
+    expect(page).not.toContain("{skill.failCount}");
   });
 });

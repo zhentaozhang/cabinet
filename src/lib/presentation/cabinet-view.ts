@@ -235,3 +235,28 @@ const EXAM_STATUS_COPY: Record<string, string> = {
 export function examStatusLabel(status: unknown): string {
   return typeof status === "string" ? (EXAM_STATUS_COPY[status] ?? status) : "还没考过";
 }
+/**
+ * 技能卡副行：版本号，以及结业考试失败过几次。
+ *
+ * 这一行原来是 `v{version} · {successCount} 通过 / {failCount} 失败`，读起来像这个
+ * 技能被用过多少次、成没成。两个数都不是技能的成败记录：
+ *
+ *  - `skills.success_count` 在整个仓库里没有任何写入面——apprentice.ts 只写 failCount
+ *    与 eval（:518-532），转正时写 status/label（:703-708），建草案时写 0（:56-67），
+ *    种子也写 0（src/lib/db/seed.ts:1532）。所以「通过」永远是 0。
+ *  - `skills.fail_count` 是**结业考试**失败了几次（apprentice.ts:515-520），不是技能被
+ *    使用失败了几次；而下一段「考试：X / Y」本来就在说考试。
+ *
+ * 于是只剩版本号；失败次数大于 0 时才跟着写一句，并且把「结业考试」放在数字旁边。
+ * 不能让一个恒为 0 的「通过」继续充当技能的成绩单。
+ */
+export function skillRecordLine(skill: {
+  version: number;
+  failCount: number;
+}): string {
+  const version = `v${Number.isFinite(skill.version) ? skill.version : 1}`;
+  const failed = Number.isFinite(skill.failCount)
+    ? Math.max(0, Math.trunc(skill.failCount))
+    : 0;
+  return failed > 0 ? `${version} · 结业考试失败 ${failed} 次` : version;
+}
