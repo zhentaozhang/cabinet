@@ -1,7 +1,7 @@
 # Run manifest：把一次运行导出成别人能自己验的文件
 
 一句话：**manifest 不是运行日志，而是一份「不需要信任我方数据库」的声明。**
-它只带哈希、不带 prompt；能离线用一条命令验完；验不过就是 exit 1。
+步骤与产物只带哈希、prompt 原文不进文件（验收逐条判定会带清单条目原文，契约整份是文字——见「里面有什么」）；能离线用一条命令验完；验不过就是 exit 1。
 
 - 代码：`src/lib/domain/manifest.ts`（纯函数 + 校验）、`src/server/services/commands/tasks/manifest.ts`（从库里装配）
 - CLI：`scripts/verify-manifest.ts`

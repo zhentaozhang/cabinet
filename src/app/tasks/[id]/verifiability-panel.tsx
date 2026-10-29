@@ -16,6 +16,11 @@ import { dateTime } from "@/lib/format";
 import { API_ROUTES } from "@/contracts/routes";
 import type { AcceptanceContract } from "@/lib/domain/acceptance-export";
 import type { RunManifest } from "@/lib/domain/manifest";
+import {
+  DIGEST_PROOF_NOTE,
+  EXPORT_CONTENT_NOTE,
+  OFFLINE_CHECK_NOTE,
+} from "@/lib/presentation/verifiability-view";
 
 /**
  * 任务详情页的「可核验性」区块。
@@ -221,8 +226,8 @@ export function VerifiabilityPanel({
       <p className="text-label leading-relaxed text-muted">
         下面两份东西是这一页的<span className="text-ink">证据出口</span>
         ：左边展示的是系统怎么说的，导出的文件是别人可以拿去独立核对的同一份事实。
-        它们都不包含你的提示词原文——只包含哈希。
       </p>
+      <p className="text-label leading-relaxed text-muted">{EXPORT_CONTENT_NOTE}</p>
 
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -298,11 +303,7 @@ export function VerifiabilityPanel({
             </Button>
           </div>
 
-          <p className="mt-2 text-label leading-relaxed text-muted">
-            离线可校验：把这份 JSON 与本页可见内容对照 ——
-            步骤、产物哈希、验收逐条判定和审计头都在文件里，
-            对方不需要登录这套系统也能重算一遍。
-          </p>
+          <p className="mt-2 text-label leading-relaxed text-muted">{OFFLINE_CHECK_NOTE}</p>
 
           <dl className="mt-3 space-y-1.5 text-label">
             <div className="flex flex-wrap items-baseline gap-x-2">
@@ -421,10 +422,7 @@ export function VerifiabilityPanel({
             <div className="mt-0.5 break-all mono text-label text-muted select-all">
               {manifestData.digest}
             </div>
-            <p className="mt-1 leading-relaxed text-faint">
-              对方重算这份文件的 digest 与 merkle 根，就能判断它有没有被改过；
-              审计头是否接得上，还需要对方的链路数据才能核对。
-            </p>
+            <p className="mt-1 leading-relaxed text-faint">{DIGEST_PROOF_NOTE}</p>
           </div>
         </div>
       ) : null}
