@@ -21,11 +21,11 @@ pnpm preflight           # NODE_ENV=production，出错就退出 1
 |---|---|
 | `database.unreachable` | 数据库连不上，进程起来也是 500 |
 | `schema.behind` | 迁移没跑，第一个用户请求才会 500 |
-| `auth.open` | 生产环境 `AUTH_REQUIRED` 没开，所有页面和 API 都是公开的 |
+| `auth.unstated` | 生产环境没有显式写 `AUTH_REQUIRED=true`（warn，不是漏洞：见下面 `/api/health` 的 `auth.open`） |
 | `demo.login` / `demo.mode` / `demo.reset` | 演示账号、模板产物或重置接口还开着 |
 | `auth.secret_missing` | 没有 `BETTER_AUTH_SECRET`，会话签名不可信 |
 
-`warn` 级别不阻塞发布，但每条都对应一个用户可见的降级：没配 SMTP → 通知显示「未发送」；没配检索 → 研究任务记 `not_configured`，永远过不了证据验收。
+`warn` 级别不阻塞发布，但每条都对应一个用户可见的降级：没配 SMTP → 通知显示「未发送」；没配检索 → 研究任务记 `not_configured`，永远过不了证据验收。`auth.unstated` 只说明意图没写明：`isAuthRequired()` 把 `NODE_ENV=production` 本身也算成要登录，所以生产进程不设 `AUTH_REQUIRED` 仍然会拒绝没有会话的请求。
 
 确实要在生产开演示（客户演示环境），必须显式写 `ALLOW_DEMO_IN_PROD=true`——让「开演示」成为一个被记录的决定，而不是一个漏掉的变量。
 
@@ -40,9 +40,12 @@ pnpm preflight           # NODE_ENV=production，出错就退出 1
 
 ```json
 { "ok": true, "status": "healthy", "failing": [],
-  "checks": { "database": {...}, "schema": {...}, "demo": {...}, "auth": {...} },
+  "checks": { "database": {...}, "schema": {...} },
+  "warnings": [{ "code": "auth.open", "detail": "…" }],
   "queue": { "queued": 0, "staleRuns": 0 },
   "execution": "inline" }
+
+`checks` 只有 `database` / `schema` 两项（它们决定 200 还是 503）；演示、鉴权、SMTP、检索这些是 `warnings` 里的条目，不会让探针失败。`auth.open` 说的是**这个进程此刻的事实**：只要当前不要求登录（本地 `pnpm dev` 就是这样），没有会话的请求就都是演示账号——它不猜「生产环境少写了哪个变量」。
 ```
 
 数据库不可达、或 `run_jobs` 不存在时返回 **503**。`queue.staleRuns` 长期不为 0 说明有运行反复卡住，那是有东西在崩，不是队列在忙。

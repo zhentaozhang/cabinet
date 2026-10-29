@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { authOpenWarning } from "@/lib/auth/mode";
 import { countQueuedJobs } from "@/server/services/commands/tasks/jobs";
 import { countStaleRuns } from "@/server/services/commands/tasks/recovery";
 
@@ -58,7 +59,7 @@ export async function GET() {
    */
   const warnings: { code: string; detail: string }[] = [];
   const demoMode = process.env.DEMO_MODE === "true";
-  const authRequired = process.env.AUTH_REQUIRED === "true";
+  const authOpen = authOpenWarning();
 
   if (production && demoMode) {
     warnings.push({
@@ -66,11 +67,8 @@ export async function GET() {
       detail: "DEMO_MODE is on in a production build — artifacts are templates.",
     });
   }
-  if (production && !authRequired) {
-    warnings.push({
-      code: "auth.open",
-      detail: "AUTH_REQUIRED is not set in a production build — everyone is the demo user.",
-    });
+  if (authOpen) {
+    warnings.push(authOpen);
   }
   if (!process.env.SMTP_HOST) {
     warnings.push({

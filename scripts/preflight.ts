@@ -69,10 +69,14 @@ async function main() {
 
   // --- security ---------------------------------------------------------
   if (production && process.env.AUTH_REQUIRED !== "true" && !allowDemoInProd) {
+    // Not an exposure: `isAuthRequired()` also keys on NODE_ENV, so a
+    // production process refuses session-less requests whatever AUTH_REQUIRED
+    // says. What is missing is the stated intent — an instance started without
+    // NODE_ENV=production would serve every request as the demo user.
     add(
-      "error",
-      "auth.open",
-      "AUTH_REQUIRED is not \"true\" in production: every page and API would be open.",
+      "warn",
+      "auth.unstated",
+      "AUTH_REQUIRED is not \"true\" in production: requests are still refused without a session because NODE_ENV=production makes auth required, but the intent is unstated — a process started without NODE_ENV=production serves every request as the demo user.",
     );
   }
 
