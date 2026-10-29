@@ -598,7 +598,7 @@ export default async function ReviewPage({
                 </p>
               ) : (
                 <p className="mt-1 text-label leading-relaxed text-muted">
-                  本周没有未收尾的任务。可以从「洞察与变更」里采纳一条变更，给下周定一个具体目标。
+                  没有未收尾的任务。可以从「洞察与变更」里采纳一条变更，给下周定一个具体目标。
                 </p>
               )}
               <p className="mt-1 text-label text-faint">

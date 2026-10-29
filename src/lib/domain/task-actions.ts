@@ -11,6 +11,8 @@
  * than the API — never looser.
  */
 
+import type { TaskStatus } from "@/contracts/dto/entities";
+
 export type TaskActionState = {
   allowed: boolean;
   /** Shown on the button when it cannot be used; empty when allowed. */
@@ -123,3 +125,27 @@ export function taskActions(input: TaskActionInput): TaskActions {
 
   return { run, audit, promote, cancel };
 }
+
+/**
+ * 「还没了结」的任务：下周一唯一目标只能从这些里挑。
+ *
+ * 与今日页有意不同 —— 今日页也列 `failed`（它要你做一个决定），周目标不列：
+ * 下周要做的事必须是还活着的事，不是已经放弃的事。
+ */
+export const OPEN_TASK_STATUSES = [
+  "planned",
+  "assigned",
+  "awaiting_approval",
+  "approved",
+  "suggested",
+  "running",
+  "submitted",
+  "auditing",
+  // 待判定是「还活着、等人推一把」的任务：从周目标里去掉它，等于让一次没给出
+  // 结论的验收把这件事从下周计划里抹掉。
+  "needs_review",
+  "rejected",
+] as const;
+
+export const OPEN_TASK_STATUS: ReadonlySet<TaskStatus> =
+  new Set<TaskStatus>(OPEN_TASK_STATUSES);

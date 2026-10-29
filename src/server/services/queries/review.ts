@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
@@ -8,6 +8,7 @@ import {
   reviews,
   tasks,
 } from "@/lib/db/schema";
+import { OPEN_TASK_STATUSES } from "@/lib/domain/task-actions";
 import { weekRange } from "@/lib/domain/time";
 import { getPolicyConfigFor } from "@/lib/policy/config";
 import { loadAutonomyDecisions } from "./autonomy";
@@ -33,6 +34,9 @@ export type ReviewPageOptions = {
  * 「本周改了什么」下面，而「本周没有已生效的变更」这句从此再也不会出现。
  */
 const APPLIED_DIFF_LIMIT = 5;
+
+/** 页面只在未收尾任务里挑一条；排序已经和 pickFocusTask 一致，取 200 条足够宽。 */
+const FOCUS_POOL_LIMIT = 200;
 
 export async function getReviewData(
   userId: string,
@@ -82,12 +86,22 @@ export async function getReviewData(
       .from(agents)
       .where(eq(agents.userId, userId))
       .orderBy(asc(agents.createdAt)),
+    // 「下周的唯一目标」只从还没了结的任务里挑：这里原来取的是「最近更新的 200 条」
+    // 任务，一个任务多的工作区里，一条更早、优先级更高的未收尾任务会被挤出窗口，
+    // 页面却印「没有未收尾的任务」。现在过滤与排序都交给数据库，并且用的就是
+    // pickFocusTask 自己那套顺序（优先级升序 → 截止日期升序、无截止排最后 → id），
+    // 所以窗口里第一条就是会被挑中的那条。
     db
       .select()
       .from(tasks)
-      .where(eq(tasks.userId, userId))
-      .orderBy(desc(tasks.updatedAt))
-      .limit(200),
+      .where(
+        and(
+          eq(tasks.userId, userId),
+          inArray(tasks.status, [...OPEN_TASK_STATUSES]),
+        ),
+      )
+      .orderBy(asc(tasks.priority), sql`${tasks.dueAt} asc nulls last`, asc(tasks.id))
+      .limit(FOCUS_POOL_LIMIT),
     db
       .select()
       .from(auditEvents)

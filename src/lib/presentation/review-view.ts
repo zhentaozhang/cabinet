@@ -6,6 +6,9 @@
 
 import type { TaskStatus } from "@/contracts/dto/entities";
 import type { UpgradeDenialCode } from "@/lib/domain/policy";
+import { OPEN_TASK_STATUS } from "@/lib/domain/task-actions";
+
+export { OPEN_TASK_STATUS };
 
 /** The highest rung this MVP can hand out; `policy.ts:544-546` denies anything above. */
 export const MAX_AUTONOMY_LEVEL = 3;
@@ -140,28 +143,8 @@ export function listPageState(total: number, pageCount: number): ListPageState {
   return "ok";
 }
 
-/**
- * Statuses where a task is still something a person can push forward.
- * Anything else is history and does not belong in "next week's one goal".
- *
- * Intentional divergence with Today: Today also surfaces `failed` tasks because
- * a failure there needs a decision, while Review leaves them out — next week's
- * single goal must be something still in play, not something already given up.
- */
-export const OPEN_TASK_STATUS: ReadonlySet<TaskStatus> = new Set<TaskStatus>([
-  "planned",
-  "assigned",
-  "awaiting_approval",
-  "approved",
-  "suggested",
-  "running",
-  "submitted",
-  "auditing",
-  // 待判定是"还活着、等人推一把"的任务：从周目标里去掉它，
-  // 等于让一次没给出结论的验收把这件事从下周计划里抹掉。
-  "needs_review",
-  "rejected",
-]);
+// 「还没了结」的定义在 domain：复盘查询要在 SQL 里用它把任务池缩小，页面只在
+// 同一批任务上挑一条，两边共用一个清单（见文件顶部的再导出）。
 
 export type FocusTaskInput = {
   status: TaskStatus;
