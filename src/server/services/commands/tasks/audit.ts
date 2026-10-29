@@ -152,14 +152,66 @@ export async function auditTask(
   try {
     return await auditTaskInner(taskId, userId, options);
   } catch (error) {
-    await db
-      .update(tasks)
-      .set({ status: "submitted", updatedAt: new Date() })
-      .where(and(eq(tasks.id, taskId), eq(tasks.status, "auditing")));
+    // 正常路径上任务行不会停在 `auditing`：状态锁、结论、通知都在同一个事务里，
+    // 任何一步失败都会一起回滚。但一行真的停在那里时（旧版本留下的卡行、手工改过
+    // 的库），重试验收会先撞上 auditing → auditing 这条非法边，任务就此卡死。
+    // 这里只收拾这种「已经卡在验收中」的行：走迁移表、带用户条件、留审计行。
+    await rollbackStuckAudit(taskId, userId, error).catch((rollbackError) => {
+      // 收拾残局时再出错，不能盖住「验收为什么没做成」这个原始错误。
+      logEvent("error", "audit.rollback_failed", {
+        taskId,
+        message:
+          rollbackError instanceof Error
+            ? rollbackError.message
+            : String(rollbackError),
+      });
+    });
     throw error;
   }
 }
 
+
+/**
+ * 把「卡在验收中」的任务退回 submitted。
+ *
+ * 只在审计失败时调用，而且只处理状态确实还是 `auditing` 的那一行：条件更新为空
+ * 说明这次失败发生在状态锁之前（任务从没被动过），此时什么都不做——凭空写一条
+ * 「验收失败」的审计行，等于给一次没发生过的验收留下记录。
+ */
+async function rollbackStuckAudit(
+  taskId: string,
+  userId: string,
+  error: unknown,
+) {
+  assertTransition("task", "auditing", "submitted");
+  const reason = (error instanceof Error ? error.message : String(error)).slice(
+    0,
+    300,
+  );
+  await db.transaction(async (tx) => {
+    const [rolled] = await tx
+      .update(tasks)
+      // 数据库时钟：多实例下 Node 时间可能比库慢，写回时间会被读成「早于上次改动」。
+      .set({ status: "submitted", updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(tasks.id, taskId),
+          eq(tasks.userId, userId),
+          eq(tasks.status, "auditing"),
+        ),
+      )
+      .returning({ id: tasks.id });
+    if (!rolled) return;
+    await logAuditTx(tx, {
+      userId,
+      actor: "system",
+      action: "task.audit_failed",
+      target: taskId,
+      before: { status: "auditing" },
+      after: { status: "submitted", error: reason },
+    });
+  });
+}
 async function auditTaskInner(
   taskId: string,
   userId: string,

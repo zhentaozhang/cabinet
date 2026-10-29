@@ -18,6 +18,8 @@ describe("task state machine", () => {
     ["submitted", "auditing"],
     ["auditing", "accepted"],
     ["auditing", "rejected"],
+    // A failed acceptance attempt must be able to hand the task back for a retry.
+    ["auditing", "submitted"],
     ["rejected", "running"],
     ["accepted", "done"],
   ])("allows %s → %s", (from, to) => {

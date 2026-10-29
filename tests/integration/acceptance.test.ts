@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tasks } from "@/lib/db/schema";
+import { agents, tasks } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { submitTaskArtifact } from "@/server/services/commands/tasks/submit";
 import { ConflictError } from "@/lib/domain/errors";
@@ -13,6 +13,7 @@ import {
   runTask,
 } from "@/server/services/engine";
 import { resetDb } from "../helpers/db";
+import { canTransition } from "@/lib/domain/state";
 
 beforeEach(async () => {
   await resetDb();
@@ -129,3 +130,94 @@ describe("structured acceptance", () => {
     ).rejects.toBeInstanceOf(ConflictError);
   });
 });
+
+describe("a failed acceptance attempt", () => {
+  async function submittedTask() {
+    const task = await createTask(
+      {
+        title: "整理本周会议要点",
+        description: "把三次会议的要点整理成一页纸。",
+        assigneeId: "ag_coach",
+        auditorId: "ag_auditor",
+        actionType: "internal",
+        resource: "task",
+        estimatedCostCents: 0,
+        acceptanceCriteria: "三条会议要点。",
+        estimateMin: 20,
+      },
+      DEMO_USER_ID,
+    );
+    await runTask(task.id, DEMO_USER_ID);
+    return task;
+  }
+
+  async function failedAttempts(taskId: string) {
+    return db
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.action, "task.audit_failed"),
+          eq(auditEvents.target, taskId),
+        ),
+      );
+  }
+
+  it("honours the rollback edge in the state machine", () => {
+    expect(canTransition("task", "auditing", "submitted")).toBe(true);
+  });
+
+  it("unsticks a task left in auditing and records why", async () => {
+    const task = await submittedTask();
+    // A row can sit here only if an earlier attempt died between the status lock
+    // and the verdict. The policy layer then refuses to audit it (it is not
+    // submitted), so before the rollback existed the task was stranded forever.
+    await db
+      .update(tasks)
+      .set({ status: "auditing" })
+      .where(eq(tasks.id, task.id));
+
+    await expect(auditTask(task.id, DEMO_USER_ID)).rejects.toThrow(
+      /not submitted for audit/,
+    );
+
+    const [row] = await db.select().from(tasks).where(eq(tasks.id, task.id));
+    expect(row.status).toBe("submitted");
+
+    const events = await failedAttempts(task.id);
+    expect(events).toHaveLength(1);
+    const after = events[0].after as { status?: string; error?: string } | null;
+    expect(after?.status).toBe("submitted");
+    expect(after?.error).toContain("not submitted for audit");
+  });
+
+  it("writes nothing when the task never entered auditing", async () => {
+    const task = await submittedTask();
+    // A retired Auditor cannot decide, so the attempt fails before the status lock.
+    await db
+      .update(agents)
+      .set({ status: "retired", lifecycleStage: "retired" })
+      .where(eq(agents.id, "ag_auditor"));
+
+    await expect(auditTask(task.id, DEMO_USER_ID)).rejects.toThrow(/retired|active/i);
+
+    const [row] = await db.select().from(tasks).where(eq(tasks.id, task.id));
+    expect(row.status).toBe("submitted");
+    expect(await failedAttempts(task.id)).toHaveLength(0);
+  });
+
+  it("does not touch another user's task", async () => {
+    const task = await submittedTask();
+    await db
+      .update(tasks)
+      .set({ status: "auditing" })
+      .where(eq(tasks.id, task.id));
+
+    await expect(auditTask(task.id, "u_someone_else")).rejects.toThrow(/not found/i);
+
+    const [row] = await db.select().from(tasks).where(eq(tasks.id, task.id));
+    expect(row.status).toBe("auditing");
+    expect(await failedAttempts(task.id)).toHaveLength(0);
+  });
+});
+

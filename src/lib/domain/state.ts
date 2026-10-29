@@ -56,7 +56,11 @@ export const TRANSITIONS: Record<
     // auditing → needs_review：验收已经跑完，但清单里存在"必须判定却无人判定"
     // 的条目（模型未配置、判卷超时、人工项）。这条边让"没有结论"停在状态机里，
     // 而不是被 accepted 吞掉。
-    auditing: ["accepted", "rejected", "needs_review"],
+    // auditing → submitted 是失败回滚：验收尝试自己炸了（判卷超时、库抖动、
+    // 旧版本留下的卡行），任务必须能退回可重试的 submitted，而不是停在一个
+    // 只有验收流水线能写、也只有它才能走出去的状态里。回滚走这张表与审计链，
+    // 不再用裸 UPDATE（见 commands/tasks/audit.ts 的 rollbackStuckAudit）。
+    auditing: ["accepted", "rejected", "needs_review", "submitted"],
     // 只有用户能从这里走出去：覆盖 Auditor 只能由人做，且必须留理由（见
     // commands/tasks/override.ts 的 audit.override 审计行）。
     needs_review: ["accepted", "rejected", "cancelled"],

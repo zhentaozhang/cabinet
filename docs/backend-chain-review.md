@@ -271,7 +271,7 @@ const CLAIMABLE = or(eq(runJobs.status,"queued"),
 5. **P1-16 outbox `failed` 是终态**：没有 requeue 命令/接口，`MAX_ATTEMPTS` 用尽后只能等运维改库。
 6. **P0-2 的另一半**：`(taskId, runId)` 唯一约束与 submit 幂等未做（需要迁移，本轮不动 schema）；submit 仍可为从未执行的任务造产物。
 7. **P1-13 的另一半**：`seedDemo()` 仍 TRUNCATE 全库，按用户重置（`seedDemo(userId)`）未做 —— **判定不做**，理由见 12.3（单租户模型的表没有 `user_id` 列）。
-8. **P1-3 的剩余部分**：`audit.ts` 的 `auditing → submitted` 仍是裸 UPDATE（复审失败路径），未进迁移表。
+8. ~~**P1-3 的剩余部分**~~ —— **已闭环**：`auditing → submitted` 进了迁移表（`src/lib/domain/state.ts`），回滚改由 `audit.ts` 的 `rollbackStuckAudit` 执行——带 `user_id` 与状态条件、用数据库时钟、并落一条 `task.audit_failed` 审计行；行不在 `auditing` 时不动，回滚失败也不盖住原始错误。原文：**P1-3 的剩余部分**：`audit.ts` 的 `auditing → submitted` 仍是裸 UPDATE（复审失败路径），未进迁移表。
 9. **P2 的 14 条未动**（`replayKey`/`provider_attempt_id`/`quality_gate`/`closed_at` 只写不读、demo 产物用标题子串、审计链尾部截断、`DATABASE_URL` 缺省回落硬编码 DSN 等）。
 10. **运维契约仍是文档而非配置**：仓库里依然没有 cron/systemd/vercel 配置 —— tick、`notify:deliver`、`run:worker` 都需要有人挂上，"代码存在"到"真的会跑"之间还差部署这一步。
 11. ~~**缺索引（已知成本）**~~ —— **已由 12.1 闭环**：三条 TTL 删除谓词（`rate_limits(window_start)`、`idempotency_keys(expires_at)`、`outbox(status, created_at)`）的索引在 `src/lib/db/schema/ops.ts` + 迁移 `drizzle/0028_mushy_thunderbird.sql` 里补齐。
