@@ -291,7 +291,7 @@ export default async function ReviewPage({
             ) : null}
             {data.insightAppliedTotal > applied.length ? (
               <div className="px-5 py-3 text-label text-faint">
-                共 {data.insightAppliedTotal} 条已生效的变更，这里只列最新的 {applied.length} 条。
+                本周共 {data.insightAppliedTotal} 条已生效的变更，这里只列最新的 {applied.length} 条。
               </div>
             ) : null}
           </div>

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { insights } from "@/lib/db/schema";
 import { loadReview } from "@/server/readmodels/review";
@@ -38,6 +39,12 @@ beforeEach(async () => {
 describe("review page — 已生效的变更", () => {
   it("报出的是全部已采纳洞察，而不是这一页恰好装下的那些", async () => {
     await buryAppliedInsights();
+    // 「已生效」按 decided_at 归周：这条用例讲的是分页，先把种子里那两条钉在本周内，
+    // 否则跨过周一零点再跑，两天前的采纳就落到上一周了。
+    await db
+      .update(insights)
+      .set({ decidedAt: new Date() })
+      .where(eq(insights.status, "applied"));
 
     const page = await loadReview(DEMO_USER_ID);
 

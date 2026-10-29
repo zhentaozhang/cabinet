@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
   agents,
@@ -8,6 +8,7 @@ import {
   reviews,
   tasks,
 } from "@/lib/db/schema";
+import { weekRange } from "@/lib/domain/time";
 import { getPolicyConfigFor } from "@/lib/policy/config";
 import { loadAutonomyDecisions } from "./autonomy";
 import { loadAuditWindows } from "./audit-samples";
@@ -21,10 +22,15 @@ export type ReviewPageOptions = {
 };
 
 /**
- * 「本周改了什么」那张卡只列几行变更，但要说出"一共有多少条生效了"。
+ * 「本周改了什么」那张卡只列几行变更，但要说出"这一周一共有多少条生效了"。
  * 口径来自整张表，不是上面那页洞察：洞察先被提出、后来才被采纳，所以
  * 已生效的那几条往往正好落在更早的页上，只按当前页数会把"已生效"说成
  * "没有生效"。
+ *
+ * 窗口按 `insights.decided_at`（采纳那一刻）算，不按 `created_at`：洞察可能是
+ * 上周提出、这周才采纳的，按创建时间会把它挡在这一周之外。也不能不设窗口——
+ * 原来数的是整张表里 status = 'applied' 的行，三周前采纳的一条会永远列在
+ * 「本周改了什么」下面，而「本周没有已生效的变更」这句从此再也不会出现。
  */
 const APPLIED_DIFF_LIMIT = 5;
 
@@ -47,7 +53,6 @@ export async function getReviewData(
     auditCountRows,
     dissentCountRows,
     allDissents,
-    appliedInsightRows,
     config,
     weeklyMetrics,
   ] = await Promise.all([
@@ -62,7 +67,6 @@ export async function getReviewData(
       .select({
         total: sql<number>`count(*)`,
         proposed: sql<number>`count(*) filter (where ${insights.status} = 'proposed')`,
-        applied: sql<number>`count(*) filter (where ${insights.status} = 'applied')`,
       })
       .from(insights)
       .where(eq(insights.userId, userId)),
@@ -108,24 +112,37 @@ export async function getReviewData(
       .orderBy(desc(dissents.createdAt), desc(dissents.id))
       .limit(limit)
       .offset(dissentOffset),
-    // 已生效的那几条不跟着上面的分页走：条数在整张表里数，展示取最新几条。
-    db
-      .select()
-      .from(insights)
-      .where(and(eq(insights.userId, userId), eq(insights.status, 'applied')))
-      .orderBy(desc(insights.createdAt), desc(insights.id))
-      .limit(APPLIED_DIFF_LIMIT),
     getPolicyConfigFor(userId),
     getWeeklyMetrics(userId),
   ]);
+  const { user, profile } = workspace;
+  // 「本周改了什么」按采纳那一刻归周：`decided_at` 落在本周才列。这条查询要用户的
+  // 时区才能算周界，而时区在第一批读里（workspace），所以放在这里而不是第一批。
+  const week = weekRange(new Date(), user.timezone ?? "UTC");
+  const appliedThisWeek = and(
+    eq(insights.userId, userId),
+    eq(insights.status, "applied"),
+    gte(insights.decidedAt, week.start),
+    lt(insights.decidedAt, week.end),
+  );
   // The audit window is read through the same eligibility filter the promotion
   // command uses, so the badge on this page cannot disagree with the write.
-  const [auditWindows, autonomyDecisions] = await Promise.all([
-    loadAuditWindows(userId, config.audit.passRateWindow),
-    loadAutonomyDecisions(userId),
-  ]);
-
-  const { user, profile } = workspace;
+  const [auditWindows, autonomyDecisions, appliedInsightRows, appliedCountRows] =
+    await Promise.all([
+      loadAuditWindows(userId, config.audit.passRateWindow),
+      loadAutonomyDecisions(userId),
+      // 条数与列表同一窗口、同一谓词：条数在整张表里数，展示取最近几条。
+      db
+        .select()
+        .from(insights)
+        .where(appliedThisWeek)
+        .orderBy(desc(insights.decidedAt), desc(insights.id))
+        .limit(APPLIED_DIFF_LIMIT),
+      db
+        .select({ total: sql<number>`count(*)` })
+        .from(insights)
+        .where(appliedThisWeek),
+    ]);
   const weekly = weeklyRows[0];
   const [insightCounts] = insightCountRows;
   const [dissentCounts] = dissentCountRows;
@@ -160,8 +177,9 @@ export async function getReviewData(
     dissents: allDissents,
     insightTotal: Number(insightCounts?.total ?? 0),
     insightProposedTotal: Number(insightCounts?.proposed ?? 0),
-    // 整张表里已生效的条数，不是这一页的：卡片要说的是这一周一共改了什么。
-    insightAppliedTotal: Number(insightCounts?.applied ?? 0),
+    // 本周已生效的条数（按 decided_at 归周），不是这一页的：卡片要说的是
+    // 这一周一共改了什么。
+    insightAppliedTotal: Number(appliedCountRows[0]?.total ?? 0),
     appliedInsights: appliedInsightRows,
     dissentTotal: Number(dissentCounts?.total ?? 0),
     dissentPendingTotal: Number(dissentCounts?.pending ?? 0),
