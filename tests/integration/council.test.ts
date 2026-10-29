@@ -254,14 +254,21 @@ describe("council closed loop", () => {
     await latestWorkOn("goal_fitness");
     const onFitness = await chiefPosition("要不要把慢跑加到每周四次？");
     expect(onFitness.claim).toContain("每周 3 次运动");
-    expect(onFitness.claim).toContain("12");
+    // 健康目标的 progress 没有任何人在算（recalculateGoalProgress 只处理 learning
+    // 域），12 是测试自己写进去的一个不会再动的数：Chief 不能把它当「当前进度」
+    // 引用，证据也只能写归属。
+    expect(onFitness.claim).not.toContain("当前进度 12%");
+    expect(onFitness.claim).toContain("进度没有在算");
     expect(onFitness.evidence[0]?.ref).toBe("goal:goal_fitness");
+    expect(onFitness.evidence[0]?.label).toBe("目标归属");
+    expect(onFitness.evidence[0]?.quote).toBe("每周 3 次运动");
 
     await latestWorkOn("goal_rag");
     const onLearning = await chiefPosition("要不要把 RAG 练习拆成两次？");
     expect(onLearning.claim).toContain("6 周学会 RAG");
-    expect(onLearning.claim).toContain("73");
+    expect(onLearning.claim).toContain("当前进度 73%");
     expect(onLearning.evidence[0]?.ref).toBe("goal:goal_rag");
+    expect(onLearning.evidence[0]?.quote).toBe("73%");
   });
 
   it("counts all the week's tasks in the Chief's claim, not just the ones on screen", async () => {

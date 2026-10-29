@@ -1,6 +1,6 @@
 import type { Evidence } from "@/lib/db/schema";
 import type { CouncilPositionDraft, CouncilStance } from "@/lib/domain/council";
-import { computePositionScores } from "@/lib/domain/council";
+import { computePositionScores, goalProgressSignal } from "@/lib/domain/council";
 import { getPolicyConfig } from "@/lib/policy/config";
 import { short } from "../../shared/text";
 import type { CouncilContext } from "./context";
@@ -34,7 +34,12 @@ export function buildCouncilPosition(input: {
   const latestCheckin = context.checkins[0];
   const latestMemory = context.memories[0];
   const latestReject = context.rejects[0];
-  const goalProgress = goal?.progress ?? 0;
+  // 学习域才有在算的进度；其余域给 null，claim 与证据都不印数字。
+  // 之前这里是 `goal?.progress ?? 0`，于是健康目标那条写死的 60 会以
+  // 「当前进度 60%」进 Chief 的 claim 和审计里复用的 evidence quote。
+  const goalProgress = goal
+    ? goalProgressSignal(goal.domain, goal.progress)
+    : null;
   const energy = latestCheckin?.energy ?? config.council.minEnergy;
   const pausedCount = context.agents.filter(
     (candidate) => candidate.status === "paused",
@@ -50,12 +55,20 @@ export function buildCouncilPosition(input: {
   if (role === "chief") {
     stance = goal ? "support" : "neutral";
     claim = goal
-      ? `议题「${topicLabel}」可以挂到目标「${goal.title}」上：当前进度 ${Math.round(goalProgress)}%；近 7 天有 ${weeklyTaskCount} 个任务，${acceptedCount} 个已验收。`
+      ? goalProgress == null
+        ? `议题「${topicLabel}」可以挂到目标「${goal.title}」上：这个目标不是学习类，进度没有在算（Cabinet 只按学习任务的验收与打卡推算），这里不给数字；近 7 天有 ${weeklyTaskCount} 个任务，${acceptedCount} 个已验收。`
+        : `议题「${topicLabel}」可以挂到目标「${goal.title}」上：当前进度 ${Math.round(goalProgress)}%；近 7 天有 ${weeklyTaskCount} 个任务，${acceptedCount} 个已验收。`
       : `议题「${topicLabel}」没有可挂靠的进行中目标；推进前需要先定义成功标准。`;
     risk = `批准「${topicLabel}」会占用本周执行资源；当前有 ${pausedCount} 个 Agent 暂停。`;
     recommendation = `批准「${topicLabel}」，但限定本周预算和验收标准。`;
     evidence = goal
-      ? [{ label: "目标进度", ref: `goal:${goal.id}`, quote: `${Math.round(goalProgress)}%` }]
+      ? [
+          goalProgress == null
+            ? // 没有在算的进度不能当证据引用：quote 写标题，标签也改成「归属」，
+              // 免得读者以为这里只是没显示出来。
+              { label: "目标归属", ref: `goal:${goal.id}`, quote: goal.title }
+            : { label: "目标进度", ref: `goal:${goal.id}`, quote: `${Math.round(goalProgress)}%` },
+        ]
       : [{ label: "Chief 状态", ref: `agent:${agent.id}`, quote: agent.title }];
   } else if (role === "researcher") {
     stance = "neutral";
@@ -85,7 +98,11 @@ export function buildCouncilPosition(input: {
     evidence = latestCheckin
       ? [{ label: "Check-in", ref: `checkin:${latestCheckin.id}`, quote: `energy ${energy}/5` }]
       : goal
-        ? [{ label: "目标进度", ref: `goal:${goal.id}`, quote: `${Math.round(goalProgress)}%` }]
+        ? [
+            goalProgress == null
+              ? { label: "目标归属", ref: `goal:${goal.id}`, quote: goal.title }
+              : { label: "目标进度", ref: `goal:${goal.id}`, quote: `${Math.round(goalProgress)}%` },
+          ]
         : [{ label: "Coach 状态", ref: `agent:${agent.id}`, quote: agent.title }];
   } else if (role === "treasurer") {
     const percent = Math.round(context.budget.ratio * 100);

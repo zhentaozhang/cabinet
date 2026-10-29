@@ -4,6 +4,7 @@ import {
   buildCouncilMatrix,
   buildCouncilMemo,
   computePositionScores,
+  goalProgressSignal,
 } from "@/lib/domain/council";
 
 const config = SEED_POLICY_CONFIG.council;
@@ -157,5 +158,36 @@ describe("council memo", () => {
     expect(memo).toContain("内阁矩阵");
     expect(memo).toContain("Atlas");
     expect(memo).toContain("会重蹈覆辙");
+  });
+});
+
+describe("unknown goal progress", () => {
+  it("drops the goal term instead of pretending a 0% or base progress", () => {
+    const base = {
+      trustScore: 62,
+      budgetSpentRatio: 0.2,
+      evidenceCount: 2,
+      rejectStreak: 1,
+      paused: false,
+    };
+    const unknown = computePositionScores({ ...base, goalProgress: null }, config);
+    const atBase = computePositionScores(
+      { ...base, goalProgress: config.score.base },
+      config,
+    );
+    const atZero = computePositionScores({ ...base, goalProgress: 0 }, config);
+
+    expect(unknown.feasibility).toBe(atBase.feasibility);
+    expect(unknown.feasibility).toBeGreaterThan(atZero.feasibility);
+  });
+
+  it("only trusts a goal progress the runtime actually recomputes", () => {
+    expect(goalProgressSignal("learning", 73)).toBe(73);
+    expect(goalProgressSignal("learning", 137.6)).toBe(100);
+    expect(goalProgressSignal("learning", -4)).toBe(0);
+    expect(goalProgressSignal("health", 60)).toBeNull();
+    expect(goalProgressSignal("work", 0)).toBeNull();
+    expect(goalProgressSignal(null, 40)).toBeNull();
+    expect(goalProgressSignal("learning", Number.NaN)).toBeNull();
   });
 });
