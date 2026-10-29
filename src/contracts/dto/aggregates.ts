@@ -77,8 +77,14 @@ export const weeklyMetricsSchema = z.object({
     requests: z.number(),
     priceCents: z.number(),
     estimatedCents: z.number(),
-    /** Calls whose price was unknown when they ran — reported, not guessed. */
+    /**
+     * Calls to a per-request-priced tool whose price was unknown when they ran
+     * — reported, not guessed. Page fetches never appear here: they are not
+     * metered at all, so their 0 price is a rule, not a missing setting.
+     */
     unpricedRequests: z.number(),
+    /** Sent calls whose tool is not billed per request (page fetches). */
+    freeRequests: z.number(),
   }),
   /**
    * Already a percentage (0–100), and an estimate — see the Review page.

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { agentGrants, agents, retrievalCalls } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { runTask } from "@/server/services/engine";
+import { recordRetrievalCall } from "@/server/services/connectors/ledger";
 import { getWeeklyMetrics } from "@/server/services/queries/metrics";
 import { resetDb } from "../helpers/db";
 
@@ -78,9 +79,40 @@ describe("retrieval ledger", () => {
     const metrics = await getWeeklyMetrics(DEMO_USER_ID);
     expect(metrics.search.requests).toBe(1);
     expect(metrics.search.unpricedRequests).toBe(1);
+    expect(metrics.search.freeRequests).toBe(0);
     expect(metrics.search.estimatedCents).toBe(0);
   });
 
+  it("does not report a page fetch as an unpriced search", async () => {
+    // 抓指名页面不按次计费（run.ts 与 tool-loop 都传 billable: false），所以
+    // 这一行的单价恒为 0。配了单价的部署里，旧口径会把这次免费抓取算进
+    // unpricedRequests，首页于是显示「本周检索未计价（部署未配置单价）」。
+    process.env.SEARCH_COST_CENTS_PER_REQUEST = "40";
+    await recordRetrievalCall({
+      userId: DEMO_USER_ID,
+      tool: "web_fetch",
+      provider: "http",
+      status: "ok",
+      hits: 1,
+      latencyMs: 12,
+      billable: false,
+    });
+    await recordRetrievalCall({
+      userId: DEMO_USER_ID,
+      tool: "web_search",
+      provider: "brave",
+      status: "ok",
+      hits: 2,
+      latencyMs: 90,
+      billable: true,
+    });
+
+    const metrics = await getWeeklyMetrics(DEMO_USER_ID);
+    expect(metrics.search.requests).toBe(2);
+    expect(metrics.search.freeRequests).toBe(1);
+    expect(metrics.search.unpricedRequests).toBe(0);
+    expect(metrics.search.estimatedCents).toBe(40);
+  });
   it("counts a call that found nothing citable, because it was still paid for", async () => {
     process.env.SEARCH_COST_CENTS_PER_REQUEST = "40";
     vi.stubGlobal(

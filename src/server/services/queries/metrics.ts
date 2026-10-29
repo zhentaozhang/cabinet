@@ -15,6 +15,7 @@ import { addLocalDays, localDateKey, weekRange } from "@/lib/domain/time";
 import { LEARNING_TEMPLATES } from "@/lib/domain/learning";
 import { retrievalUnitPriceCents } from "@/lib/config/pricing";
 import { CONTACT_STATUSES } from "@/lib/domain/contact";
+import { METERED_RETRIEVAL_TOOLS } from "@/lib/domain/retrieval-billing";
 import { getPolicyConfigFor } from "@/lib/policy/config";
 
 /**
@@ -53,6 +54,13 @@ export async function getWeeklyMetrics(userId: string) {
   // "发出去过"的唯一判据，来自 domain/contact（扣钱与预算台账用的是同一份）。
   const sent = sql`${retrievalCalls.status} in (${sql.join(
     CONTACT_STATUSES.map((status) => sql`${status}`),
+    sql`, `,
+  )})`;
+
+  // 按次计费的工具。抓指名页面的行单价恒为 0，那是「不收费」而不是「没定价」，
+  // 两者混在一起数，配了单价的部署也会被报成「本周检索未计价」。
+  const meteredTool = sql`${retrievalCalls.tool} in (${sql.join(
+    METERED_RETRIEVAL_TOOLS.map((tool) => sql`${tool}`),
     sql`, `,
   )})`;
 
@@ -282,7 +290,9 @@ export async function getWeeklyMetrics(userId: string) {
         // 与"本周检索花费"互相矛盾。谓词与扣钱、与预算台账共用同一份定义。
         requests: sql<number>`count(*) filter (where ${sent})`,
         charged: sql<number>`coalesce(sum(${retrievalCalls.chargedCents}), 0)`,
-        unpriced: sql<number>`count(*) filter (where ${sent} and ${retrievalCalls.unitPriceCents} = 0)`,
+        unpriced: sql<number>`count(*) filter (where ${sent} and ${meteredTool} and ${retrievalCalls.unitPriceCents} = 0)`,
+        // 按次计费之外的工具（目前只有抓页面）发出去也不收钱，单独报，别混进未计价。
+        freeRequests: sql<number>`count(*) filter (where ${sent} and not (${meteredTool}))`,
       })
       .from(retrievalCalls)
       .where(
@@ -351,6 +361,8 @@ export async function getWeeklyMetrics(userId: string) {
       // 0 means "unpriced", not "free": the connector price is a deployment
       // setting, and pretending a number would be worse than reporting none.
       unpricedRequests: Number(searchRow?.unpriced ?? 0),
+      // 已经发出去、但工具本身不按次计费的调用：不是「没定价」，是「不收费」。
+      freeRequests: Number(searchRow?.freeRequests ?? 0),
     },
     // 没有活跃的学习目标就是「没有这个数」，不是 0%——和 adherence /
     // retestPassRate 一样，缺样本用 null，别让页面印一个假的 0。

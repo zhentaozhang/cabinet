@@ -476,3 +476,37 @@ export function weeklyMetricRows(
  */
 export const SPEND_LEDGER_NOTE =
   "左列读每周预算台账：模型 token，加上开启 MODEL_TOOL_SELECTION 后模型选工具的检索按每次 3 分预留进来的部分；右列读检索台账，按调用时的单价记。同一次检索会在两边各留一个数，口径不同，不要相加。";
+/**
+ * 检索卡那一行字（原来是一段三元，把三件事说成了一句）。
+ *
+ * 台账里单价为 0 有两种来源：按次计费的工具没被部署定价（`unpricedRequests`，
+ * 报「未计价」是对的），以及抓指名页面本来就不收费（`freeRequests`，
+ * src/lib/domain/retrieval-billing.ts）。旧文案拿 `unpricedRequests` 跟
+ * `requests` 比，于是配了单价的部署里跑一次抓页面就印「本周检索未计价
+ *（部署未配置单价）」——把一个不收费的调用说成没定价。
+ */
+export function searchSpendLine(search: {
+  requests: number;
+  estimatedCents: number;
+  unpricedRequests: number;
+  freeRequests: number;
+}): string {
+  if (search.requests === 0) return "本周暂无外部检索调用";
+  const pricedCount = Math.max(
+    0,
+    search.requests - search.unpricedRequests - search.freeRequests,
+  );
+  const parts: string[] = [];
+  if (pricedCount > 0) {
+    parts.push(`检索费用 ${money(search.estimatedCents)}（按调用时单价）`);
+  }
+  if (search.unpricedRequests > 0) {
+    parts.push(`${search.unpricedRequests} 次按次检索未计价（部署没配置单价）`);
+  }
+  if (search.freeRequests > 0) {
+    parts.push(`${search.freeRequests} 次指名页面抓取不计费`);
+  }
+  // 三条都不成立只可能是数据自相矛盾（requests 小于两个分项之和）；
+  // 那时宁可只报次数，也别编一个费用。
+  return parts.length > 0 ? parts.join("；") : `本周共 ${search.requests} 次外部检索调用`;
+}

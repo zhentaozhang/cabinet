@@ -36,6 +36,7 @@ import {
   pickLearningTask,
   queuedTaskIds,
   secondaryTasks,
+  searchSpendLine,
   SPEND_LEDGER_NOTE,
   weeklyMetricRows,
 } from "@/lib/presentation/today-view";
@@ -670,13 +671,8 @@ export default async function TodayPage() {
                 {weekly.search.requests} <span className="text-emphasis font-normal text-muted">次请求</span>
               </div>
               <p className="mt-1.5 text-label text-muted">
-                {weekly.search.requests === 0
-                  ? "本周暂无外部检索调用"
-                  : weekly.search.unpricedRequests === 0
-                    ? `检索费用 ${money(weekly.search.estimatedCents)}（按调用时单价）`
-                    : weekly.search.unpricedRequests === weekly.search.requests
-                      ? "本周检索未计价（部署未配置单价）"
-                      : `已计价 ${money(weekly.search.estimatedCents)}，另有 ${weekly.search.unpricedRequests} 次未计价`}
+                {/* 单价 0 有两种来源：没定价（按次计费）和不收费（抓页面）。 */}
+                {searchSpendLine(weekly.search)}
               </p>
             </div>
           </div>

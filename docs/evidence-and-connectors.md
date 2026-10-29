@@ -106,10 +106,11 @@ node node_modules/vitest/vitest.mjs run tests/unit/connectors.test.ts \
 - 只有真正到达过服务商的调用才计数（`ok` / `timeout` / `invalid_response` / `rate_limited`）；`not_connected`、`unauthorized`、`skipped` 没有产生费用，不计。
 - 每次调用都在 `retrieval_calls` 落一行，带上**当时的单价快照**（`unit_price_cents`）与金额（`charged_cents`）。周报读的是这张表，所以事后改 `SEARCH_COST_CENTS_PER_REQUEST` 不会把上个月的花费重算一遍。
 - 调用没返回可引用结果（`invalid_response`）也照样计费：钱已经花出去了，`evidence` 里没有行不代表这次调用不存在。
-- `SEARCH_COST_CENTS_PER_REQUEST` 没配置时单价记 0，界面显示「未计价」，而不是假装免费；`unpricedRequests` 会把这类调用单独报出来。
+- `SEARCH_COST_CENTS_PER_REQUEST` 没配置时单价记 0，界面显示「未计价」，而不是假装免费；`unpricedRequests` 把这类调用单独报出来。
+- 单价 0 有两种来源，不能混着数：**没定价**（按次计费的工具遇到上面那种配置）和**不收费**（抓指名页面，见下一段）。前者进 `unpricedRequests`，后者进 `freeRequests`（清单在 `src/lib/domain/retrieval-billing.ts`），首页分别写「N 次按次检索未计价」和「N 次指名页面抓取不计费」。
 - 这个金额**不会**进入 `weeklyMetrics.costCents`，也不影响模型的周预算上限 —— 混在一起会让「本周预算」失去意义。
 
-`web_fetch` 抓一条任务指定的 URL 不计费（不是按次检索服务），但同样在 `retrieval_calls` 留痕，带上 `unit_price_cents = 0`。
+`web_fetch` 抓一条任务指定的 URL 不计费（不是按次检索服务），但同样在 `retrieval_calls` 留痕，带上 `unit_price_cents = 0`。这行的 0 是「这个工具不收费」，所以它被算进 `freeRequests` 而不是 `unpricedRequests`——否则配了单价的部署里抓一次页面，首页就会说「部署未配置单价」。
 
 ## 主张—来源表（机器只验格式）
 

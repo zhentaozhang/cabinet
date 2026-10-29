@@ -14,6 +14,7 @@ import {
   needsAttention,
   pickLearningTask,
   queuedTaskIds,
+  searchSpendLine,
   secondaryTasks,
   SPEND_LEDGER_NOTE,
   weeklyMetricRows,
@@ -718,6 +719,76 @@ describe("the spend card does not call the budget ledger two separate curves", (
     expect(page).not.toContain("两条独立曲线");
     expect(page).not.toContain("按 Token 计量");
     expect(page).toContain("预算台账口径");
+  });
+});
+
+describe("the search card separates a missing price from a free call", () => {
+  // 台账里单价 0 有两种来源：按次计费的工具没被部署定价，以及抓指名页面本来
+  // 就不收费（src/lib/domain/retrieval-billing.ts）。旧三元拿 unpricedRequests
+  // 跟 requests 比，于是配了单价的部署里跑一次抓页面就印「本周检索未计价
+  //（部署未配置单价）」。
+  it("calls a week with no retrieval quiet", () => {
+    expect(
+      searchSpendLine({
+        requests: 0,
+        estimatedCents: 0,
+        unpricedRequests: 0,
+        freeRequests: 0,
+      }),
+    ).toBe("本周暂无外部检索调用");
+  });
+
+  it("quotes a price when every call was priced", () => {
+    expect(
+      searchSpendLine({
+        requests: 3,
+        estimatedCents: 120,
+        unpricedRequests: 0,
+        freeRequests: 0,
+      }),
+    ).toBe("检索费用 ¥1.20（按调用时单价）");
+  });
+
+  it("says the deployment has no price instead of calling it free", () => {
+    const line = searchSpendLine({
+      requests: 2,
+      estimatedCents: 0,
+      unpricedRequests: 2,
+      freeRequests: 0,
+    });
+    expect(line).toBe("2 次按次检索未计价（部署没配置单价）");
+    expect(line).not.toContain("不计费");
+  });
+
+  it("does not report a free page fetch as an unpriced search", () => {
+    const line = searchSpendLine({
+      requests: 1,
+      estimatedCents: 0,
+      unpricedRequests: 0,
+      freeRequests: 1,
+    });
+    expect(line).toBe("1 次指名页面抓取不计费");
+    expect(line).not.toContain("未计价");
+    expect(line).not.toContain("未配置单价");
+  });
+
+  it("keeps both facts when a week mixed them", () => {
+    const line = searchSpendLine({
+      requests: 4,
+      estimatedCents: 80,
+      unpricedRequests: 1,
+      freeRequests: 2,
+    });
+    expect(line).toContain("检索费用 ¥0.80");
+    expect(line).toContain("1 次按次检索未计价");
+    expect(line).toContain("2 次指名页面抓取不计费");
+    expect(line.split("；")).toHaveLength(3);
+  });
+
+  it("is what the Today card prints", () => {
+    const page = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
+    expect(page).toContain("{searchSpendLine(weekly.search)}");
+    expect(page).not.toContain("本周检索未计价（部署未配置单价）");
   });
 });
 
