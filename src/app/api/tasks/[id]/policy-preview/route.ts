@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { handleQueryWithRequest } from "@/lib/api/read";
 import { db } from "@/lib/db";
 import { tasks } from "@/lib/db/schema";
+import { isRetryExecution } from "@/lib/domain/task-actions";
 import {
   explainRunPolicy,
   type PolicyExplanation,
@@ -22,9 +23,11 @@ export type PolicyPreview = Pick<
  * 而两份手写的取数代码迟早会分叉 —— 从前这里靠一句注释提醒自己同步。
  * 判定本身仍由 explainRunPolicy → decideRun 给出。
  *
- * 两处刻意的差异：
- * - `provision: false`：GET 不能顺手插出一个周预算行。
- * - 不处理重试：预演的是「现在点运行」，重试语义只发生在 run.ts 里。
+ * 一处刻意的差异：`provision: false` —— GET 不能顺手插出一个周预算行。
+ *
+ * 重试语义必须跟着执行走：失败 / 驳回的任务点运行会被 run.ts 当成新的一轮，
+ * 它会把上次已经用掉的批准清掉、重新申请。预演要是照读那条批准，就会把
+ * 「再点一次批准就能跑」说成「批准也解不开」——所以两边共用 isRetryExecution。
  */
 async function loadPolicyPreview(
   taskId: string,
@@ -40,7 +43,10 @@ async function loadPolicyPreview(
 
   // 没有执行者就没有可预演的判定：run.ts 会以同一个 409 拒绝执行，
   // 预演跟着报同一件事，比伪装成「放行」诚实。
-  const context = await loadRunContext(task, { provision: false });
+  const context = await loadRunContext(task, {
+    provision: false,
+    clearConsumedApproval: isRetryExecution(task.status),
+  });
   const explained = explainRunPolicy(context.policyInput);
 
   return {

@@ -149,3 +149,14 @@ export const OPEN_TASK_STATUSES = [
 
 export const OPEN_TASK_STATUS: ReadonlySet<TaskStatus> =
   new Set<TaskStatus>(OPEN_TASK_STATUSES);
+
+/**
+ * 这一次执行算不算「重试」：失败或驳回之后点运行，就是把这条任务当新的一轮跑。
+ *
+ * 只有一份判据：run.ts 靠它决定重置任务状态、清掉上次已经用掉的批准，
+ * 预演面板靠它决定读不读那条批准。两边各写一份的话，预演会对着一个
+ * 「点下去只会重新申请审批」的任务宣布「批准也解不开，必须改配置」。
+ */
+export function isRetryExecution(status: string): boolean {
+  return status === "failed" || status === "rejected";
+}

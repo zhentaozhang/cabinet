@@ -32,6 +32,7 @@ import {
 } from "@/lib/domain/tool-plan";
 import { mergeTools, readRules } from "@/lib/domain/execution-context";
 import { decideRun } from "@/lib/domain/policy";
+import { isRetryExecution } from "@/lib/domain/task-actions";
 import { enqueueNotification, notices } from "../notify";
 import { assertTransition } from "@/lib/domain/state";
 import {
@@ -80,7 +81,7 @@ async function executeRun(taskId: string, userId: string) {
   }
   let task = found;
   if (!task.assigneeId) throw new ConflictError("Task has no assignee");
-  const retrying = task.status === "failed" || task.status === "rejected";
+  const retrying = isRetryExecution(task.status);
   const demoMode = process.env.DEMO_MODE === "true";
 
   // A failed/rejected run can be retried through the normal state machine.

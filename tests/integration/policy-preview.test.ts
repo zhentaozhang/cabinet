@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GET } from "@/app/api/tasks/[id]/policy-preview/route";
+import { db } from "@/lib/db";
+import { approvals, tasks } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { UnauthorizedError } from "@/lib/domain/errors";
 import { resetDb } from "../helpers/db";
@@ -75,5 +77,37 @@ describe("GET /api/tasks/[id]/policy-preview", () => {
     const first = await (await call("tsk_read")).json();
     const second = await (await call("tsk_read")).json();
     expect(second.data).toEqual(first.data);
+  });
+  it("把「重试时会重新申请」的批准当作重来一次，而不是硬拦截", async () => {
+    // 失败 / 驳回后点运行 = 新的一轮执行：run.ts 会清掉上次已经用掉的批准，
+    // 重新走一遍审批。预演要是照原样读那条批准，就会对着一个点下去只会
+    // 「需要你批准」的任务宣布「批准也解不开，必须改配置」。
+    await db.insert(tasks).values({
+      id: "tsk_retry_after_failure",
+      userId: DEMO_USER_ID,
+      title: "把口语陪练排期改到周四晚上",
+      description: "写进日历的那一次外部动作。",
+      assigneeId: "ag_coach",
+      auditorId: "ag_auditor",
+      status: "failed",
+      actionType: "external_action",
+      resource: "calendar",
+      acceptanceCriteria: "日历上出现这条安排。",
+    });
+    await db.insert(approvals).values({
+      id: "apv_retry_consumed",
+      userId: DEMO_USER_ID,
+      taskId: "tsk_retry_after_failure",
+      action: "external_action",
+      payload: { resource: "calendar" },
+      status: "approved",
+      decidedAt: new Date(),
+      consumedAt: new Date(),
+    });
+
+    const body = await (await call("tsk_retry_after_failure")).json();
+    expect(body.data.effect).toBe("require_approval");
+    expect(body.data.reason).toContain("需要你先批准一次");
+    expect(body.data.missing.join()).toContain("批准");
   });
 });
