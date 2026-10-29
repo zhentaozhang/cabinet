@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -116,6 +118,30 @@ describe("getStatusBannerInfo says what the status wants from you", () => {
     expect(done.badgeLabel).toBe("任务已完成");
   });
 
+
+  it("names whoever actually rejected instead of always crediting the Auditor", () => {
+    // 人判驳回（audit.override）也把任务写成 rejected，而同一屏下方那张卡片
+    // 写的是「你的驳回理由」。横幅若继续说「Auditor 驳回了当前产物」，同一个
+    // 结论就被说成两个人下的。
+    const byAuditor = getStatusBannerInfo("rejected", false, false, true);
+    expect(byAuditor.title).toContain("Auditor");
+    expect(byAuditor.badgeLabel).toBe("未通过需修改");
+
+    const byUser = getStatusBannerInfo(
+      "rejected",
+      false,
+      false,
+      true,
+      undefined,
+      true,
+    );
+    expect(byUser.title).not.toContain("Auditor");
+    expect(byUser.title).toContain("你驳回");
+    expect(byUser.badgeLabel).toBe("你的判定：未通过");
+    expect(byUser.description).toContain("审计链");
+    // 仍然是「改完再交」，不是「等人验收」。
+    expect(byUser.nextActionCategory).toBe("fix_and_resubmit");
+  });
   it("keeps a cancelled task quiet instead of dressing it as a failure", () => {
     const banner = getStatusBannerInfo("cancelled", false, false, false);
     expect(banner.badgeTone).toBe("neutral");
@@ -953,5 +979,18 @@ describe("the checklist badge tells failures apart from items nobody judged", ()
     });
 
     expect(checklistBadge(tallyChecklist([], null))).toBeNull();
+  });
+});
+
+describe("the task page hands the banner its rejection attribution", () => {
+  const page = readFileSync(
+    join(process.cwd(), "src/app/tasks/[id]/page.tsx"),
+    "utf8",
+  );
+
+  it("passes the byUser flag that resolveRejectionPresentation computed", () => {
+    // 横幅要能分辨「Auditor 判的」和「你自己判的」，而这个事实只有页面手里
+    // 有（override 行）。少传这一位，函数本身再对也没用。
+    expect(page).toMatch(/getStatusBannerInfo\([\s\S]{0,400}rejection\.byUser/);
   });
 });

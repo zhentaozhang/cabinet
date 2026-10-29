@@ -677,8 +677,10 @@ export function getStatusBannerInfo(
   status: string,
   hasPendingApproval: boolean,
   hasFailedRun: boolean,
-  isAuditorRejected: boolean,
+  isRejected: boolean,
   toolStep?: StepDto,
+  /** 「未通过」是 Auditor 判的还是你自己判的（audit.override）。 */
+  rejectedByUser = false,
 ): {
   badgeLabel: string;
   badgeTone: TaskStatusTone;
@@ -688,7 +690,22 @@ export function getStatusBannerInfo(
   bannerBgClass: string;
   nextActionCategory: TaskNextActionCategory;
 } {
-  if (isAuditorRejected || status === "rejected") {
+  if (isRejected || status === "rejected") {
+    // 谁驳回的决定横幅怎么说：人判驳回（audit.override）时状态同样是
+    // `rejected`，横幅却说「Auditor 驳回了当前产物」，而同一屏下方那张卡片写
+    // 的「你的驳回理由」——同一个结论被说成两个人下的。
+    if (rejectedByUser) {
+      return {
+        badgeLabel: "你的判定：未通过",
+        badgeTone: "danger",
+        title: "你驳回了当前产物",
+        description:
+          "这条结论是你自己下的，已记入审计链；按下面的理由调整产物后再重新提交或重新执行。",
+        bannerBorderClass: "border-danger/35",
+        bannerBgClass: "bg-danger/[0.05]",
+        nextActionCategory: "fix_and_resubmit",
+      };
+    }
     return {
       badgeLabel: "未通过需修改",
       badgeTone: "danger",
