@@ -17,8 +17,10 @@ import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/format";
 import {
   upgradeRequirementsLine,
+  weeklyBudgetFieldHint,
   type UpgradeRequirements,
 } from "@/lib/presentation/cabinet-view";
+import { yuanToCents } from "@/lib/presentation/task-form";
 import { call } from "./shared";
 
 export function AutonomyControl({
@@ -165,11 +167,14 @@ export function AgentAdmin({
   status,
   charter,
   budgetCents,
+  limitCents,
 }: {
   agentId: string;
   status: string;
   charter: string;
   budgetCents: number;
+  /** 这一周真正生效的上限（min(该 Agent 预算, 策略默认上限)），用来解释 0 的含义。 */
+  limitCents: number;
 }) {
   const router = useRouter();
   const [draftCharter, setDraftCharter] = useState(charter);
@@ -200,6 +205,22 @@ export function AgentAdmin({
     if (label === "retire") setConfirmRetire(false);
     router.refresh();
   }
+
+  // 预算走 yuanToCents 而不是 Number()：`Number("")` 是 0，而 0 在
+  // periodLimitCents 里意味着「不单独设上限」（最宽的那个额度）。清空输入框
+  // 再点保存，本意多半是「删掉这个上限」，保存下去的却是「放到策略默认上限」。
+  // 空值和看不懂的数字都在这里拦下，并且把 0 的含义原样交给 hint 解释。
+  async function saveBudget() {
+    const cents = yuanToCents(budgetYuan);
+    if (cents === null) {
+      setMsg("请填写预算金额（元），留 0 表示不单独设上限。");
+      toast.error("请填写预算金额（元）");
+      return;
+    }
+    await patch({ budgetCents: cents }, "budget");
+  }
+
+  const typedCents = yuanToCents(budgetYuan);
 
   return (
     <div className="space-y-4">
@@ -294,17 +315,18 @@ export function AgentAdmin({
           />
           <Button
             size="sm"
-            onClick={() =>
-              patch(
-                { budgetCents: Math.round(Number(budgetYuan) * 100) },
-                "budget",
-              )
-            }
+            onClick={saveBudget}
             disabled={busy !== null}
           >
             保存预算
           </Button>
         </div>
+        <p className="mt-1.5 text-label leading-relaxed text-faint">
+          {weeklyBudgetFieldHint({
+            budgetCents: typedCents ?? 0,
+            limitCents,
+          })}
+        </p>
       </div>
 
       {msg ? <div className="text-label text-muted">{msg}</div> : null}

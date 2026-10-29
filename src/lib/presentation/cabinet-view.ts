@@ -125,6 +125,41 @@ export function agentPassRate(input: {
   return { value: `${passRate(success, fail)}%`, hint: "验收通过率" };
 }
 
+/** 只做 ¥X.XX：这一层不引 UI 工具（src/lib/format.ts 的 money 会带进 clsx）。 */
+function yuan(cents: number): string {
+  return `¥${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * 「Weekly budget (¥)」输入框下面那行字。
+ *
+ * 框里填 0 不是「这个 Agent 不许花钱」。真正的判据是 periodLimitCents
+ * （src/lib/domain/agent-budget.ts:35-42）：
+ * `agentBudgetCents > 0 ? min(该值, 策略默认上限) : 策略默认上限`——
+ * 0 表示**不单独设上限**、只受部署级 budget.weeklyLimitCents 约束，也就是最宽的
+ * 那个额度，正好和「填 0 让人别花钱」的直觉相反。这不是边角情况：
+ * src/contracts/templates.ts 里 7 个角色有 4 个（chief / treasurer / auditor /
+ * critic）budgetCents 就是 0，新建工作区（src/lib/setup.ts:140 直接抄模板）
+ * 之后输入框显示「0」，同一页的绩效卡却印着「上限 ¥600.00」。
+ *
+ * 更糟的是提交那一步：清空输入框后 `Number("") === 0`，保存下去正好落进
+ * 这个最宽的分支——以为是「清掉」，实际是「放到最大」。所以框下面必须写清楚
+ * 0 的含义，提交也必须走 yuanToCents 的空值判定（见 agent-actions.tsx）。
+ */
+export function weeklyBudgetFieldHint(input: {
+  budgetCents: number;
+  limitCents: number;
+}): string {
+  const typed = finiteOr(input.budgetCents, 0);
+  const limit = finiteOr(input.limitCents, 0);
+  if (typed <= 0) {
+    return `填 0 不是「不许花」：等于不单独给这个 Agent 设上限，跟着部署的策略默认上限走——这一周它的上限是 ${yuan(limit)}。`;
+  }
+  if (limit < typed) {
+    return `这一周的上限是 ${yuan(limit)}：部署的策略默认上限比填的数低，按更低的那条走。`;
+  }
+  return `这一周的上限是 ${yuan(limit)}：填的数低于策略默认上限时按你填的算。`;
+}
 
 function finiteOr(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;

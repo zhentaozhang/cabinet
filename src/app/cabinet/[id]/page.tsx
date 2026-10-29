@@ -297,6 +297,7 @@ export default async function AgentPage({
                 status={agent.status}
                 charter={agent.charter}
                 budgetCents={agent.budgetCents}
+                limitCents={budget.limitCents}
               />
             </div>
           </Card>

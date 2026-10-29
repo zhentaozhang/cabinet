@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentHeadcount,
   agentPassRate,
+  weeklyBudgetFieldHint,
   escalationPolicyLine,
   tasksPerAgent,
   upgradeRequirementsLine,
@@ -147,5 +148,60 @@ describe("the Agent list renders the same pass-rate readout as the detail page",
     expect(page).toContain("agentPassRate(");
     expect(page).not.toMatch(/function\s+successRate/);
     expect(page).not.toContain(`{rate}%`);
+  });
+});
+
+describe("weeklyBudgetFieldHint", () => {
+  it("says what a zero per-Agent cap actually means", () => {
+    // periodLimitCents 把 0 读成「不单独设上限、跟着策略默认上限」——最宽的额度，
+    // 与「填 0 让它别花钱」的直觉相反。模板里 chief / treasurer / auditor / critic
+    // 四个角色的 budgetCents 就是 0，新建工作区后这个框里显示「0」，
+    // 旁边的绩效卡却印着「上限 ¥600.00」。
+    const hint = weeklyBudgetFieldHint({ budgetCents: 0, limitCents: 60000 });
+    expect(hint).toContain("不单独给这个 Agent 设上限");
+    expect(hint).toContain("¥600.00");
+    expect(hint).toContain("策略默认上限");
+  });
+
+  it("reports whichever cap is actually enforced this week", () => {
+    const own = weeklyBudgetFieldHint({ budgetCents: 3000, limitCents: 3000 });
+    expect(own).toContain("¥30.00");
+    const capped = weeklyBudgetFieldHint({ budgetCents: 90000, limitCents: 60000 });
+    expect(capped).toContain("策略默认上限比填的数低");
+    expect(capped).toContain("¥600.00");
+  });
+
+  it("never prints NaN for a broken number", () => {
+    const hint = weeklyBudgetFieldHint({
+      budgetCents: Number.NaN,
+      limitCents: Number.NaN,
+    });
+    expect(hint).not.toContain("NaN");
+    expect(hint).toContain("¥0.00");
+  });
+});
+
+describe("the budget box does not save a cleared field as a permission", () => {
+  const source = readFileSync(
+    join(process.cwd(), "src/components/actions/agent-actions.tsx"),
+    "utf8",
+  );
+
+  it("parses the amount instead of coercing an empty box to zero", () => {
+    // 原来的写法是 Math.round(Number(budgetYuan) * 100)：清空输入框后 Number("") === 0，
+    // 保存下去正好等于「不单独设上限」——用户以为删掉了上限，实际把额度放到策略默认值。
+    expect(source).toContain("yuanToCents(");
+    expect(source).not.toContain("Math.round(Number(budgetYuan)");
+    expect(source).toContain("if (cents === null)");
+  });
+
+  it("explains the field with the cap the page actually enforces", () => {
+    expect(source).toContain("weeklyBudgetFieldHint(");
+    expect(source).toContain("limitCents,");
+    const page = readFileSync(
+      join(process.cwd(), "src/app/cabinet/[id]/page.tsx"),
+      "utf8",
+    );
+    expect(page).toContain("limitCents={budget.limitCents}");
   });
 });
