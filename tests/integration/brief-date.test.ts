@@ -5,7 +5,9 @@ import { db } from "@/lib/db";
 import { goals, reviews, tasks, users } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { localDateKey } from "@/lib/domain/time";
+import { briefDecisionLine } from "@/lib/presentation/brief-view";
 import { regenerateBrief } from "@/server/services/commands/brief";
+import { getTodayData } from "@/server/services/queries/today";
 import { resetDb } from "../helpers/db";
 
 /** 演示用户在东八区（src/lib/db/seed.ts:136）。 */
@@ -167,5 +169,23 @@ describe("the brief counts what the page counts", () => {
       localDateKey(new Date(), "Asia/Shanghai"),
     );
     expect(stored?.metrics.tasks).toBe(before);
+  });
+});
+
+describe("the brief names every kind of decision waiting on the reader", () => {
+  it("writes the same decision line the Today fallback renders", async () => {
+    // 兜底早报与 regenerateBrief 共用 briefDecisionLine：这里按同一份读模型算出
+    // 期望值，正文里必须原样出现——服务端再自己拼一遍就会和首页说的不一样。
+    const data = await getTodayData(SHANGHAI_USER);
+    const content = await regenerateBrief(SHANGHAI_USER);
+    const expected = briefDecisionLine({
+      approvals: data.approvals.length,
+      hasCouncil: Boolean(data.council),
+    });
+    expect(content).toContain(expected);
+    // 种子里就有一场 open 的内阁会议（src/lib/db/seed.ts:1541-1547），
+    // 只数审批的那一版会把它漏掉。
+    expect(data.council).not.toBeNull();
+    expect(content).toContain("内阁会议");
   });
 });

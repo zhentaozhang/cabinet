@@ -65,6 +65,31 @@ export function briefOrderList(tasks: readonly BriefTask[], limit = 3): string[]
     .map((task, index) => [String(index + 1), ". ", task.title, "（", String(task.estimateMin), " 分钟）"].join(""));
 }
 
+export type BriefDecisionInput = { approvals: number; hasCouncil: boolean };
+
+/**
+ * 早报第三行那句「需要你决定：…」。
+ *
+ * 这一行原来有两份写法：`regenerateBrief`（src/server/services/commands/brief.ts:35）枚举了
+ * 「N 个审批 + 1 个内阁会议」，首页那条兜底早报（src/app/page.tsx 的 `data.brief ?? ...`）却
+ * 自己写了一版、只数审批。同一屏 `buildTodayActionQueue` 的徽章把审批、内阁会议、待你判定的
+ * 任务都算进「M 项待处理」（src/lib/presentation/today-view.ts:301-364），于是还没存过早报的
+ * 工作区上，两句话对同一批事给出两个数。
+ *
+ * 这里只提审批与内阁会议两件事：任务在等谁属于上面那句「待推进任务」的范围，别在这里替它
+ * 兜底成「没有需要你做的事」。
+ */
+export function briefDecisionLine(input: BriefDecisionInput): string {
+  const parts: string[] = [];
+  if (input.approvals > 0) {
+    parts.push([String(input.approvals), " 个审批"].join(""));
+  }
+  if (input.hasCouncil) parts.push("1 个内阁会议");
+  return parts.length > 0
+    ? ["- 需要你决定：", parts.join(" + "), "。"].join("")
+    : "- 需要你决定：没有待你批准的审批，也没有要表决的内阁会议。";
+}
+
 export type BriefFreshness = {
   stale: boolean;
   label: string;

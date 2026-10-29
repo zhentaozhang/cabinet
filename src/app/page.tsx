@@ -22,6 +22,7 @@ import { cn, dateTime, money, timeOnly } from "@/lib/format";
 import { goalProgressHint, goalProgressText } from "@/lib/presentation/goal-view";
 import { checkinMemoryContent } from "@/lib/domain/checkin-memory";
 import {
+  briefDecisionLine,
   briefFreshness,
   briefGoalLine,
   briefTaskLine,
@@ -156,13 +157,17 @@ export default async function TodayPage() {
     兜底早报与 `regenerateBrief` 写的正文共用同一组句子（src/lib/presentation/
     brief-view.ts）。以前这里手写了一版、服务端手写了一版，点「重新生成早报」后
     存下来的正文就和这屏对不上：暂停的目标仍被当成方向、非学习目标那个没人再算的
-    百分比照印、失败任务被数成「待推进」。
+    百分比照印、失败任务被数成「待推进」。第三行（需要你决定）同样是共用函数：这里原来
+    自己数了一遍审批、漏掉内阁会议，而服务端那版把两者都列了出来。
   */
   const brief =
     data.brief?.narrative ??
     `# 今日早报\n\n目标：${briefGoalLine(data.goals)}\n\n## 今天的关键判断\n- ${briefTaskLine(
       data.tasks,
-    )}\n- 有 ${data.approvals.length} 个决定等你。`;
+    )}\n${briefDecisionLine({
+      approvals: data.approvals.length,
+      hasCouncil: Boolean(data.council),
+    })}`;
 
   const weekly = data.weeklyMetrics;
   const metricRows = weeklyMetricRows(weekly);

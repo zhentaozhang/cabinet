@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  briefDecisionLine,
   briefFreshness,
   briefGoalLine,
   briefOrderList,
@@ -61,6 +62,26 @@ describe("briefOrderList", () => {
   });
 });
 
+describe("briefDecisionLine", () => {
+  it("counts the council meeting next to the approvals", () => {
+    expect(briefDecisionLine({ approvals: 2, hasCouncil: true })).toBe(
+      "- 需要你决定：2 个审批 + 1 个内阁会议。",
+    );
+  });
+
+  it("does not print a zero when only the council is waiting", () => {
+    expect(briefDecisionLine({ approvals: 0, hasCouncil: true })).toBe(
+      "- 需要你决定：1 个内阁会议。",
+    );
+  });
+
+  it("scopes the empty case to approvals and the council", () => {
+    // 任务也可能在等，这一行不能替它们兜底成「没有要做的事」。
+    const line = briefDecisionLine({ approvals: 0, hasCouncil: false });
+    expect(line).toBe("- 需要你决定：没有待你批准的审批，也没有要表决的内阁会议。");
+  });
+});
+
 describe("both brief writers use these rules", () => {
   it("the service and the Today fallback share the same sentences", () => {
     const service = source("src/server/services/commands/brief.ts");
@@ -68,7 +89,10 @@ describe("both brief writers use these rules", () => {
     for (const file of [service, page]) {
       expect(file).toContain("briefGoalLine(");
       expect(file).toContain("briefTaskLine(");
+      expect(file).toContain("briefDecisionLine(");
     }
+    // 兜底那句原来只数审批，漏掉同一屏队列里算进去的内阁会议。
+    expect(page).not.toContain("个决定等你");
     // 服务端不能自己再 map 一遍目标进度（那份会把非学习目标印成百分比）。
     expect(service).not.toContain("Math.round(g.progress)");
     expect(service).toContain("briefOrderList(");

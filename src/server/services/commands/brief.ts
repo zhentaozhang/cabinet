@@ -4,6 +4,7 @@ import { newId } from "@/lib/ids";
 import { localDateKey, localDateTimeParts } from "@/lib/domain/time";
 import { getTodayData } from "../queries/today";
 import {
+  briefDecisionLine,
   briefGoalLine,
   briefOrderList,
   briefTaskLine,
@@ -32,7 +33,10 @@ export async function regenerateBrief(userId: string) {
     "",
     "## 今天的关键判断",
     `- ${briefTaskLine(data.tasks)}`,
-    `- 需要你决定：${data.approvals.length} 个审批${data.council ? " + 1 个内阁会议" : ""}。`,
+    briefDecisionLine({
+      approvals: data.approvals.length,
+      hasCouncil: Boolean(data.council),
+    }),
     "",
     "## 建议顺序",
     ...briefOrderList(data.tasks),
