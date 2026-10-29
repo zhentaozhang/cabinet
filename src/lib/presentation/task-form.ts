@@ -15,6 +15,8 @@
  *     caller.
  */
 
+import { assigneeBlockReason, type AssigneeBlockReason } from "@/lib/domain/policy";
+
 export type TaskDraftErrors = {
   title?: string;
   acceptanceCriteria?: string;
@@ -149,4 +151,48 @@ export function planAdvancedFocus(
   return advancedOpen
     ? { kind: "focus-now", field }
     : { kind: "open-then-focus", field };
+}
+/**
+ * Which Agents the task form may offer as the assignee.
+ *
+ * A retired Agent is terminal (`state.ts`: `retired` has no outgoing edge) and a
+ * trainee only becomes runnable by graduating, yet both used to sit in the
+ * assignee dropdown with a preview saying 「将由 X 执行」 — a task handed to
+ * either one can never run, because `decideRun` refuses a non-active status or
+ * lifecycleStage before any run row exists. A paused Agent stays offerable: it
+ * is one click from active and the task simply waits for that click.
+ */
+export type AgentChoice = {
+  id: string;
+  name: string;
+  role: string;
+  status: string;
+  lifecycleStage: string;
+};
+
+export function assignableAgents<T extends AgentChoice>(
+  agents: readonly T[],
+): T[] {
+  return agents.filter((agent) => {
+    const reason = assigneeBlockReason(agent);
+    // `off_duty` is reversible; the rest can never execute the task.
+    return reason === null || reason === "off_duty";
+  });
+}
+
+const BLOCK_LABEL: Record<AssigneeBlockReason, string> = {
+  retired: "已退休，不能接单",
+  trainee: "未转正，不能接单",
+  off_duty: "已停岗",
+};
+
+/**
+ * The suffix an unavailable Agent carries in the assignee dropdown, or `null`
+ * when it can be picked. Kept next to `assignableAgents` so the option text and
+ * the filtering rule cannot disagree about who is unavailable.
+ */
+export function assigneeBlockLabel(agent: AgentChoice): string | null {
+  const reason = assigneeBlockReason(agent);
+  if (reason === null || reason === "off_duty") return null;
+  return BLOCK_LABEL[reason];
 }

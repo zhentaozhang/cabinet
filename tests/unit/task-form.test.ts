@@ -1,13 +1,86 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { assigneeBlockReason } from "@/lib/domain/policy";
 import {
+  assignableAgents,
+  assigneeBlockLabel,
   AUDITOR_CONFLICT_MESSAGE,
   COST_FORMAT_MESSAGE,
   planAdvancedFocus,
   validateTaskDraft,
   yuanToCents,
+  type AgentChoice,
   type TaskDraft,
 } from "@/lib/presentation/task-form";
+describe("who the task form offers as the assignee", () => {
+  const agent = (over: Partial<AgentChoice> = {}): AgentChoice => ({
+    id: "ag_coach",
+    name: "Coach",
+    role: "coach",
+    status: "active",
+    lifecycleStage: "active",
+    ...over,
+  });
+
+  it("drops the Agents that could never run the task", () => {
+    // `decideRun` refuses a non-active status or lifecycleStage before any run
+    // row exists, so a task handed to one of these would sit in planned forever.
+    const roster = [
+      agent(),
+      agent({ id: "ag_trainee", lifecycleStage: "shadowing" }),
+      agent({ id: "ag_gone", status: "retired", lifecycleStage: "retired" }),
+      agent({ id: "ag_paused", status: "paused" }),
+    ];
+    expect(assignableAgents(roster).map((row) => row.id)).toEqual([
+      "ag_coach",
+      "ag_paused",
+    ]);
+  });
+
+  it("labels why an unavailable Agent cannot take work", () => {
+    expect(assigneeBlockLabel(agent())).toBeNull();
+    // Paused is one click from active: queueing work for it still makes sense.
+    expect(assigneeBlockLabel(agent({ status: "paused" }))).toBeNull();
+    expect(assigneeBlockLabel(agent({ lifecycleStage: "shadowing" }))).toBe(
+      "未转正，不能接单",
+    );
+    expect(
+      assigneeBlockLabel(agent({ status: "retired", lifecycleStage: "retired" })),
+    ).toBe("已退休，不能接单");
+  });
+
+  it("reads status and lifecycle separately", () => {
+    // Retired wins over a stale lifecycleStage; a trainee is a lifecycle fact,
+    // and probation is only a duty state.
+    expect(assigneeBlockReason({ status: "retired", lifecycleStage: "active" })).toBe(
+      "retired",
+    );
+    expect(
+      assigneeBlockReason({ status: "active", lifecycleStage: "practice_passed" }),
+    ).toBe("trainee");
+    expect(assigneeBlockReason({ status: "probation", lifecycleStage: "active" })).toBe(
+      "off_duty",
+    );
+    expect(assigneeBlockReason({ status: "active", lifecycleStage: "active" })).toBeNull();
+  });
+
+  it("feeds the dropdown and the preview from the same rule", () => {
+    const form = readFileSync(
+      join(process.cwd(), "src/components/actions/quick-create.tsx"),
+      "utf8",
+    );
+    expect(form).toContain("const assignable = assignableAgents(agents);");
+    expect(form).toContain("const blocked = assigneeBlockLabel(agent);");
+    expect(form).toContain("没有可以接单的 Agent");
+
+    // The form cannot filter what the page never sends.
+    const today = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
+    expect(today).toContain("status: agent.status,");
+    expect(today).toContain("lifecycleStage: agent.lifecycleStage,");
+  });
+});
 
 function draft(overrides: Partial<TaskDraft> = {}): TaskDraft {
   return {

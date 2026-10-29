@@ -300,6 +300,38 @@ export function hasGrant(
 }
 
 /**
+ * Why an Agent cannot be handed a task at all — `null` when it can.
+ *
+ * These are the two facts `decideRun` checks first (status, then
+ * lifecycleStage): a run for an Agent that fails either is refused before any
+ * run row exists, so the task never executes. What the reasons mean:
+ *
+ *  - `retired` is terminal. `state.ts` gives both `agent.retired` and
+ *    `apprentice.retired` no outgoing edge, so a task left on a retired Agent
+ *    waits forever.
+ *  - a trainee (`shadowing` / `drafting` / `examining` / `practice_passed`)
+ *    only reaches `active` through graduation, so it cannot take work either.
+ *  - `off_duty` (paused / probation) is one click from `active`: queueing work
+ *    for it is meaningful, the task starts once the Agent is back.
+ *
+ * The task form offers only the Agents this returns `null` for, or `off_duty`
+ * (see `assignableAgents`), and `createTask` refuses the terminal case.
+ */
+export type AssigneeBlockReason = "retired" | "trainee" | "off_duty";
+
+export function assigneeBlockReason(agent: {
+  status: string;
+  lifecycleStage: string;
+}): AssigneeBlockReason | null {
+  if (agent.status === "retired" || agent.lifecycleStage === "retired") {
+    return "retired";
+  }
+  if (agent.lifecycleStage !== "active") return "trainee";
+  if (agent.status !== "active") return "off_duty";
+  return null;
+}
+
+/**
  * Decide whether an agent may execute a task.
  * Pure function: no DB, no clock, no environment.
  */

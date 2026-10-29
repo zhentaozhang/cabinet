@@ -891,11 +891,14 @@ export default async function TodayPage() {
             <Card>
               <CardHeader eyebrow="Create" title="快速创建" />
               <div className="px-5 py-4">
+                {/* 表单要自己判断谁能接单（退休的、未转正的不能），所以状态也得传下去。 */}
                 <QuickCreate
                   agents={data.agents.map((agent) => ({
                     id: agent.id,
                     name: agent.name,
                     role: agent.role,
+                    status: agent.status,
+                    lifecycleStage: agent.lifecycleStage,
                   }))}
                   goals={data.goals
                     // 已归档的目标不再接受新任务（归档是"这段结束了"），完成的目标

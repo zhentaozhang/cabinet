@@ -6,6 +6,7 @@ import { logAuditTx } from "@/lib/audit";
 import { configuredSearchProviders } from "@/lib/connectors/registry";
 import { newId } from "@/lib/ids";
 import { assertTransition } from "@/lib/domain/state";
+import { assigneeBlockReason } from "@/lib/domain/policy";
 import { ConflictError, NotFoundError, ValidationError } from "@/lib/domain/errors";
 import { getPolicyConfigFor } from "@/lib/policy/config";
 import type { Tx } from "../../shared/tx";
@@ -109,7 +110,12 @@ export async function createTask(
 
   const reader = outerTx ?? db;
   const [assignee] = await reader
-    .select({ id: agents.id, userId: agents.userId })
+    .select({
+      id: agents.id,
+      userId: agents.userId,
+      status: agents.status,
+      lifecycleStage: agents.lifecycleStage,
+    })
     .from(agents)
     .where(eq(agents.id, input.assigneeId));
   const [auditor] = await reader
@@ -123,6 +129,13 @@ export async function createTask(
     auditor.userId !== userId
   ) {
     throw new ValidationError("Assignee or auditor not found.");
+  }
+  // 退休是终态（src/lib/domain/state.ts 里 status/lifecycleStage 的 retired 都没有
+  // 出口），所以落到它身上的任务永远跑不起来：decideRun 在写任何 run 行之前就会
+  // 以「Agent is retired, not active.」拒绝。表单已经不再列出这种人，这里再挡一次
+  // 直接调用。暂停 / 考察期不在此列：恢复在岗是一步操作，排进去的活会等着它。
+  if (assigneeBlockReason(assignee) === "retired") {
+    throw new ValidationError("A retired Agent cannot take new tasks.");
   }
 
   if (input.goalId) {

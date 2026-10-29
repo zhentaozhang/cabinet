@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { approvals, auditEvents, tasks } from "@/lib/db/schema";
+import { agents, approvals, auditEvents, tasks } from "@/lib/db/schema";
 import { DEMO_USER_ID } from "@/lib/demo";
 import { createTask } from "@/server/services/commands/tasks/create";
 import { decideApproval } from "@/server/services/commands/tasks/approvals";
@@ -175,3 +175,44 @@ describe("task approval lifecycle", () => {
     expect(audit).toBeDefined();
   });
 });
+describe(
+  "assigning work to an Agent that can never run it",
+  () => {
+    it("refuses a new task for a retired assignee", async () => {
+      // `retired` is terminal in state.ts and `decideRun` denies it before any
+      // run row exists, so a task created for it would sit in planned forever.
+      // The form no longer offers it; a direct API call must not get through
+      // either.
+      const beforeTasks = await db
+        .select({ id: tasks.id })
+        .from(tasks)
+        .where(eq(tasks.assigneeId, "ag_coach"));
+
+      await db
+        .update(agents)
+        .set({ status: "retired", lifecycleStage: "retired" })
+        .where(eq(agents.id, "ag_coach"));
+
+      await expect(externalTask()).rejects.toThrow(/retired/i);
+      const afterTasks = await db
+        .select({ id: tasks.id })
+        .from(tasks)
+        .where(eq(tasks.assigneeId, "ag_coach"));
+      expect(afterTasks).toHaveLength(beforeTasks.length);
+    });
+
+    it("still queues work for a paused Agent", async () => {
+      // Paused is one click from active: the task should wait, not be refused,
+      // otherwise pausing the Coach would break the check-in flow that schedules
+      // the next learning task through it.
+      await db
+        .update(agents)
+        .set({ status: "paused" })
+        .where(eq(agents.id, "ag_coach"));
+
+      const task = await externalTask();
+      expect(task.assigneeId).toBe("ag_coach");
+      expect(task.status).toBe("planned");
+    });
+  },
+);

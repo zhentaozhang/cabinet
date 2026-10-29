@@ -7,6 +7,8 @@ import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { money } from "@/lib/format";
 import {
+  assignableAgents,
+  assigneeBlockLabel,
   AUDITOR_CONFLICT_MESSAGE,
   COST_AMOUNT_MESSAGE,
   COST_FORMAT_MESSAGE,
@@ -31,7 +33,13 @@ export function QuickCreate({
   agents,
   goals,
 }: {
-  agents: Array<{ id: string; name: string; role: string }>;
+  agents: Array<{
+    id: string;
+    name: string;
+    role: string;
+    status: string;
+    lifecycleStage: string;
+  }>;
   goals: Array<{ id: string; title: string }>;
 }) {
   const router = useRouter();
@@ -44,8 +52,18 @@ export function QuickCreate({
   const [taskDesc, setTaskDesc] = useState("");
 
   // Step 2 (Advanced Options)
+
+  /*
+   * Only Agents that can actually execute a task may be preselected: a retired
+   * one is terminal and a trainee cannot take work before graduating, so a
+   * default pointing at either is a task that would never run. The rule and the
+   * dropdown's option labels come from the same helpers.
+   */
+  const assignable = assignableAgents(agents);
   const defaultAssignee =
-    agents.find((agent) => agent.role !== "auditor")?.id ?? agents[0]?.id ?? "";
+    assignable.find((agent) => agent.role !== "auditor")?.id ??
+    assignable[0]?.id ??
+    "";
   const defaultAuditor =
     agents.find((agent) => agent.role === "auditor" && agent.id !== defaultAssignee)?.id ??
     agents.find((agent) => agent.role === "auditor")?.id ??
@@ -478,13 +496,27 @@ export function QuickCreate({
                     aria-label="执行 Agent"
                     className="h-8 w-full rounded border border-line bg-panel px-2 text-label text-ink outline-none transition-colors focus:border-accent/50 focus-visible:ring-2 focus-visible:ring-accent/40"
                   >
-                    {agents.map((agent) => (
-                      <option key={agent.id} value={agent.id}>
-                        {agent.name} {agent.role === "auditor" ? "(监督者)" : ""}
-                      </option>
-                    ))}
+                    {agents.map((agent) => {
+                      const blocked = assigneeBlockLabel(agent);
+                      return (
+                        <option
+                          key={agent.id}
+                          value={agent.id}
+                          disabled={blocked !== null}
+                        >
+                          {agent.name} {agent.role === "auditor" ? "(监督者)" : ""}
+                          {blocked !== null ? " — " + blocked : ""}
+                        </option>
+                      );
+                    })}
                   </select>
-                  <p className="text-label text-faint">负责拆解与执行具体任务</p>
+                  {assignable.length === 0 ? (
+                    <p className="text-label text-danger">
+                      现在没有可以接单的 Agent：先恢复在岗的成员，或让学徒转正。
+                    </p>
+                  ) : (
+                    <p className="text-label text-faint">负责拆解与执行具体任务</p>
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -659,9 +691,13 @@ export function QuickCreate({
                 执行预览
               </span>
               <span aria-hidden="true" className="text-faint">|</span>
-              <span>
-                将由 <strong className="font-medium text-ink">{assigneeName}</strong> 执行
-              </span>
+              {assignable.length > 0 ? (
+                <span>
+                  将由 <strong className="font-medium text-ink">{assigneeName}</strong> 执行
+                </span>
+              ) : (
+                <span className="text-danger">没有可以接单的 Agent</span>
+              )}
               <span>·</span>
               <span>
                 由{" "}
