@@ -81,7 +81,7 @@ pnpm run:worker:once
 pnpm tick    # 跑一轮，可重复执行
 ```
 
-一轮按顺序做八步，每步都在自己的 try/catch 里，**一步失败不会阻断后面七步**——cron 场景下最怕的就是「恢复步骤因为锁表报错，于是限流表再也没被清过」。
+一轮按顺序做九步，每步都在自己的 try/catch 里，**一步失败不会阻断后面八步**——cron 场景下最怕的就是「恢复步骤因为锁表报错，于是限流表再也没被清过」。
 
 | 步骤 | 做什么 | 对应的问题 |
 |---|---|---|
@@ -90,6 +90,7 @@ pnpm tick    # 跑一轮，可重复执行
 | `failExhaustedJobs` | 用满 `MAX_CLAIM_ATTEMPTS` 且租约已过期的 job 置 `failed`，原因写进 `lastError` | 反复被认领又反复死掉的 job 永远没有结论 |
 | `settleDueDissents` | 观察窗口已过的 `pending` 异议交给 `evaluateDissents` 判定（窗口未过的不动） | 异议判定只挂在 `/api/reflect`，没人点复盘就永远 pending |
 | `closeExpiredPeriods` | `period_end <= now` 且未关闭的预算周期写 `closed_at`（不清零、不删除） | 准入路径会读 `closed_at` 拒绝预留，但这个字段从来没有写入方，一周永远不会结束 |
+| `releaseStaleHolds` | 把 `run_id IS NULL`（= 每次工具调用各自的预扣）且超过 15 分钟仍停在 `reserved` 的预留按 `not_contacted` 结算：`reserved_cents` 退回预算桶、预留行置 `released`、理由随事务落库 | 进程在「预扣」与「结算」之间死掉，`reserved_cents` 就永远抬着——可花的钱凭空少了，账上却没有任何一行能解释它去哪了 |
 | `pruneRateLimits` | 删掉 `window_start` 早于 24h 的窗口行 | 限流表每天每用户每动作长一行 |
 | `pruneIdempotencyKeys` | 删掉 `expires_at < now` 的幂等记录 | 只在复用同一个 key 时才顺手清，用一次就再也不清 |
 | `archiveOldOutbox` | 删掉 30 天前（`OUTBOX_RETENTION_DAYS`）状态已收尾（`sent`/`skipped`）的通知 | outbox 只增不减 |
@@ -98,7 +99,7 @@ pnpm tick    # 跑一轮，可重复执行
 
 `closeExpiredPeriods` 是唯一不删行的清扫：它只写 `closed_at`，因为预算周期行是账本，删掉就等于毁掉对账依据。
 
-每一步都是条件写入或带谓词的删除，所以第二轮跑出来是八个 0。这既是幂等的实现方式，也是它的检验方式。
+每一步都是条件写入或带谓词的删除，所以第二轮跑出来是九个 0。这既是幂等的实现方式，也是它的检验方式。
 
 **投递不在这里**：发信有重试节奏和 `--dry-run`，仍然是 `pnpm notify:deliver`。要一起跑就串在同一行 cron 里。
 
@@ -112,6 +113,6 @@ pnpm tick    # 跑一轮，可重复执行
 */2 * * * * cd /srv/cabinet && pnpm tick >> /var/log/cabinet-tick.log 2>&1; pnpm notify:deliver >> /var/log/cabinet-notify.log 2>&1
 ```
 
-退出码只在**八步全失败**（实践上等于数据库连不上）时非 0；脚本自身构建失败也是 1。某一步坏掉只会体现在那行 `FAIL 步骤名 — <error>` 和报告里的 `failed` 计数里：让一次坏掉的恢复把整个 cron 标红，只会训练所有人忽略这个告警。
+退出码只在**九步全失败**（实践上等于数据库连不上）时非 0；脚本自身构建失败也是 1。某一步坏掉只会体现在那行 `FAIL 步骤名 — <error>` 和报告里的 `failed` 计数里：让一次坏掉的恢复把整个 cron 标红，只会训练所有人忽略这个告警。
 
 日志每行一个步骤（`ok  /FAIL  步骤名  计数  细节`），最后一行是 JSON 汇总，`counts` 里能直接看出这一轮到底有没有事做。

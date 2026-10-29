@@ -359,9 +359,9 @@ export function effectiveLimitCents(storedLimitCents, agentBudgetCents, weeklyLi
 
 现在它是 tick 的第 5 步 `closeExpiredPeriods`（`src/server/jobs/maintenance.ts`）：`period_end <= now AND closed_at IS NULL` → 写 `closed_at`。**只写时间戳，不清零、不删除**：周期行是对账依据，冻结 ≠ 销毁。幂等（第二轮 0 行），且与准入路径的读取形成闭环：上一周的桶关闭后，任何试图往里预留的路径都会拿到明确的"已关闭"，而不是"找不到周期"。
 
-### 11.4 现在的 tick（八步）
+### 11.4 现在的 tick（九步）
 
-`recoverStaleRuns → expireStaleApprovals → failExhaustedJobs → settleDueDissents → closeExpiredPeriods → pruneRateLimits → pruneIdempotencyKeys → archiveOldOutbox`（`docs/run-durability.md` 已同步：八步、八个 0、`closeExpiredPeriods` 是唯一不删行的清扫）。
+`recoverStaleRuns → expireStaleApprovals → failExhaustedJobs → settleDueDissents → closeExpiredPeriods → releaseStaleHolds → pruneRateLimits → pruneIdempotencyKeys → archiveOldOutbox`（`docs/run-durability.md` 已同步：九步、九个 0、`closeExpiredPeriods` 是唯一不删行的清扫）。`releaseStaleHolds` 是后补的第 6 步：按调用预扣的 `run_id IS NULL` 预留如果 15 分钟内没人结算，就按 `not_contacted` 退回去，否则一次崩溃会永久占住那 3 分。
 
 ### 11.5 测试
 

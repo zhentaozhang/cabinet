@@ -94,7 +94,7 @@ Cabinet 的位置不在「Agent 框架」，而在 **「Agent 的治理层」**�
 | 审计链 | `src/lib/audit.ts:40` `logAuditTx`，`src/lib/audit.ts:100-125` 校验 | 每用户一条 SHA-256 前向链，事务内追加、按用户串行化 |
 | 队列 | `src/server/services/commands/tasks/jobs.ts:155` `claimRunJob` | `FOR UPDATE SKIP LOCKED` + 租约 10 分钟（`jobs.ts:18`）+ 最多认领 5 次（`jobs.ts:27`） |
 | 恢复 | `scripts/run-worker.ts`、`recovery.ts` | 有供应商接触痕迹 → 按**未知用量**结算（金额=预留上限）；无痕迹 → 释放；不自动重跑 |
-| 维护入口 | `src/server/jobs/maintenance.ts`（`pnpm tick`） | 8 步清扫，各自 try/catch，一步失败不阻断其余七步 |
+| 维护入口 | `src/server/jobs/maintenance.ts`（`pnpm tick`） | 9 步清扫，各自 try/catch，一步失败不阻断其余八步 |
 | 记忆检索 | `src/lib/memory/retrieval.ts:61` `scoreMemories` | Generative Agents 权重：recency 0.5 / relevance 3 / importance 2（`retrieval.ts:23`），relevance 是 **token 集合命中率** |
 | 证据/引用 | `min_evidence` 只认本 run 落库的 `[cite:evd_xxx]` | 正文里写 URL 不算证据；悬空引用直接失败 |
 
@@ -305,7 +305,7 @@ Cabinet 的位置不在「Agent 框架」，而在 **「Agent 的治理层」**�
 
 **本仓库**
 - `docs/codegraph-analysis.md`（分层矩阵、fan-in、索引质量限制）
-- `docs/run-durability.md`（inline/worker、租约、恢复、tick 八步）
+- `docs/run-durability.md`（inline/worker、租约、恢复、tick 九步）
 - `docs/evidence-and-connectors.md`（证据语义、Brave/Tavily、`min_evidence`）
 - `docs/observability.md`（requestId、日志事件、metrics/health）
 - `docs/remediation-plan.md`（八条不变量 I1–I8、硬编码替换表）
