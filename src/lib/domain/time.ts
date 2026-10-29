@@ -83,6 +83,19 @@ export function localDateTimeParts(date: Date, timeZone: string): ZonedParts {
   return partsInZone(date, timeZone);
 }
 
+/**
+ * 给用户看的墙钟时间：`YYYY-MM-DD HH:mm`，按**那个人的时区**渲染。
+ *
+ * 服务端写进正文的时间戳不能直接用 `toISOString()`：那是 UTC，还带一个 `Z`，
+ * 用户读到的时间会和自己手表差 8 小时（示例工作区就是 Asia/Shanghai），
+ * 格式也像日志而不是句子。这里只用日期时间两部分：秒对读者没有意义，反而
+ * 让同一句话每次重放都有细微差别。
+ */
+export function formatLocalDateTime(date: Date, timeZone: string): string {
+  const parts = partsInZone(date, timeZone);
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hour)}:${pad(parts.minute)}`;
+}
+
 export function addLocalDays(
   date: Date,
   days: number,

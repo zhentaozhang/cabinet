@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -19,6 +19,10 @@ import { resetDb } from "../helpers/db";
 
 beforeEach(async () => {
   await resetDb();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 /** 只跑一次会议，取 Chief 那一条立场——它的 claim 里写着议题挂在哪个目标上。 */
@@ -212,6 +216,35 @@ describe("council closed loop", () => {
     await expect(
       decideCouncil(council.id, "approve", "重复决定", DEMO_USER_ID),
     ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("dates the follow-up task in the user own clock and says who made it", async () => {
+    // 21:30Z 在示例用户（Asia/Shanghai）那里是第二天 05:30。跟进任务的正文
+    // 以前写的是 new Date().toISOString()：UTC、带 Z、还差 8 小时。
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-28T21:30:00.000Z"));
+
+    const council = await createCouncil(
+      { topic: "要不要把周三的课挪到周四？", trigger: "时间冲突" },
+      DEMO_USER_ID,
+    );
+    const decided = await decideCouncil(
+      council.id,
+      "approve",
+      "批准，周四上午执行。",
+      DEMO_USER_ID,
+    );
+
+    const [task] = await db
+      .select()
+      .from(tasks)
+      .where(eq(tasks.id, decided.resolution!.taskId!));
+    expect(task.description).toContain(
+      "内阁于 2026-10-29 05:30 批准：批准，周四上午执行。",
+    );
+    expect(task.description).not.toContain("2026-10-28T21:30");
+    // 用户点的是「批准」，没有写过这条任务：来源是 system，不是 user。
+    expect(task.createdBy).toBe("system");
   });
 
   it("records a rejection without creating a follow-up task", async () => {

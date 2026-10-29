@@ -7,10 +7,12 @@ import {
   dissents,
   memories,
   tasks,
+  users,
 } from "@/lib/db/schema";
 import type { CouncilResolution } from "@/lib/db/schema";
 import { logAuditTx } from "@/lib/audit";
 import { newId } from "@/lib/ids";
+import { formatLocalDateTime } from "@/lib/domain/time";
 import { getPolicyConfigFor } from "@/lib/policy/config";
 import {
   ConflictError,
@@ -50,6 +52,15 @@ export async function decideCouncil(
   const auditor = allAgents.find((agent) => agent.role === "auditor");
   // 与 createCouncil 同源：兜底出来的证伪条件也要用这个人自己的阈值。
   const config = await getPolicyConfigFor(userId);
+  const [account] = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId));
+  // 一次决议只有一个时刻。跟进任务的正文、程序记忆的 lastConfirmedAt、
+  // resolution.decidedAt 都读这一个 now：三次 new Date() 会让同一条决议在正文里
+  // 和 JSON 里差几十毫秒，读起来像两次操作。
+  const now = new Date();
+  const timeZone = account?.timezone ?? "UTC";
 
   const label =
     decision === "approve"
@@ -76,7 +87,7 @@ export async function decideCouncil(
   await db.transaction(async (tx) => {
     const [locked] = await tx
       .update(councils)
-      .set({ status: "decided", decidedAt: new Date() })
+      .set({ status: "decided", decidedAt: now })
       .where(and(eq(councils.id, councilId), eq(councils.status, "open")))
       .returning();
     if (!locked) throw new ConflictError("Council state changed; retry.");
@@ -96,7 +107,9 @@ export async function decideCouncil(
         id: taskId,
         userId,
         title: `执行内阁决议：${council.topic}`,
-        description: `内阁于 ${new Date().toISOString()} ${label}：${trimmedNote || "无附加说明"}`,
+        // 这句话是跟进任务的正文，会直接给用户读：时间按他的时区写成
+        // 「2026-10-29 05:30」，不是 toISOString() 那个 UTC + Z 的日志格式。
+        description: `内阁于 ${formatLocalDateTime(now, timeZone)} ${label}：${trimmedNote || "无附加说明"}`,
         assigneeId: chief.id,
         auditorId: auditor.id,
         status: "planned",
@@ -106,7 +119,9 @@ export async function decideCouncil(
         actionType: "internal_write",
         resource: "task",
         estimatedCostCents: 0,
-        createdBy: "user",
+        // 这条任务是系统按决议自动生成的：用户点的是「批准」，没有写过任务。
+        // 盖成 user 会让今日页把它标成「用户手动」，把来源说反。
+        createdBy: "system",
       });
     }
 
@@ -127,7 +142,7 @@ export async function decideCouncil(
         },
       ],
       sourceEventId: councilId,
-      lastConfirmedAt: new Date(),
+      lastConfirmedAt: now,
       status: "active",
     });
 
@@ -169,7 +184,7 @@ export async function decideCouncil(
       taskId,
       memoryId,
       dissents: dissentRecords,
-      decidedAt: new Date().toISOString(),
+      decidedAt: now.toISOString(),
     };
 
     const [withResolution] = await tx
@@ -179,7 +194,7 @@ export async function decideCouncil(
           taskId ? `已生成跟进任务 ${taskId}` : "未生成任务"
         }；已写入程序记忆 ${memoryId}。`,
         resolution,
-        resolutionAppliedAt: new Date(),
+        resolutionAppliedAt: now,
       })
       .where(eq(councils.id, councilId))
       .returning();

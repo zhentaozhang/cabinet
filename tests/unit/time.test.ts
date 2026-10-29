@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatLocalDateTime,
   localDateKey,
   startOfLocalWeek,
   weekRange,
@@ -41,5 +42,18 @@ describe("timezone helpers", () => {
     expect(range.start.toISOString()).toBe("2026-10-18T16:00:00.000Z");
     expect(range.end.toISOString()).toBe("2026-10-25T16:00:00.000Z");
     expect(range.key).toBe("2026-W43");
+  });
+
+  it("renders a wall-clock timestamp in the reader own zone", () => {
+    const instant = new Date("2026-10-28T21:30:00.000Z");
+    // 同一时刻：上海已经是第二天早上，UTC 还是前一天晚上。
+    expect(formatLocalDateTime(instant, "Asia/Shanghai")).toBe(
+      "2026-10-29 05:30",
+    );
+    expect(formatLocalDateTime(instant, "UTC")).toBe("2026-10-28 21:30");
+    // 跨 DST：纽约 03-09 00:30 已经是夏令时（UTC-4）。
+    expect(
+      formatLocalDateTime(new Date("2026-03-09T04:30:00.000Z"), "America/New_York"),
+    ).toBe("2026-03-09 00:30");
   });
 });
